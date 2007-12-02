@@ -1,0 +1,101 @@
+Building pacparser on Windows:
+-----------------------------
+To build pacparser on Windows you'll have to install some helper utilities
+first. For compiling and linking pacparser, you'll need MinGW (www.mingw.org)
+tools which can produce native windows programs. Apart from that, pacparser
+needs SpiderMonkey JavaScript interpreter to work. DLL for SpiderMonkey
+JavaScript interpreter is bundled with Mozilla Firefox (js3250.dll), which makes
+our job a little easier. But, to be able to compile against this DLL, we need
+import library (yes, Windows is weird). Creating this import library is a two
+step process involving creation of definition file from .dll file using dumpbin
+utility that comes with masm32, and then creation of import library from that
+definition file and .dll file using dlltool.
+
+
+Detailed Instructions:
+----------------------
+Create a working directory somewhere on your system. This is where you'll
+install your tools and compile pacparser. Following instructions assume that
+working directory is C:\devel.
+
+1. First of all we need an unzip utility. 7-zip is a good one and it's open
+source too. Download and install 7-zip on your system:
+http://downloads.sourceforge.net/sourceforge/sevenzip/7z442.exe
+(You can use any other zip archiver/extractor, but you'll have to modify
+instructions for that.)
+
+2. Add 7-zip binaries to your system path (My Computer -> Properties -> Advanced
+-> Environment Variables).
+
+Set up MingW tools:
+
+3. Download mingw packages -- gcc-core, mingw-runtime, w32api and binutils from
+mingw download page: http://www.mingw.org/download.shtml to your working
+directory. Direct links:
+
+http://downloads.sourceforge.net/mingw/gcc-core-3.4.5-20060117-1.tar.gz
+http://downloads.sourceforge.net/mingw/binutils-2.17.50-20060824-1.tar.gz
+http://downloads.sourceforge.net/mingw/mingw-runtime-3.13.tar.gz
+http://downloads.sourceforge.net/mingw/w32api-3.10.tar.gz
+
+However it's better to download latest packages from
+http://downloads.sourceforge.net/mingw.
+
+4. Extract all the files into your working directory. In a command prompt
+window, run:
+  cd c:\devel
+  7z x *.gz -y
+  7z x *.tar -y
+
+5. Next we need to get the dumpbin utility to create import library from
+js3250.dll that comes with Mozilla Firefox. dumpbin utility comes with MASM32
+assembler (www.masm32.com). You can either download it from masm32 webpage and
+add masm install directory to your path. Or, you can download minimal package
+from http://manugarg.googlepages.com/masm32-bin.zip to your working directory
+and extract all files like this:
+  7z x masm32-bin.zip
+
+6. Get following packages from GnuWin32 project:
+http://gnuwin32.sourceforge.net/downlinks/libiconv-bin-zip.php
+http://gnuwin32.sourceforge.net/downlinks/libintl-bin-zip.php
+http://gnuwin32.sourceforge.net/downlinks/gawk-bin-zip.php
+
+and save them in your working directory. Unzip them using 7z:
+  cd c:\devel
+  7z x gawk*.zip
+  7z x libintl*.zip
+  7z x libiconv*.zip
+
+7. Add your working directory's bin (C:\devel\bin) to your path.
+
+======== Done setting up tools ==========
+
+8. Now download pacparser tarball and extract it in C:\devel.
+  cd c:\devel
+  7z x pacparser*.tar.gz
+  7z x pacparser*.tar
+
+9. Compile pacparser:
+  cd c:\devel\pacparser
+  gcc -DXP_WIN -I spidermonkey\win32 -c pacparser.c
+
+10. Copy js3250.dll and nspr4.dll from Mozilla Firefox's installation directory
+to working directory.
+  cd c:\devel
+  copy "C:\Program Files\Mozilla Firefox\js3250.dll" .
+  copy "C:\Program Files\Mozilla Firefox\nspr4.dll" .
+
+11. Create import library for js3250.
+
+  a) Get the dump of exports from js3250.dll:
+  dumpbin /EXPORTS ./js3250.dll > js3250.dumpbin
+
+  b) Create the def file:
+  echo EXPORTS > js3250.def
+  gawk "/[ ]+[0-9]+[ ]+[0-9A-F]+[ ]+[0-9A-F]+/ {print $4}" js3250.dumpbin >> js3250.def
+
+  c) Create import libary (.lib file):
+  dlltool --def js3250.def --dllname js3250.dll --output-lib js3250.lib
+
+12. Create pacparser dll:
+  gcc -shared -o pacparser.dll pacparser/pacparser.o -L. -ljs3250 -Llib -lws2_32

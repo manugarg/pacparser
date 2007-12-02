@@ -1,0 +1,65 @@
+pacparser is a C library to parse PAC (proxy auto-config) files. PAC files
+(implemented in JavaScript) are a proxy configuration method for web access.
+Using them, browsers can be configured to use different proxy servers for
+different URLs, source IP addresses, protocols etc. PAC files can also be used
+for a highly available proxy setup as you can specify more than one proxy
+server using them.
+
+PAC files are now a widely accepted way for proxy configuration management and
+almost all popular browsers support PAC files. But unfortunately, popular
+command line web clients like wget, curl and various web client libraries like
+python-urllib, libcurl don't have this feature. pacparser attempts to provide
+an easy way to add this functionality to these web clients.
+
+It provides a shared C library (libpacparser.so on Linux and pacparser.dll on
+Windows) that exports various methods that can be used to parse pac files and
+determine proxy server for a given URL. C web clients like wget and curl can
+make use of these functions and provide users an option to specify a PAC file
+for proxy. For python programs, this library can be loaded directly using
+ctypes module and then these methods can be called directly from within the
+python programs.
+
+pacparser makes use of Mozilla's JavaScript interpreter SpiderMonkey and
+Netscape's PAC implementation to evaluate PAC files. This makes it as close to
+standard as it gets.
+
+Usage Examples:
+
+Using it with python-ctypes:
+---------------------------------------------------------------------
+>>> from ctypes import *
+>>> pacparser=CDLL('./libpacparser.so')
+>>> pacparser.init_pac_parser()
+1
+>>> pacparser.parse_pac('examples/wpad.dat')
+1
+>>> pacparser.find_proxy_for_url('http://www.google.com', 'www.google.com')
+136307304
+>>> string_at(136307304)
+'PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT'
+---------------------------------------------------------------------
+
+Using it in C:
+---------------------------------------------------------------------
+manugarg@hobbiton:~$ cat pactest.c
+#include <stdio.h>
+
+int init_pac_parser();
+int parse_pac(char* pacfile);
+char *find_proxy_for_url(char *url, char *host);
+void destroy_pac_parser();
+
+int main(int argc, char* argv[])
+{
+  char *proxy;
+  init_pac_parser();
+  parse_pac(argv[1]);
+  proxy = find_proxy_for_url(argv[2], argv[3]);
+  printf("%s\n", proxy);
+  destroy_pac_parser();
+}
+
+manugarg@hobbiton:~$ gcc -o pactest pactest.c -lpacparser
+manugarg@hobbiton:~$ ./pactest wpad.dat http://www.google.com www.google.com
+PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
+---------------------------------------------------------------------
