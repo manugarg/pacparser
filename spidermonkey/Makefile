@@ -3,7 +3,7 @@ js: js-buildstamp
 js-buildstamp:
 	tar xzvf js*.tar.gz
 	cd js/src; $(MAKE) -f Makefile.ref
-	find . -name "jsautocfg.h" -exec cp {} js/src \;
+	find js/src -name "jsautocfg.h" -exec cp {} js/src \;
 	touch js-buildstamp
 
 install: js

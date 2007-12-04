@@ -1,0 +1,57 @@
+On Unix-like Systems:
+####################
+
+Installing pacparser from Source Code:
+=====================================
+
+You can download latest pacparser source code tarball from:
+  http://code.google.com/p/pacparser/downloads/list.
+
+You can also get the latest source code from subversion (svn) repository by
+following instructions at:
+  http://code.google.com/p/pacparser/source
+
+pacparser uses SpiderMonkey JavaScript (JS) interpreter to parse PAC files. So,
+we need to get SpiderMonkey JS interpreter first.
+
+Installing SpiderMonkey JS Interpreter:
+--------------------------------------
+  There are packages available for Ubuntu and Debian. For other systems, you
+  can compile it from sources.
+
+  * From packages:
+      For Debian and Ubuntu edgy+ (6.10+): libmozjs0d and libmozjs-dev.
+      => sudo apt-get install libmozjs0d libmozjs-dev
+      For Ubuntu dapper and earlier (6.06-): libsmjs1 and libsmjs-dev.
+      => sudo apt-get install libsmjs1 libsmjs-dev
+
+  * By compiling from source:
+      SpiderMonkey JS interpreter is included with pacparser source code, and can
+      be compiled and installed by running following:
+      => make js
+      => sudo make install-js
+
+Compiling and Installing pacparser:
+----------------------------------
+  Once you have SpiderMonkey JS interpreter, compiling and installing pacparser is
+  as easy as running following:
+     => make
+     => sudo make install
+
+On Win-32 Systems:
+#################
+
+Binary Distribution:
+===================
+
+Compiled packages for win32 systems can be downloaded from:
+http://code.google.com/p/pacparser/downloads/list
+
+To install it, just extract the files and copy them to somewhere on your system
+path, e.g. C:\Windows, C:\Windows\system32 or your program's working directory.
+
+Compiling from Source Code:
+==========================
+
+Compiling pacparser for Windows is a rather involved process and is documented
+in detail in README.win32 file included with this package.
