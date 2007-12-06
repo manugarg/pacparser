@@ -46,8 +46,9 @@
 // inet_ntop is not defined on iindows. Define it as a wrapper to functions
 // available on windows.
 #ifdef _WIN32
-const char *
-inet_ntop(int af, const void *src, char *dst, socklen_t cnt) {
+static const char *
+inet_ntop(int af, const void *src, char *dst, socklen_t cnt)
+{
   if (af == AF_INET) {
     struct sockaddr_in in;
     memset(&in, 0, sizeof(in));
@@ -71,8 +72,9 @@ inet_ntop(int af, const void *src, char *dst, socklen_t cnt) {
 #endif
 
 // Utility function to read a file into string.
-char *                              // File content in string or NULL if failed.
-read_file_into_str(const char *filename) {
+static char *                      // File content in string or NULL if failed.
+read_file_into_str(const char *filename)
+{
   char *str;
   int file_size;
   FILE *fptr;
@@ -94,16 +96,18 @@ error1:
   return NULL;
 }
 
-void
-print_error(JSContext *cx, const char *message, JSErrorReport *report) {
+static void
+print_error(JSContext *cx, const char *message, JSErrorReport *report)
+{
     fprintf(stderr, "JSERROR: %s:%d:\n    %s\n",
             (report->filename ? report->filename : "NULL"), report->lineno,
             message);
 }
 
 // Define DNS Resolve function; not available in JavaScript.
-JSBool                                  // JS_TRUE or JS_FALSE
-dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) {
+static JSBool                                  // JS_TRUE or JS_FALSE
+dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+{
   char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
   char* out;
   struct hostent *hent;
@@ -121,8 +125,9 @@ dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) 
 }
 
 // Define myIpAddress function; not available in JavaScript.
-JSBool                                  // JS_TRUE or JS_FALSE
-my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) {
+static JSBool                                  // JS_TRUE or JS_FALSE
+my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+{
   char name[256];
   gethostname(name, sizeof(name));
   char* out;
@@ -140,6 +145,7 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) {
   return JS_TRUE;
 }
 
+// Functions to be exported to JavaScript context.
 JSFunctionSpec dns_functions[] = {
   {"dnsResolve", dns_resolve, 1},
   {"myIpAddress", my_ip, 0}
@@ -154,8 +160,15 @@ JSClass global_class = {
     JS_EnumerateStub,JS_ResolveStub,JS_ConvertStub,JS_FinalizeStub
 };
 
+// Initialize PAC parser.
+//
+// - Initializes JavaScript engine,
+// - Exports dns_functions (defined above) to JavaScript context.
+// - Sets error reporting function to print_error,
+// - Evaluates JavaScript code in pacUtils variable defined in pac_utils.h.
 int                                     // 0 (=Failure) or 1 (=Success)
-init_pac_parser() {
+pacparser_init()
+{
   jsval rval;
   // Initialize JS engine
   if (!(rt = JS_NewRuntime(8L * 1024L * 1024L)) ||
@@ -179,18 +192,22 @@ init_pac_parser() {
   return 1;
 }
 
+// Parses PAC file
+//
+// parses and evaulates PAC file specified by pacfile argument.
 int                                     // 0 (=Failure) or 1 (=Success)
-parse_pac(const char* pacfile) {
+pacparser_parse_pac(const char* pacfile)
+{
   jsval rval;
   char *script = NULL;
   if ((script = read_file_into_str(pacfile)) == NULL) {
-    fprintf(stderr, "libpacparser.so: parse_pac: %s %s\n", "Could not read "
-            "pacfile", pacfile);
+    fprintf(stderr, "libpacparser.so: pacparser_parse_pac: %s %s\n", "Could not"
+            " read pacfile", pacfile);
     return 0;
   }
   if (cx == NULL || global == NULL) {
-    fprintf(stderr, "libpacparser.so: parse_pac: %s\n", "Pac parser is "
-            "not initialized.");
+    fprintf(stderr, "libpacparser.so: pacparser_parse_pac: %s\n", "Pac parser"
+            " is not initialized.");
     return 0;
   }
   if (!JS_EvaluateScript(cx,
@@ -207,22 +224,28 @@ parse_pac(const char* pacfile) {
   return 1;
 }
 
+// Finds proxy for a given URL and Host.
+//
+// If JavaScript engine is intialized and FindProxyForURL function is defined,
+// it evaluates code FindProxyForURL(url,host) in JavaScript context and
+// returns the result.
 char *                                  // Proxy string or NULL if failed.
-find_proxy_for_url(const char *url, const char *host) {
+pacparser_find_proxy(const char *url, const char *host)
+{
   jsval rval;
   char *script;
   if (url == NULL || (strcmp(url, "") == 0)) {
-    fprintf(stderr, "libpacparser.so: find_proxy_for_url: %s\n", "URL not "
+    fprintf(stderr, "libpacparser.so: pacparser_find_proxy: %s\n", "URL not "
             "defined");
     return NULL;
   }
   if (host == NULL || (strcmp(host,"") == 0)) {
-    fprintf(stderr, "libpacparser.so: find_proxy_for_url: %s\n", "Host not "
+    fprintf(stderr, "libpacparser.so: pacparser_find_proxy: %s\n", "Host not "
             "defined");
     return NULL;
   }
   if (cx == NULL || global == NULL) {
-    fprintf(stderr, "libpacparser.so: find_proxy_for_url: %s\n",
+    fprintf(stderr, "libpacparser.so: pacparser_find_proxy: %s\n",
             "Pac parser is not initialized.");
     return NULL;
   }
@@ -231,7 +254,7 @@ find_proxy_for_url(const char *url, const char *host) {
   if ( !JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval) )
     return NULL;
   if ( strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0 ) {
-    fprintf(stderr, "libpacparser.so: find_proxy_for_url: %s\n", "Javascript"
+    fprintf(stderr, "libpacparser.so: pacparser_find_proxy: %s\n", "Javascript"
             " function FindProxyForURL not defined.");
     return NULL;
   }
@@ -247,8 +270,10 @@ find_proxy_for_url(const char *url, const char *host) {
   return JS_GetStringBytes(JS_ValueToString(cx, rval));
 }
 
+// Destroys JavaSctipt Engine.
 void
-destroy_pac_parser () {
+pacparser_cleanup()
+{
   if (cx) {
     JS_DestroyContext(cx);
     cx = NULL;
@@ -260,33 +285,42 @@ destroy_pac_parser () {
   if (!cx && !rt) JS_ShutDown();
 }
 
+// Finds proxy for a given PAC file, url and host.
+//
+// This function is a wrapper around functions pacparser_init,
+// pacparser_parse_pac, pacparser_find_proxy and pacparser_cleanup. If you just
+// want to find out proxy a given set of pac file, url and host, this is the
+// function to call.
 char *                                  // Proxy string or NULL if failed.
-find_proxy (const char *pacfile, const char *url, const char *host) {
+pacparser_just_find_proxy(const char *pacfile,
+                         const char *url,
+                         const char *host)
+{
   char *proxy;
   char *out;
   int initialized_here = 0;
   if (!global) {
-    if (!init_pac_parser()) {
-      fprintf(stderr, "libpacparser.so: find_proxy: %s\n",
+    if (!pacparser_init()) {
+      fprintf(stderr, "libpacparser.so: pacparser_just_find_proxy: %s\n",
               "Could not initialize pac parser");
       return NULL;
     }
     initialized_here = 1;
   }
-  if (!parse_pac(pacfile)) {
-    fprintf(stderr, "libpacparser.so: find_proxy: %s %s\n",
+  if (!pacparser_parse_pac(pacfile)) {
+    fprintf(stderr, "libpacparser.so: pacparser_just_find_proxy: %s %s\n",
             "Could not parse pacfile", pacfile);
-    if (initialized_here) destroy_pac_parser();
+    if (initialized_here) pacparser_cleanup();
     return NULL;
   }
-  if (!(out = find_proxy_for_url(url, host))) {
-    fprintf(stderr, "libpacparser.so: find_proxy: %s %s\n",
+  if (!(out = pacparser_find_proxy(url, host))) {
+    fprintf(stderr, "libpacparser.so: pacparser_just_find_proxy: %s %s\n",
             "Could not determine proxy for url", url);
-    if (initialized_here) destroy_pac_parser();
+    if (initialized_here) pacparser_cleanup();
     return NULL;
   }
   proxy = (char*) malloc(strlen(out) + 1);
   strcpy(proxy, out);
-  if (initialized_here) destroy_pac_parser();
+  if (initialized_here) pacparser_cleanup();
   return proxy;
 }

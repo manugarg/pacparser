@@ -28,15 +28,17 @@ Usage Examples:
 Using it with python-ctypes:
 ---------------------------------------------------------------------
 >>> from ctypes import *
->>> pacparser=CDLL('./libpacparser.so')
->>> pacparser.init_pac_parser()
+>>> pp=CDLL('./libpacparser.so')
+>>> pp.pacparser_init()
 1
->>> pacparser.parse_pac('examples/wpad.dat')
+>>> pp.pacparser_parse_pac('examples/wpad.dat')
 1
->>> pacparser.find_proxy_for_url('http://www.google.com', 'www.google.com')
+>>> pp.pacparser_find_proxy('http://www.google.com', 'www.google.com')
 136307304
 >>> string_at(136307304)
 'PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT'
+>>> pp.pacparser_cleanup()
+>>>
 ---------------------------------------------------------------------
 
 Using it in C:
@@ -44,19 +46,19 @@ Using it in C:
 manugarg@hobbiton:~$ cat pactest.c
 #include <stdio.h>
 
-int init_pac_parser();
-int parse_pac(char* pacfile);
-char *find_proxy_for_url(char *url, char *host);
-void destroy_pac_parser();
+int pacparser_init();
+int pacparser_parse_pac(char* pacfile);
+char *pacparser_find_proxy(char *url, char *host);
+void pacparser_cleanup();
 
 int main(int argc, char* argv[])
 {
   char *proxy;
-  init_pac_parser();
-  parse_pac(argv[1]);
-  proxy = find_proxy_for_url(argv[2], argv[3]);
+  pacparser_init();
+  pacparser_parse_pac(argv[1]);
+  proxy = pacparser_find_proxy(argv[2], argv[3]);
   printf("%s\n", proxy);
-  destroy_pac_parser();
+  pacparser_cleanup();
 }
 
 manugarg@hobbiton:~$ gcc -o pactest pactest.c -lpacparser

@@ -81,7 +81,7 @@ libpacparser.so: libpacparser.so.${LIB_VER}
 
 install: all
 	install -m 644 libpacparser.so.${LIB_VER} /usr/lib/libpacparser.so.${LIB_VER}
-	ln -s libpacparser.so.${LIB_VER} /usr/lib/libpacparser.so
+	ln -sf libpacparser.so.${LIB_VER} /usr/lib/libpacparser.so
 
 js:
 	cd spidermonkey && $(MAKE)
