@@ -194,9 +194,10 @@ pacparser_init()
 
 // Parses PAC file
 //
-// parses and evaulates PAC file specified by pacfile argument.
+// parses and evaulates PAC file in the JavaScript context created by
+// pacparser_init.
 int                                     // 0 (=Failure) or 1 (=Success)
-pacparser_parse_pac(const char* pacfile)
+pacparser_parse_pac(const char *pacfile)
 {
   jsval rval;
   char *script = NULL;
