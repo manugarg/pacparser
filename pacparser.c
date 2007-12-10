@@ -284,6 +284,7 @@ pacparser_cleanup()
     rt = NULL;
   }
   if (!cx && !rt) JS_ShutDown();
+  global = NULL;
 }
 
 // Finds proxy for a given PAC file, url and host.

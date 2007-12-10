@@ -83,7 +83,7 @@ install: all
 	install -m 644 libpacparser.so.${LIB_VER} /usr/lib/libpacparser.so.${LIB_VER}
 	ln -sf libpacparser.so.${LIB_VER} /usr/lib/libpacparser.so
 	install -m 644 pacparser.h /usr/include/pacparser.h
-	(test -d docs && install -m 644 docs/* /usr/share/man/man3/) || /bin/true
+	(test -d docs && install -m 644 docs/*.3 /usr/share/man/man3/) || /bin/true
 
 js:
 	cd spidermonkey && $(MAKE)

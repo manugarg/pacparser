@@ -27,7 +27,7 @@ char *pacparser_find_proxy(const char *url,           // URL to find proxy for
 // want to find out proxy a given set of pac file, url and host, this is the
 // function to call. This function takes care of all the initialization and
 // cleanup.
-// returns the proxy as per pac file and NULL on error.
+// returns proxy string on success and NULL on error.
 char *pacparser_just_find_proxy(const char *pacfile,  // PAC file
                            const char *url,           // URL to find proxy for
                            const char *host           // Host part of the URL
