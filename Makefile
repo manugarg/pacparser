@@ -19,7 +19,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 LIB_VER=1
-CFLAGS=-g -DXP_UNIX -Wall
+CFLAGS=-g -DXP_UNIX -Wall -fPIC
 LDFLAGS=-shared -soname=libpacparser.so.${LIB_VER}
 
 NOSO=clean js install-js
