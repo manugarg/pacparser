@@ -1,3 +1,6 @@
+pacparser
+=========
+
 pacparser is a C library to parse PAC (proxy auto-config) files. PAC files
 (implemented in JavaScript) are a proxy configuration method for web access.
 Using them, browsers can be configured to use different proxy servers for
@@ -11,21 +14,30 @@ command line web clients like wget, curl and various web client libraries like
 python-urllib, libcurl don't have this feature. pacparser attempts to provide
 an easy way to add this functionality to these web clients.
 
-It provides a shared C library (libpacparser.so on Linux and pacparser.dll on
-Windows) that exports various methods that can be used to parse pac files and
-determine proxy server for a given URL. C web clients like wget and curl can
-make use of these functions and provide users an option to specify a PAC file
-for proxy. For python programs, this library can be loaded directly using
-ctypes module and then these methods can be called directly from within the
-python programs.
+* How to use it?
+----------------
 
-pacparser makes use of Mozilla's JavaScript interpreter SpiderMonkey and
-Netscape's PAC implementation to evaluate PAC files. This makes it as close to
-standard as it gets.
+pacparser comes as a shared C library (libpacparser.so on Linux and
+pacparser.dll on Windows) that exports various methods that can be used to
+parse pac files and determine proxy server for a given URL. C web clients like
+wget and curl can make use of these functions and provide users an option to
+specify a PAC file for proxy. For python programs, this library can be loaded
+directly using ctypes module and then these methods can be called directly
+from within the python programs.
 
-Usage Examples:
+* Implementation
+----------------
+pacparser makes use of Mozilla's JavaScript interpreter SpiderMonkey to parse
+PAC files (which are nothing but javascripts). Apart from that, proxy
+auto-config standard assumes availability of some functions which are not
+part of standard JavaScript. pacparser uses Mozilla's PAC implementation to
+define all these functions except couple of dns functions which are defined by
+pacparser itself. As a result, pacparser is as close to standard as it gets :)
 
-Using it with python-ctypes:
+* Usage Examples
+----------------
+
+* Using it with python-ctypes:
 ---------------------------------------------------------------------
 >>> from ctypes import *
 >>> pp=CDLL('./libpacparser.so')
@@ -41,7 +53,7 @@ Using it with python-ctypes:
 >>>
 ---------------------------------------------------------------------
 
-Using it in C:
+* Using it in C:
 ---------------------------------------------------------------------
 manugarg@hobbiton:~$ cat pactest.c
 #include <stdio.h>
