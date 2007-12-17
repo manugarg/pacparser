@@ -34,7 +34,7 @@ Please see 'INSTALL' in the root directory of the package.
 As pacparser comes as a shared library (libpacparser.so on Unix-like systems
 and pacparser.dll on windows), using it is as easy compiling your C programs
 against it. Or, you can simply call it's methods from within your python
-programs using ctyles module.
+programs using ctypes module.
 
 * Usage Examples
   --------------
