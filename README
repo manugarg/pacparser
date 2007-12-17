@@ -10,10 +10,11 @@ server using them.
 
 Needless to say, PAC files are now a widely accepted method for proxy
 configuration management and almost all popular browsers support them.
-pacparser provides an easy way to add this PAC file parsing capability to any C
-or python program. It comes as a C shared library with a clear API. The idea of
-course is to make PAC files more programmer friendly :-) Some very useful
-targets could be popular web software like wget, curl and python-urllib.
+The idea behind pacparser is to make it easy to add this PAC file parsing
+capability to other programs. It comes as a shared C library with a clear API.
+You can use it to make any C or python (using ctypes) program PAC scripts
+intelligent. Some very useful targets could be popular web software like wget,
+curl and python-urllib.
 
 * Implementation
   --------------
