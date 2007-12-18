@@ -5,7 +5,7 @@ from ctypes import *
 pp = CDLL("libpacparser.so")
 
 pp.pacparser_init()
-pp.pacparser_parse_pac("examples/wpad.dat")
+pp.pacparser_parse_pac("wpad.dat")
 proxy = pp.pacparser_find_proxy("http://www.manugarg.com", "www.manugarg.com")
 print string_at(proxy)
 pp.pacparser_cleanup()

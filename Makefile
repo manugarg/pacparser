@@ -19,8 +19,14 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 LIB_VER=1
-CFLAGS=-g -DXP_UNIX -Wall -fPIC
+CFLAGS=-g -DXP_UNIX -Wall
 LDFLAGS=-shared -soname=libpacparser.so.${LIB_VER}
+
+# We need PIC code for shared libraries on x86_64 platform.
+CPU_ARCH = $(shell uname -m)
+ifeq ($(CPU_ARCH),x86_64)
+  CFLAGS+= -fPIC
+endif
 
 NOSO=clean js install-js
 
@@ -80,10 +86,19 @@ libpacparser.so: libpacparser.so.${LIB_VER}
 	ln -sf libpacparser.so.${LIB_VER} libpacparser.so
 
 install: all
-	install -m 644 libpacparser.so.${LIB_VER} /usr/lib/libpacparser.so.${LIB_VER}
-	ln -sf libpacparser.so.${LIB_VER} /usr/lib/libpacparser.so
-	install -m 644 pacparser.h /usr/include/pacparser.h
-	(test -d docs && install -m 644 docs/*.3 /usr/share/man/man3/) || /bin/true
+	install -d $(DESTDIR)/usr/lib $(DESTDIR)/usr/include
+	install -m 644 libpacparser.so.${LIB_VER} $(DESTDIR)/usr/lib/libpacparser.so.${LIB_VER}
+	ln -sf libpacparser.so.${LIB_VER} $(DESTDIR)/usr/lib/libpacparser.so
+	install -m 644 pacparser.h $(DESTDIR)/usr/include/pacparser.h
+	# install manpages
+	install -d $(DESTDIR)/usr/share/man/man3/
+	(test -d docs && install -m 644 docs/*.3 $(DESTDIR)/usr/share/man/man3/) || /bin/true
+	# install html docs
+	install -d $(DESTDIR)/usr/share/doc/libpacparser/html/
+	(test -d docs/html && install -m 644 docs/html/* $(DESTDIR)/usr/share/doc/libpacparser/html/) || /bin/true
+	# install examples
+	install -d $(DESTDIR)/usr/share/doc/libpacparser/examples/
+	(test -d examples && install -m 644 examples/* $(DESTDIR)/usr/share/doc/libpacparser/examples/) || /bin/true
 
 js:
 	cd spidermonkey && $(MAKE)
