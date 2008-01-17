@@ -20,7 +20,7 @@
 
 LIB_VER=1
 CFLAGS=-g -DXP_UNIX -Wall
-LDFLAGS=-shared -soname=libpacparser.so.${LIB_VER}
+LDFLAGS=-shared 
 
 # We need PIC code for shared libraries on x86_64 platform.
 CPU_ARCH = $(shell uname -m)
@@ -73,14 +73,16 @@ ifeq ($(NOSO), $(filter-out $(MAKECMDGOALS),$(NOSO)))
   endif
 endif
 
+.PHONY: clean js install-js pymod install-pymod
 
 all: libpacparser.so
 
 pacparser.o: pacparser.c pac_utils.h
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
+	touch pymod/pacparser_o_buildstamp
 
 libpacparser.so.${LIB_VER}: pacparser.o
-	$(LD) -o libpacparser.so.${LIB_VER} pacparser.o $(LDFLAGS)
+	$(LD) -soname=libpacparser.so.${LIB_VER} -o libpacparser.so.${LIB_VER} pacparser.o $(LDFLAGS)
 
 libpacparser.so: libpacparser.so.${LIB_VER}
 	ln -sf libpacparser.so.${LIB_VER} libpacparser.so
@@ -106,6 +108,14 @@ js:
 install-js: js
 	cd spidermonkey && $(MAKE) install
 
+# Targets to build python module
+pymod: pacparser.o pacparser.h
+	cd pymod && LDFLAGS="$(LDFLAGS)" $(MAKE)
+
+install-pymod: pymod
+	cd pymod && $(MAKE) install
+
 clean:
-	rm -f libpacparser.so libpacparser.so.${LIB_VER} pacparser.o 
+	rm -f libpacparser.so libpacparser.so.${LIB_VER} pacparser.o pymod/pacparser_o_buildstamp
+	cd pymod && $(MAKE) clean
 	cd spidermonkey && $(MAKE) clean
