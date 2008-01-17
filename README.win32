@@ -100,7 +100,9 @@ Set up MingW tools:
        => dlltool --def js3250.def --dllname js3250.dll --output-lib js3250.lib
 
 12. Create pacparser dll and import library:
-    => gcc -shared -o pacparser.dll -Wl,--out-implib,libpacparser.a pacparser/pacparser.o -L. -ljs3250 -Llib -lws2_32
+    => gcc -shared -o pacparser.dll -Wl,--ouput-def,pacparser.def -Wl,--out-implib,libpacparser.a pacparser/pacparser.o -L. -ljs3250 -Llib -lws2_32
+    Generate import library, required to link in pacparser on Visual Studio.
+    => lib /machine:i386 /def:pacparser.def
 
 13. js3250.dll and nspr4.dll are needed by pacparser.dll at run time. Import
     library libpacparser.a is required to compile C programs against
