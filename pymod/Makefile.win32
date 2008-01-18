@@ -57,7 +57,10 @@ install: build
 	if exist "$(PY_HOME)\Lib\site-packages\pacparser" rmdir /s /q "$(PY_HOME)\Lib\site-packages\pacparser"
 	mkdir "$(PY_HOME)\Lib\site-packages\pacparser"
 	copy _pacparser.pyd "$(PY_HOME)\Lib\site-packages\pacparser"
+	copy ..\js3250.dll "$(PY_HOME)\Lib\site-packages\pacparser"
+	copy ..\nspr4.dll "$(PY_HOME)\Lib\site-packages\pacparser"
 	copy __init__.py "$(PY_HOME)\Lib\site-packages\pacparser"
 
 clean:
-	del pacparser_py.o _pacparser.pyd
+	if exist pacparser_py.o del pacparser_py.o
+	if exist _pacparser.pyd del _pacparser.pyd

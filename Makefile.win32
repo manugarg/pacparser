@@ -29,6 +29,12 @@ all: pacparser.dll
 pacparser.o: pacparser.c pac_utils.h
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
 
+js3250.dll:
+	copy "C:\Program Files\Mozilla Firefox\js3250.dll" .
+
+nspr4.dll:
+	copy "C:\Program Files\Mozilla Firefox\nspr4.dll" .
+
 js3250.lib: js3250.dll
 	dumpbin /EXPORTS js3250.dll > js3250.dumpbin
 	echo EXPORTS > js3250.def
@@ -40,21 +46,23 @@ pacparser.dll: pacparser.o js3250.lib
 	$(CC) -shared -o pacparser.dll -Wl,--output-def,pacparser.def -Wl,--out-implib,libpacparser.a pacparser.o -L. -ljs3250 -L..\lib -lws2_32
 	lib /machine:i386 /def:pacparser.def
 
-dist: all
+dist: pacparser.dll js3250.dll nspr4.dll
 	if exist dist rmdir /s /q dist
 	mkdir dist
 	xcopy *.dll dist
-	xcopy libpacparser.a dist
-	xcopy pacparser.lib dist
-	xcopy docs\html dist
+	if exist libpacparser.a xcopy libpacparser.a dist
+	if exist pacparser.lib xcopy pacparser.lib dist
+	mkdir dist\docs
+	if exist docs\html xcopy docs\html dist\docs
 
 # Targets to build python module
-pymod: pacparser.o pacparser.h
+pymod: pacparser.o pacparser.h js3250.lib
 	cd pymod && setup_win32.py build
 
-install-pymod: pymod
+install-pymod: pymod js3250.dll nspr4.dll
 	cd pymod && setup_win32.py install
 
 clean:
-	del pacparser.dll pacparser.o
+	if exist pacparser.dll del pacparser.dll
+	if exist pacparser.o del pacparser.o
 	cd pymod && setup_win32.py clean
