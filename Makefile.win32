@@ -40,13 +40,13 @@ pacparser.dll: pacparser.o js3250.lib
 	$(CC) -shared -o pacparser.dll -Wl,--output-def,pacparser.def -Wl,--out-implib,libpacparser.a pacparser.o -L. -ljs3250 -L..\lib -lws2_32
 	lib /machine:i386 /def:pacparser.def
 
-install: all
-	# install html docs
-	install -d $(DESTDIR)/usr/share/doc/libpacparser/html/
-	(test -d docs/html && install -m 644 docs/html/* $(DESTDIR)/usr/share/doc/libpacparser/html/) || /bin/true
-	# install examples
-	install -d $(DESTDIR)/usr/share/doc/libpacparser/examples/
-	(test -d examples && install -m 644 examples/* $(DESTDIR)/usr/share/doc/libpacparser/examples/) || /bin/true
+dist: all
+	if exist dist rmdir /s /q dist
+	mkdir dist
+	xcopy *.dll dist
+	xcopy libpacparser.a dist
+	xcopy pacparser.lib dist
+	xcopy docs\html dist
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h
@@ -56,4 +56,5 @@ install-pymod: pymod
 	cd pymod && setup_win32.py install
 
 clean:
-	del js3250.lib pacparser.dll pacparser.o
+	del pacparser.dll pacparser.o
+	cd pymod && setup_win32.py clean

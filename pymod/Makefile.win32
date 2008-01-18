@@ -28,6 +28,14 @@ ifndef PY_HOME
 	  variable.)
 endif
 
+ifndef PY_DLL
+  $(error PY_DLL is not defined. It should point to python dll location e.g. \
+	  C:\Windows\System32\Python25.dll. To avoid this error, this \
+	  makefile should be called by setup_win32.py only, which takes care \
+	  of setting that variable.)
+endif
+
+
 CFLAGS+=-I"$(PY_HOME)\include"
 
 build: _pacparser.pyd
@@ -35,17 +43,18 @@ build: _pacparser.pyd
 pacparser_py.o: pacparser_py.c
 	$(CC) $(CFLAGS) -c pacparser_py.c -o pacparser_py.o
 
-python25.lib:
-	copy C:\windows\system32\python25.dll .
-	dumpbin /EXPORTS python25.dll > python25.dumpbin
-	echo EXPORTS > python25.def
-	gawk "/[ ]+[0-9]+[ ]+[0-9A-F]+[ ]+[0-9A-F]+/ {print $$4}" python25.dumpbin >> python25.def
-	dlltool --def python25.def --dllname python25.dll --output-lib python25.lib
+python.lib:
+	copy $(PY_DLL) .
+	dumpbin /EXPORTS $(PY_DLL) > python.dumpbin
+	echo EXPORTS > python.def
+	gawk "/[ ]+[0-9]+[ ]+[0-9A-F]+[ ]+[0-9A-F]+/ {print $$4}" python.dumpbin >> python.def
+	dlltool --def python.def --dllname $(PY_DLL) --output-lib python.lib
 
-_pacparser.pyd: pacparser_py.o python25.lib
-	$(CC) -shared -o _pacparser.pyd ..\pacparser.o pacparser_py.o -L. -lpython25 -L.. -ljs3250 -L..\..\lib -lws2_32
+_pacparser.pyd: pacparser_py.o python.lib
+	$(CC) -shared -o _pacparser.pyd ..\pacparser.o pacparser_py.o -L. -lpython -L.. -ljs3250 -L..\..\lib -lws2_32
 
 install: build
+	if exist "$(PY_HOME)\Lib\site-packages\pacparser" rmdir /s /q "$(PY_HOME)\Lib\site-packages\pacparser"
 	mkdir "$(PY_HOME)\Lib\site-packages\pacparser"
 	copy _pacparser.pyd "$(PY_HOME)\Lib\site-packages\pacparser"
 	copy __init__.py "$(PY_HOME)\Lib\site-packages\pacparser"
