@@ -18,7 +18,20 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
-CFLAGS=-g -DXP_UNIX -Wall -I.. -I/usr/include/python2.5
+CFLAGS=-g -DXP_UNIX -Wall -I..
+
+ifndef PY_INC
+ifeq (yes, $(shell [ -e /usr/include/python2.5/Python.h ] && echo yes))
+  PY_INC= -I/usr/include/python2.5
+else
+  $(error Python 2.5 headers not found in /usr/include/python2.5. Please \
+	  install python headers for version 2.5. Set PY_INC variable to the \
+	  location of python headers, if headers are not installed in the \
+	  standard location. e.g. PY_INC=/usr/local/include/python2.5 make)
+endif
+endif
+
+CFLAGS+=$(PY_INC)
 
 # We need PIC code for shared libraries on x86_64 platform.
 CPU_ARCH = $(shell uname -m)

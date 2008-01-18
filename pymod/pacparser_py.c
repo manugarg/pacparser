@@ -36,6 +36,7 @@ py_pacparser_init(PyObject *self, PyObject *args)
   else
   {
     PyErr_SetString(PacparserError, "Could not initialize pacparser");
+    return NULL;
   }
 }
 

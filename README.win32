@@ -27,44 +27,41 @@ working directory is C:\devel.
 2.  Add 7-zip binaries to your system path (My Computer -> Properties ->
     Advanced -> Environment Variables).
 
-Set up MingW tools:
+Set up tools:
 
-3.  Download mingw packages -- gcc-core, mingw-runtime, w32api and binutils
-    from mingw download page: http://www.mingw.org/download.shtml to your
+3.  Download mingw packages -- gcc-core, mingw-runtime, w32api, binutils and
+    make from mingw download page: http://www.mingw.org/download.shtml to your
     working directory. Direct links:
 
     http://downloads.sourceforge.net/mingw/gcc-core-3.4.5-20060117-1.tar.gz
     http://downloads.sourceforge.net/mingw/binutils-2.17.50-20060824-1.tar.gz
     http://downloads.sourceforge.net/mingw/mingw-runtime-3.13.tar.gz
     http://downloads.sourceforge.net/mingw/w32api-3.10.tar.gz
+    http://downloads.sourceforge.net/mingw/mingw32-make-3.81-2.tar.gz
 
     However it's better to download latest packages from
     http://downloads.sourceforge.net/mingw.
 
-4.  Extract all the files into your working directory. In a command prompt
-    window, run:
-    => cd c:\devel
-    => 7z x *.gz -y
-    => 7z x *.tar -y
+4.  Get following packages from GnuWin32 project:
+    http://gnuwin32.sourceforge.net/downlinks/libiconv-bin-zip.php
+    http://gnuwin32.sourceforge.net/downlinks/libintl-bin-zip.php
+    http://gnuwin32.sourceforge.net/downlinks/gawk-bin-zip.php
+    and save them in your working directory.
 
 5.  Next we need to get the dumpbin utility to create import library from
     js3250.dll that comes with Mozilla Firefox. dumpbin utility comes with
     MASM32 assembler (www.masm32.com). You can either download it from masm32
     webpage and add masm install directory to your path. Or, you can download
-    minimal package from http://manugarg.googlepages.com/masm32-bin.zip to your
-    working directory and extract all files:
-    => cd c:\devel
-    => 7z x masm32-bin.zip
+    minimal package from
+    http://manugarg.googlepages.com/masm32-bin.zip
+    to your working directory.
 
-6.  Get following packages from GnuWin32 project:
-    http://gnuwin32.sourceforge.net/downlinks/libiconv-bin-zip.php
-    http://gnuwin32.sourceforge.net/downlinks/libintl-bin-zip.php
-    http://gnuwin32.sourceforge.net/downlinks/gawk-bin-zip.php
-    and save them in your working directory. Unzip them:
-    => cd c:\devel
-    => 7z x gawk*.zip
-    => 7z x libintl*.zip
-    => 7z x libiconv*.zip
+6.  Extract all the files into your working directory. In a command prompt
+    window, run:
+      cd c:\devel
+      7z x *.gz -y
+      7z x *.tar -y
+      7z x *.zip -y
 
 7.  Add your working directory's bin (C:\devel\bin) to your path.
 
@@ -73,46 +70,33 @@ Set up MingW tools:
 8.  Now download pacparser source code tarball from
     http://code.google.com/p/pacparser/downloads/list and save it in your
     working directory. Then extract it using 7z:
-    => cd c:\devel
-    => 7z x pacparser*.tar.gz
-    => 7z x pacparser*.tar
+      cd c:\devel
+      7z x pacparser*.tar.gz
+      7z x pacparser*.tar
 
-9.  Compile pacparser:
-    => cd c:\devel\pacparser
-    => gcc -DXP_WIN -I spidermonkey\win32 -c pacparser.c
-
-10. Copy js3250.dll and nspr4.dll from Mozilla Firefox's installation directory
+9.  Copy js3250.dll and nspr4.dll from Mozilla Firefox's installation directory
     to working directory (Install firefox if you don't have it already).
-    => cd c:\devel
-    => copy "C:\Program Files\Mozilla Firefox\js3250.dll" .
-    => copy "C:\Program Files\Mozilla Firefox\nspr4.dll" .
+      cd c:\devel
+      copy "C:\Program Files\Mozilla Firefox\js3250.dll" .
+      copy "C:\Program Files\Mozilla Firefox\nspr4.dll" .
 
-11. Create import library for js3250.
-
-    a) Get the dump of exports from js3250.dll:
-       => dumpbin /EXPORTS ./js3250.dll > js3250.dumpbin
-
-    b) Create the def file:
-       => echo EXPORTS > js3250.def
-       => gawk "/[ ]+[0-9]+[ ]+[0-9A-F]+[ ]+[0-9A-F]+/ {print $4}" js3250.dumpbin >> js3250.def
-
-    c) Create import libary (.lib file):
-       => dlltool --def js3250.def --dllname js3250.dll --output-lib js3250.lib
-
-12. Create pacparser dll and import library:
-    => gcc -shared -o pacparser.dll -Wl,--ouput-def,pacparser.def -Wl,--out-implib,libpacparser.a pacparser/pacparser.o -L. -ljs3250 -Llib -lws2_32
-    Generate import library, required to link in pacparser on Visual Studio.
-    => lib /machine:i386 /def:pacparser.def
+10. Compile pacparser:
+      cd c:\devel\pacparser-1.0.1 (for version 1.0.1)
+      make -f Makefile.win32
+    This will create pacparser.dll, libpacparser.a (file needed to link in
+    pacparser with mingw compiler tools), pacparser.lib (file needed to link in
+    pacparser on Visual Studio).
 
 13. js3250.dll and nspr4.dll are needed by pacparser.dll at run time. Import
     library libpacparser.a is required to compile C programs against
-    pacparser.dll. These four files - js3250.dll, nspr4.dll, pacparser.dll and
-    libpacparser.a will make our distribution package for Windows. Copy all
-    these files to dist directory.
-    => cd c:\devel
-    => mkdir dist
-    => xcopy *.dll dist
-    => xcopy libpacparser.a dist
+    pacparser.dll. These four files - js3250.dll, nspr4.dll, pacparser.dll,
+    libpacparser.a and pacparser.lib will make our distribution package for
+    Windows. Copy all these files to dist directory.
+      cd c:\devel
+      mkdir dist
+      xcopy *.dll dist
+      xcopy libpacparser.a dist
+      xcopy pacparser.lib dist
 
 Using pacparser on Windows:
 --------------------------
@@ -123,7 +107,7 @@ sytem path somewhere (current directory would do just fine for testing purpose).
 libpacparser.a is required only for compilation and can be in the same directory
 as your program.
   Change to your program's directory:
-  =>  cd c:\devel\pacparser\examples
+  =>  cd c:\devel\pacparser-1.0.1\examples
   Copy required files (from installation or distribution directory):
   => xcopy c:\devel\dist\* .
   Compile your program:

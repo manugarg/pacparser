@@ -21,18 +21,34 @@
 CFLAGS=-g -DXP_WIN -Wall -I..
 CC=gcc
 
-all: _pacparser.dll
+ifndef PY_HOME
+  $(error PY_HOME is not defined. It should point to your installtion \
+	  directory e.g. C:\Python25. To avoid this error, this file should \
+	  be called by setup_win32.py only, which takes care of setting that \
+	  variable.)
+endif
+
+CFLAGS+=-I"$(PY_HOME)\include"
+
+build: _pacparser.pyd
 
 pacparser_py.o: pacparser_py.c
 	$(CC) $(CFLAGS) -c pacparser_py.c -o pacparser_py.o
 
-_pacparser.dll: pacparser_py.o
-	$(CC) -shared -o _pacparser.dll ..\pacparser.o pacparser_py.o -L.. -ljs3250 -L..\..\lib -lws2_32
-	lib /machine:i386 /def:pacparser.def
+python25.lib:
+	copy C:\windows\system32\python25.dll .
+	dumpbin /EXPORTS python25.dll > python25.dumpbin
+	echo EXPORTS > python25.def
+	gawk "/[ ]+[0-9]+[ ]+[0-9A-F]+[ ]+[0-9A-F]+/ {print $$4}" python25.dumpbin >> python25.def
+	dlltool --def python25.def --dllname python25.dll --output-lib python25.lib
 
-install: all
-	install -d $(DESTDIR)/usr/lib/python2.5/site-packages/pacparser
-	install -m 644 *.{py,so} $(DESTDIR)/usr/lib/python2.5/site-packages/pacparser/
+_pacparser.pyd: pacparser_py.o python25.lib
+	$(CC) -shared -o _pacparser.pyd ..\pacparser.o pacparser_py.o -L. -lpython25 -L.. -ljs3250 -L..\..\lib -lws2_32
+
+install: build
+	mkdir "$(PY_HOME)\Lib\site-packages\pacparser"
+	copy _pacparser.pyd "$(PY_HOME)\Lib\site-packages\pacparser"
+	copy __init__.py "$(PY_HOME)\Lib\site-packages\pacparser"
 
 clean:
-	rm -f pacparser_py.o _pacparser.dll
+	del pacparser_py.o _pacparser.pyd

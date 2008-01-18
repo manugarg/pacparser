@@ -50,10 +50,10 @@ install: all
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h
-	cd pymod && $(MAKE) -f Makefile.win32
+	cd pymod && setup_win32.py build
 
 install-pymod: pymod
-	cd pymod && $(MAKE) -f Makefile.win32 install
+	cd pymod && setup_win32.py install
 
 clean:
 	del js3250.lib pacparser.dll pacparser.o

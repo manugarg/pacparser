@@ -20,7 +20,7 @@
 
 LIB_VER=1
 CFLAGS=-g -DXP_UNIX -Wall
-LDFLAGS=-shared 
+LDFLAGS=-shared
 
 # We need PIC code for shared libraries on x86_64 platform.
 CPU_ARCH = $(shell uname -m)
@@ -30,6 +30,7 @@ endif
 
 NOSO=clean js install-js
 
+ifndef SM_LIB
 ifeq (yes, $(shell [ -e /usr/lib/libjs.so -o -e /usr/local/lib/libjs.so ] && echo yes))
   SM_LIB= -ljs
 else
@@ -41,7 +42,9 @@ else
     endif
   endif
 endif
+endif
 
+ifndef SM_INC
 ifeq (yes, $(shell [ -e /usr/include/js ] && echo yes))
   SM_INC= -I/usr/include/js
 else
@@ -56,6 +59,7 @@ else
       endif
     endif
   endif
+endif
 endif
 
 ifeq ($(NOSO), $(filter-out $(MAKECMDGOALS),$(NOSO)))
