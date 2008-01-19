@@ -24,14 +24,14 @@ CC=gcc
 ifndef PY_HOME
   $(error PY_HOME is not defined. It should point to your installtion \
 	  directory e.g. C:\Python25. To avoid this error, this file should \
-	  be called by setup_win32.py only, which takes care of setting that \
+	  be called by setup.py only, which takes care of setting that \
 	  variable.)
 endif
 
 ifndef PY_DLL
   $(error PY_DLL is not defined. It should point to python dll location e.g. \
 	  C:\Windows\System32\Python25.dll. To avoid this error, this \
-	  makefile should be called by setup_win32.py only, which takes care \
+	  makefile should be called by setup.py only, which takes care \
 	  of setting that variable.)
 endif
 

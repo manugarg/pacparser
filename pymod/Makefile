@@ -20,14 +20,18 @@
 
 CFLAGS=-g -DXP_UNIX -Wall -I..
 
+ifndef PY_VER
+  PY_VER= 2.5
+endif
+
 ifndef PY_INC
-ifeq (yes, $(shell [ -e /usr/include/python2.5/Python.h ] && echo yes))
-  PY_INC= -I/usr/include/python2.5
+ifeq (yes, $(shell [ -e /usr/include/python$(PY_VER)/Python.h ] && echo yes))
+  PY_INC= -I/usr/include/python$(PY_VER)
 else
-  $(error Python 2.5 headers not found in /usr/include/python2.5. Please \
-	  install python headers for version 2.5. Set PY_INC variable to the \
-	  location of python headers, if headers are not installed in the \
-	  standard location. e.g. PY_INC=/usr/local/include/python2.5 make)
+  $(error Python headers not found in /usr/include/python$(PY_VER). Please \
+	  install python headers. Set PY_INC variable to the location of \
+	  python headers, if headers are not installed in the standard \
+	  location. e.g. PY_INC=/usr/local/include/python$(PY_VER) make)
 endif
 endif
 
@@ -48,8 +52,8 @@ _pacparser.so: pacparser_py.o pacparser_o_buildstamp
 	$(LD) -soname=pacparser.so -o _pacparser.so ../pacparser.o pacparser_py.o $(LDFLAGS)
 
 install: all
-	install -d $(DESTDIR)/usr/lib/python2.5/site-packages/pacparser
-	install -m 644 *.{py,so} $(DESTDIR)/usr/lib/python2.5/site-packages/pacparser/
+	install -d $(DESTDIR)/usr/lib/python$(PY_VER)/site-packages/pacparser
+	install -m 644 *.{py,so} $(DESTDIR)/usr/lib/python$(PY_VER)/site-packages/pacparser/
 
 clean:
 	rm -f pacparser_py.o _pacparser.so

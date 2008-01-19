@@ -114,10 +114,10 @@ install-js: js
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h
-	cd pymod && LDFLAGS="$(LDFLAGS)" $(MAKE)
+	cd pymod && LDFLAGS="$(LDFLAGS)" python setup.py
 
 install-pymod: pymod
-	cd pymod && $(MAKE) install
+	cd pymod && python setup.py install
 
 clean:
 	rm -f libpacparser.so libpacparser.so.${LIB_VER} pacparser.o pymod/pacparser_o_buildstamp
