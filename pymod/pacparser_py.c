@@ -21,6 +21,16 @@
 #include <Python.h>
 #include "pacparser.h"
 
+// PyMODINIT_FUNC macro is not defined on python < 2.3. Take care of that.
+#ifndef PyMODINIT_FUNC        /* declarations for DLL import/export */
+#define PyMODINIT_FUNC void
+#endif
+
+// Py_RETURN_NONE macro is not defined on python < 2.4. Take care of that.
+#ifndef Py_RETURN_NONE
+#define Py_RETURN_NONE return Py_INCREF(Py_None), Py_None
+#endif
+
 static PyObject *PacparserError;
 // Initialize PAC parser.
 //

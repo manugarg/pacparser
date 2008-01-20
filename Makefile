@@ -121,5 +121,5 @@ install-pymod: pymod
 
 clean:
 	rm -f libpacparser.so libpacparser.so.${LIB_VER} pacparser.o pymod/pacparser_o_buildstamp
-	cd pymod && $(MAKE) clean
+	cd pymod && python setup.py clean
 	cd spidermonkey && $(MAKE) clean
