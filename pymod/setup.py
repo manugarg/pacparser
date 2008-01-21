@@ -44,9 +44,9 @@ if sys.platform.startswith("linux"):
     env = '%s CFLAGS="%s"' % (env, os.environ['CFLAGS'])
   os.system('%s make %s PY_VER="%s"' % (env, target, ver))
 
-if sys.platform is 'win32':
+if sys.platform == 'win32':
   #install target is used to just install compiled files.
-  if target is 'install':
+  if target == 'install':
     import shutil
     install_path = '%s\Lib\site-packages\pacparser' % sys.prefix
     if os.path.isdir(install_path):

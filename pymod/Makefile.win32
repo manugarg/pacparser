@@ -38,6 +38,8 @@ endif
 
 CFLAGS+=-I"$(PY_HOME)\include"
 
+.PHONY: dist clean
+
 build: _pacparser.pyd
 
 pacparser_py.o: pacparser_py.c
