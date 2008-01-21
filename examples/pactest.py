@@ -1,16 +1,12 @@
 #!/usr/bin/python2.5
 
-from ctypes import *
+import pacparser
 
-pp = CDLL("libpacparser.so")
-
-pp.pacparser_init()
-pp.pacparser_parse_pac("wpad.dat")
-proxy = pp.pacparser_find_proxy("http://www.manugarg.com", "www.manugarg.com")
-print string_at(proxy)
-pp.pacparser_cleanup()
+pacparser.init()
+pacparser.parse_pac("wpad.dat")
+proxy = pacparser.find_proxy("http://www.manugarg.com")
+print proxy
+pacparser.cleanup()
 
 # Or simply,
-print string_at(pp.pacparser_just_find_proxy("examples/wpad.dat",
-                                             "http://xyz.manugarg.com",
-                                             "xyz.manugarg.com"))
+print pacparser.just_find_proxy("wpad.dat", "http://www2.manugarg.com")

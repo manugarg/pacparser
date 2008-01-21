@@ -29,6 +29,10 @@ __copyright__ = 'Copyright (C) 2008 Manu Garg'
 __license__ = 'LGPL'
 
 import _pacparser
+import os
+import re
+
+url_regex = re.compile('(http[s]?|ftp)\:\/\/([^\/]+).*')
 
 def init():
   """
@@ -47,6 +51,12 @@ def find_proxy(url, host=None):
   Finds proxy string for the given url and host. If host is not
   defined, it's extracted from url.
   """
+  if host is None:
+    matches = url_regex.findall(url)[0]
+    if len(matches) is not 2:
+      print 'URL: %s is not a valid URL' % url
+      return None
+    host = matches[1]
   return _pacparser.find_proxy(url, host)
 
 def cleanup():
@@ -61,6 +71,17 @@ def just_find_proxy(pacfile, url, host=None):
   and cleanup. This is the function to call if you want to find
   proxy just for one url.
   """
+  if os.path.isfile(pacfile):
+    pass
+  else:
+    print 'PAC file: %s doesn\'t exist' % pacfile
+    return None
+  if host is None:
+    matches = url_regex.findall(url)[0]
+    if len(matches) is not 2:
+      print 'URL: %s is not a valid URL' % url
+      return None
+    host = matches[1]
   init()
   parse_pac(pacfile)
   proxy = find_proxy(url,host)
