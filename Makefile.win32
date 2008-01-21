@@ -57,12 +57,12 @@ dist: pacparser.dll js3250.dll nspr4.dll
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h js3250.lib
-	cd pymod && setup_win32.py build
+	cd pymod && setup.py build
 
-install-pymod: pymod js3250.dll nspr4.dll
-	cd pymod && setup_win32.py install
+dist-pymod: pymod js3250.dll nspr4.dll
+	cd pymod && setup.py dist
 
 clean:
 	if exist pacparser.dll del pacparser.dll
 	if exist pacparser.o del pacparser.o
-	cd pymod && setup_win32.py clean
+	cd pymod && setup.py clean

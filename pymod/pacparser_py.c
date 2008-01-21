@@ -1,7 +1,7 @@
 // Copyright (C) 2007 Manu Garg.
 // Author: Manu Garg <manugarg@gmail.com>
 //
-// pacparser is a C library that provides methods to parse proxy auto-config
+// pacparser is a library that provides methods to parse proxy auto-config
 // (PAC) files. Please read README file included with this package for more
 // information about this library.
 //

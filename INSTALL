@@ -1,9 +1,6 @@
 On Unix-like Systems:
 ####################
 
-Installing pacparser from Source Code:
-=====================================
-
 You can download latest pacparser source code tarball from:
   http://code.google.com/p/pacparser/downloads/list.
 
@@ -11,11 +8,11 @@ You can also get the latest source code from subversion (svn) repository by
 following instructions at:
   http://code.google.com/p/pacparser/source
 
-pacparser uses SpiderMonkey JavaScript (JS) interpreter to parse PAC files. So,
-we need to get SpiderMonkey JS interpreter first.
+pacparser uses SpiderMonkey JavaScript (JS) engine to parse PAC files. So, we
+need to get SpiderMonkey JS engine first.
 
-Installing SpiderMonkey JS Interpreter:
---------------------------------------
+* Installing SpiderMonkey JS Engine (required to build and use pacparser):
+  -----------------------------------------------------------------------
   There are packages available for Ubuntu and Debian. For other systems, you
   can compile it from sources.
 
@@ -26,17 +23,23 @@ Installing SpiderMonkey JS Interpreter:
       => sudo apt-get install libsmjs1 libsmjs-dev
 
   * By compiling from source:
-      SpiderMonkey JS interpreter is included with pacparser source code, and can
+      SpiderMonkey JS engine is included with pacparser source code, and can
       be compiled and installed by running following:
       => make js
       => sudo make install-js
 
-Compiling and Installing pacparser:
-----------------------------------
-  Once you have SpiderMonkey JS interpreter, compiling and installing pacparser is
+* pacparser C library:
+  ----------------------------------
+  Once you have SpiderMonkey JS engine, compiling and installing pacparser is
   as easy as running following:
      => make
      => sudo make install
+
+* pacparser python module:
+  ------------------------------------------------
+  To compile and install pacparser python module:
+    => make pymod
+    => make install-pymod
 
 On Win-32 Systems:
 #################
@@ -44,15 +47,29 @@ On Win-32 Systems:
 Binary Distribution:
 ===================
 
-Compiled packages for win32 systems (pacparser-v.v.v-win32.zip) can be
-downloaded from:
+Compiled packages for win32 systems can be downloaded from:
 http://code.google.com/p/pacparser/downloads/list
 
-To install it, just extract it somewhere. It will create a directory -
-"pacparser". Your system should be able to find DLLs inside this directory.
-There are two ways to achieve that - either you can add pacparser directory to
-your system path or, you can execute programs from this directory i.e. with
-this directory as your current working directory.
+* C Library:
+  ---------
+To install pacparser C library, download package pacparser-v.v.v-win32.zip and
+extract it somewhere on your machine. It will create a directory -
+"pacparser-v.v.v". Copy all the DLLs in the directory to somewhere on the
+system where system can find them while executing your program (application's
+executable's location will do fine for this purpose) or simply add pacparser
+directory to system path. You'll need libpacparser.a and pacparser.lib to link
+in pacparser on mingw compiler tools and Visual Studio respectively. Here are
+the detailed instructions to link in pacparser on Visual Studio:
+http://code.google.com/p/pacparser/wiki/LinkingOnVisualStudio.
+
+* Python Module
+  -------------
+To install pacparser python module (available only for Python 2.5 right now),
+download package pacparser-python25-v.v.v-win32.zip and extract it somewhere
+on your system. On command prompt (cmd), change directory to
+pacparser-python25-v.v.v-win32 and execute "setup.py install". If it fails for
+some reason, simply copy all the files from this directory to
+C:\Python25\Lib\site-packages\pacparser and you are done.
 
 Compiling from Source Code:
 ==========================

@@ -49,7 +49,7 @@ pacparser_py.o: pacparser_py.c
 	$(CC) $(CFLAGS) -c pacparser_py.c -o pacparser_py.o
 
 _pacparser.so: pacparser_py.o pacparser_o_buildstamp
-	$(LD) -soname=pacparser.so -o _pacparser.so ../pacparser.o pacparser_py.o $(LDFLAGS)
+	$(LD) -soname=pacparser.so -rpath . -o _pacparser.so ../pacparser.o pacparser_py.o $(LDFLAGS)
 
 install: all
 	install -d $(DESTDIR)/usr/lib/python$(PY_VER)/site-packages/pacparser

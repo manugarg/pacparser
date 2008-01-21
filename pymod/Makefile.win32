@@ -53,13 +53,13 @@ python.lib:
 _pacparser.pyd: pacparser_py.o python.lib
 	$(CC) -shared -o _pacparser.pyd ..\pacparser.o pacparser_py.o -L. -lpython -L.. -ljs3250 -L..\..\lib -lws2_32
 
-install: build
-	if exist "$(PY_HOME)\Lib\site-packages\pacparser" rmdir /s /q "$(PY_HOME)\Lib\site-packages\pacparser"
-	mkdir "$(PY_HOME)\Lib\site-packages\pacparser"
-	copy _pacparser.pyd "$(PY_HOME)\Lib\site-packages\pacparser"
-	copy ..\js3250.dll "$(PY_HOME)\Lib\site-packages\pacparser"
-	copy ..\nspr4.dll "$(PY_HOME)\Lib\site-packages\pacparser"
-	copy __init__.py "$(PY_HOME)\Lib\site-packages\pacparser"
+dist: _pacparser.pyd __init__.py
+	if exist dist rmdir /s /q dist
+	mkdir dist
+	copy _pacparser.pyd dist
+	copy ..\js3250.dll dist
+	copy ..\nspr4.dll dist
+	xcopy *.py dist
 
 clean:
 	if exist pacparser_py.o del pacparser_py.o

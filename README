@@ -1,18 +1,22 @@
 pacparser
 =========
 
-pacparser is a C library to parse PAC (proxy auto-config) files. PAC files
-(implemented in JavaScript) are a proxy configuration method for web access.
-Using them, browsers can be configured to use different proxy servers for
-different URLs, source IP addresses, protocols etc. PAC files can also be used
-for a highly available proxy setup as you can specify more than one proxy
-server using them.
+pacparser is a library to parse proxy auto-config (PAC) files. Proxy
+auto-config files are a vastly used proxy configuration method these days. Web
+browsers can use a PAC file to determine which proxy server to use or whether
+to go direct for a given URL. PAC files are written in JavaScript and can be
+programmed to return different proxy methods (e.g. "PROXY proxy1:port; DIRECT")
+depending upon URL, source IP address, protocol, time of the day etc. PAC files
+introduce a lot of possibilities. Please look at the wikipedia entry for Proxy
+auto-config (http://en.wikipedia.org/wiki/Proxy_auto-config) for more
+information.
 
 Needless to say, PAC files are now a widely accepted method for proxy
-configuration management and almost all popular browsers support them.
-The idea behind pacparser is to make it easy to add this PAC file parsing
-capability to other programs. It comes as a shared C library with a clear API.
-You can use it to make any C or python (using ctypes) program PAC scripts
+configuration management and companies all over are using them in corporate
+environment. Almost all popular web browsers support PAC files. The idea behind
+pacparser is to make it easy to add this PAC file parsing capability to any
+program (C and python supported right now). It comes as a shared C library and
+a python module which can be used to make any C or python program PAC scripts
 intelligent. Some very useful targets could be popular web software like wget,
 curl and python-urllib.
 
@@ -31,27 +35,24 @@ Please see 'INSTALL' in the root directory of the package.
 
 * How to use it?
   --------------
-As pacparser comes as a shared library (libpacparser.so on Unix-like systems
-and pacparser.dll on windows), using it is as easy compiling your C programs
-against it. Or, you can simply call it's methods from within your python
-programs using ctypes module.
+Pacparser comes as a shared library (libpacparser.so on Unix-like systems
+and pacparser.dll on windows) as well as a python module. Using it is as easy
+compiling your C programs against it or importing pacparser module in your
+python programs.
 
 * Usage Examples
   --------------
 
-Using it with python-ctypes:
+Using it in python:
 ---------------------------------------------------------------------
->>> from ctypes import *
->>> pp=CDLL('./libpacparser.so')
->>> pp.pacparser_init()
-1
->>> pp.pacparser_parse_pac('examples/wpad.dat')
-1
->>> pp.pacparser_find_proxy('http://www.google.com', 'www.google.com')
-136307304
->>> string_at(136307304)
+>>> import pacparser
+>>> pacparser.init()
+>>> pacparser.parse_pac('examples/wpad.dat')
+>>> pacparser.find_proxy('http://www.google.com', 'www.google.com')
 'PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT'
->>> pp.pacparser_cleanup()
+>>> pacparser.find_proxy('http://www2.manugarg.com', 'www2.manugarg.com')
+'DIRECT'
+>>> pacparser.cleanup()
 >>>
 ---------------------------------------------------------------------
 

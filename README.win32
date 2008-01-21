@@ -1,15 +1,19 @@
+This file is about the instructions to build (and use) pacparser on Windows.
+For general information on pacparser, please have a look at README in the same
+directory.
+
 Building pacparser on Windows:
 -----------------------------
 To build pacparser on Windows you'll have to install some helper utilities
 first. For compiling and linking pacparser, you'll need MinGW (www.mingw.org)
 tools which can produce native windows programs. Apart from that, pacparser
 needs SpiderMonkey JavaScript interpreter to work. DLL for SpiderMonkey
-JavaScript interpreter is bundled with Mozilla Firefox (js3250.dll), which makes
-our job a little easier. But, to be able to compile against this DLL, we need
-import library (yes, Windows is weird). Creating this import library is a two
-step process involving creation of definition file from .dll file using dumpbin
-utility that comes with masm32, and then creation of import library from that
-definition file and .dll file using dlltool.
+JavaScript interpreter is bundled with Mozilla Firefox (js3250.dll), which
+makes our job a little easier. But, to be able to compile against this DLL, we
+need import library (yes, it's different on Windows). Creating this import
+library is a two step process involving creation of definition file from .dll
+file using dumpbin utility that comes with masm32, and then creation of import
+library from that definition file and .dll file using dlltool.
 
 
 Detailed Instructions:
@@ -74,29 +78,23 @@ Set up tools:
       7z x pacparser*.tar.gz
       7z x pacparser*.tar
 
-9.  Copy js3250.dll and nspr4.dll from Mozilla Firefox's installation directory
-    to working directory (Install firefox if you don't have it already).
-      cd c:\devel
-      copy "C:\Program Files\Mozilla Firefox\js3250.dll" .
-      copy "C:\Program Files\Mozilla Firefox\nspr4.dll" .
-
-10. Compile pacparser:
+9. Compile pacparser. (Make sure that you have Firefox installed on your
+   machine in standard location i.e. C:\Program Files\Mozilla Firefox before
+   running this step.)
       cd c:\devel\pacparser-1.0.1 (for version 1.0.1)
       make -f Makefile.win32
     This will create pacparser.dll, libpacparser.a (file needed to link in
     pacparser with mingw compiler tools), pacparser.lib (file needed to link in
     pacparser on Visual Studio).
 
-13. js3250.dll and nspr4.dll are needed by pacparser.dll at run time. Import
-    library libpacparser.a is required to compile C programs against
-    pacparser.dll. These four files - js3250.dll, nspr4.dll, pacparser.dll,
-    libpacparser.a and pacparser.lib will make our distribution package for
-    Windows. Copy all these files to dist directory.
-      cd c:\devel
-      mkdir dist
-      xcopy *.dll dist
-      xcopy libpacparser.a dist
-      xcopy pacparser.lib dist
+10. Move just compiled library and other files required at runtime to a
+    directory (dist).
+      make -f Makefile.win32 dist
+
+11. Compile pacparser python module and copy required files to a directory
+    (dist).
+      make -f Makefile.win32 pymod
+      make -f Makefile.win32 dist-pymod
 
 Using pacparser on Windows:
 --------------------------
@@ -108,8 +106,9 @@ libpacparser.a is required only for compilation and can be in the same directory
 as your program.
   Change to your program's directory:
   =>  cd c:\devel\pacparser-1.0.1\examples
-  Copy required files (from installation or distribution directory):
-  => xcopy c:\devel\dist\* .
+  Download pacarser package (pacparser-1.0.1-win32.zip) from
+  http://code.google.com/p/pacparser/downloads/list
+  => xcopy c:\pacparser-1.0.1\* .
   Compile your program:
   => gcc -o pactest pactest.c -L. -lpacparser
   Run your program:
@@ -119,17 +118,10 @@ as your program.
 * In python programs:
 
 You can use it with python programs in the same way as for Unix-like systems.
-  If DLLs are not in system path, change to installation directory:
-  => cd c:\devel\dist
-  Run python interpreter:
   => C:\python25\python
-  >>> from ctypes import *
-  >>> pacparser=CDLL('pacparser')
-  >>> pacparser.init_pac_parser()
-  1
+  >>> import pacparser
+  >>> pacparser.init()
   >>> pacparser.parse_pac('examples/wpad.dat')
-  1
-  >>> pacparser.find_proxy_for_url('http://www.google.com', 'www.google.com')
-  136307304
-  >>> string_at(136307304)
+  >>> pacparser.find_proxy('http://www.google.com', 'www.google.com')
   'PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT'
+  >>> pacparser.cleanup()
