@@ -52,11 +52,15 @@ def find_proxy(url, host=None):
   defined, it's extracted from url.
   """
   if host is None:
-    matches = url_regex.findall(url)[0]
-    if len(matches) is not 2:
+    m = url_regex.match(url)
+    if not m:
       print 'URL: %s is not a valid URL' % url
       return None
-    host = matches[1]
+    if len(m.groups()) is 2:
+      host = m.groups()[1]
+    else:
+      print 'URL: %s is not a valid URL' % url
+      return None
   return _pacparser.find_proxy(url, host)
 
 def cleanup():
@@ -77,11 +81,15 @@ def just_find_proxy(pacfile, url, host=None):
     print 'PAC file: %s doesn\'t exist' % pacfile
     return None
   if host is None:
-    matches = url_regex.findall(url)[0]
-    if len(matches) is not 2:
+    m = url_regex.match(url)
+    if not m:
       print 'URL: %s is not a valid URL' % url
       return None
-    host = matches[1]
+    if len(m.groups()) is 2:
+      host = m.groups()[1]
+    else:
+      print 'URL: %s is not a valid URL' % url
+      return None
   init()
   parse_pac(pacfile)
   proxy = find_proxy(url,host)
