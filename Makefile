@@ -22,6 +22,10 @@ LIB_VER=1
 CFLAGS=-g -DXP_UNIX -Wall
 LDFLAGS=-shared
 
+ifndef PYTHON
+  PYTHON=python
+endif
+
 # We need PIC code for shared libraries on x86_64 platform.
 CPU_ARCH = $(shell uname -m)
 ifeq ($(CPU_ARCH),x86_64)
@@ -114,10 +118,10 @@ install-js: js
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h
-	cd pymod && LDFLAGS="$(LDFLAGS)" python setup.py
+	cd pymod && LDFLAGS="$(LDFLAGS)" $(PYTHON) setup.py
 
 install-pymod: pymod
-	cd pymod && python setup.py install
+	cd pymod && $(PYTHON) setup.py install
 
 clean:
 	rm -f libpacparser.so libpacparser.so.${LIB_VER} pacparser.o pymod/pacparser_o_buildstamp

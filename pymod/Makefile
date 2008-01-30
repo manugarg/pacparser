@@ -43,17 +43,18 @@ ifeq ($(CPU_ARCH),x86_64)
   CFLAGS+= -fPIC
 endif
 
-all: _pacparser.so
+all: _pacparser$(PY_VER).so
 
-pacparser_py.o: pacparser_py.c
-	$(CC) $(CFLAGS) -c pacparser_py.c -o pacparser_py.o
+pacparser_py$(PY_VER).o: pacparser_py.c
+	$(CC) $(CFLAGS) -c pacparser_py.c -o pacparser_py$(PY_VER).o
 
-_pacparser.so: pacparser_py.o pacparser_o_buildstamp
-	$(LD) -soname=pacparser.so -rpath . -o _pacparser.so ../pacparser.o pacparser_py.o $(LDFLAGS)
+_pacparser$(PY_VER).so: pacparser_py$(PY_VER).o pacparser_o_buildstamp
+	$(LD) -soname=pacparser.so -rpath . -o _pacparser$(PY_VER).so ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS)
 
 install: all
 	install -d $(DESTDIR)/usr/lib/python$(PY_VER)/site-packages/pacparser
-	install -m 644 *.{py,so} $(DESTDIR)/usr/lib/python$(PY_VER)/site-packages/pacparser/
+	install -m 644 *.py $(DESTDIR)/usr/lib/python$(PY_VER)/site-packages/pacparser/
+	install -m 644 _pacparser$(PY_VER).so $(DESTDIR)/usr/lib/python$(PY_VER)/site-packages/pacparser/_pacparser.so
 
 clean:
-	rm -f pacparser_py.o _pacparser.so
+	rm -f *.o *.so
