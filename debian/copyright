@@ -1,0 +1,19 @@
+This package was debianized by manu garg <manugarg@gmail.com> on
+Mon, 17 Dec 2007 22:08:35 +0530.
+
+It was downloaded from <http://code.google.com/p/pacparser/downloads/list>
+
+Upstream Author(s): 
+
+    Manu Garg <manugarg@gmail.com>
+
+Copyright: 
+
+    <Copyright (C) 2008 Manu Garg>
+
+License:
+
+    GNU Lesser General Public License
+
+The Debian packaging is (C) 2007, manu garg <manugarg@gmail.com> and
+is licensed under the GPL, see `/usr/share/common-licenses/GPL'.
