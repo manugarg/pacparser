@@ -1,7 +1,7 @@
 Source: pacparser
 Priority: extra
 Maintainer: manu garg <manugarg@gmail.com>
-Build-Depends: debhelper (>= 5), libmozjs-dev, libmozjs0d, python (>=2.2)
+Build-Depends: debhelper (>= 5), libmozjs-dev | libsmjs-dev, python-dev (>=2.2)
 Standards-Version: 3.7.2
 Section: libs
 
