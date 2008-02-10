@@ -22,10 +22,10 @@
 # USA
 
 """
-This script demonstrates how python web clients can be made proxy
-auto-config (PAC) files intelligent using pacparser module. It take a
-PAC file and an url as arguments, fetches the URL using the proxy as
-determined by PAC file and URL and returns the retrieved webpage.
+This script demonstrates how python web clients can use
+proxy auto-config (PAC) files for proxy configuration using pacparser.
+It take a PAC file and an url as arguments, fetches the URL using the
+proxy as determined by PAC file and URL and returns the retrieved webpage.
 """
 
 __author__ = 'manugarg@gmail.com (Manu Garg)'
@@ -37,7 +37,7 @@ import socket
 import sys
 import urllib
 
-def fetchurl(pac, url):
+def fetch_url_using_pac(pac, url):
   try:
     proxy_string = pacparser.just_find_proxy(pac, url)
   except:
@@ -83,12 +83,12 @@ def isproxyalive(proxy):
 
 def main():
   if len(sys.argv) != 3:
-    print "Not enough arguments"
-    print "Usage:\n./fetchurl.py <pacfile> <url>"
+    print 'Not enough arguments'
+    print 'Usage:\n%s <pacfile> <url>' % sys.argv[0]
     return None
   pacfile = sys.argv[1]
   url = sys.argv[2]
-  response = fetchurl(pacfile, url)
+  response = fetch_url_using_pac(pacfile, url)
   if response:
     print response.read()
   else:
