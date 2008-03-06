@@ -1,0 +1,38 @@
+.\" WARNING! THIS FILE WAS GENERATED AUTOMATICALLY BY c2man!
+.\" DO NOT EDIT! CHANGES MADE TO THIS FILE WILL BE LOST!
+.TH "pacparser_find_proxy" 3 "9 December 2007" "c2man pacparser.h"
+.SH "NAME"
+pacparser_find_proxy \- Finds proxy for a given URL and Host.
+.SH "SYNOPSIS"
+.ft B
+#include <pacparser.h>
+.sp
+char *pacparser_find_proxy
+.br
+(
+.br
+	const char *url,
+.br
+	const char *host
+.br
+);
+.ft R
+.SH "PARAMETERS"
+.TP
+.B "const char *url"
+URL to find proxy for.
+.TP
+.B "const char *host"
+Host part of the URL.
+.SH "DESCRIPTION"
+This function should be called only after pacparser engine has been
+initialized (using pacparser_init) and pac file has been parsed (using
+pacparser_parse_pac). It determines "right" proxy (based on pac file) for
+url and host.
+.SH "RETURNS"
+Proxy string on sucess and NULL on error.
+.SH "SEE ALSO"
+pacparser_init(3),
+pacparser_parse_pac(3),
+pacparser_just_find_proxy(3),
+pacparser_cleanup(3)

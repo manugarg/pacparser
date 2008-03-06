@@ -1,0 +1,25 @@
+.\" WARNING! THIS FILE WAS GENERATED AUTOMATICALLY BY c2man!
+.\" DO NOT EDIT! CHANGES MADE TO THIS FILE WILL BE LOST!
+.TH "pacparser_parse_pac" 3 "9 December 2007" "c2man pacparser.h"
+.SH "NAME"
+pacparser_parse_pac \- Parse pac file
+.SH "SYNOPSIS"
+.ft B
+#include <pacparser.h>
+.sp
+int pacparser_parse_pac(const char *pacfile);
+.ft R
+.SH "PARAMETERS"
+.TP
+.B "const char *pacfile"
+PAC file to parse.
+.SH "DESCRIPTION"
+Parses and evaulates PAC file in JavaScript context created by
+pacparser_init.
+.SH "RETURNS"
+0 on failure and 1 on success.
+.SH "SEE ALSO"
+pacparser_init(3),
+pacparser_find_proxy(3),
+pacparser_just_find_proxy(3),
+pacparser_cleanup(3)
