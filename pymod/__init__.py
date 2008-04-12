@@ -95,3 +95,9 @@ def just_find_proxy(pacfile, url, host=None):
   proxy = find_proxy(url,host)
   cleanup()
   return proxy
+
+def setmyip(ip_address):
+  """
+  Set my ip address. This is the IP address returned by myIpAddress()
+  """
+  _pacparser.setmyip()

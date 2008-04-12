@@ -98,11 +98,28 @@ py_pacparser_cleanup()
   Py_RETURN_NONE;
 }
 
+// Destroys JavaSctipt Engine.
+static PyObject * 
+py_pacparser_setmyip(PyObject *self, PyObject *args)
+{
+  const char *ip;
+  if (!PyArg_ParseTuple(args, "s", &ip))
+    return NULL;
+  if(pacparser_setmyip(ip))
+    Py_RETURN_NONE;
+  else
+  {
+    PyErr_SetString(PacparserError, "Could not set my ip address");
+    return NULL;
+  }
+}
+
 static PyMethodDef  PpMethods[] = {
   {"init", py_pacparser_init, METH_VARARGS, "initialize pacparser"},
   {"parse_pac", py_pacparser_parse_pac, METH_VARARGS, "parse pacfile"},
   {"find_proxy", py_pacparser_find_proxy, METH_VARARGS, "returns proxy string"},
   {"cleanup", py_pacparser_cleanup, METH_VARARGS, "destroy pacparser engine"},
+  {"setmyip", py_pacparser_setmyip, METH_VARARGS, "set my ip address"},
   {NULL, NULL, 0, NULL}
 };
 

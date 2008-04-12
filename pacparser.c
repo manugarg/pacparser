@@ -43,6 +43,8 @@
 
 #include "pac_utils.h"
 
+static char *myip = NULL;
+
 // inet_ntop is not defined on iindows. Define it as a wrapper to functions
 // available on windows.
 #ifdef _WIN32
@@ -128,15 +130,20 @@ dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 static JSBool                                  // JS_TRUE or JS_FALSE
 my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
-  char name[256];
-  gethostname(name, sizeof(name));
-  char* out;
-  struct hostent *hent;
   char ipaddr[INET_ADDRSTRLEN];
-  if ((hent = gethostbyname(name)) == NULL)
-    strcpy(ipaddr, "127.0.0.1");
-  else
-    inet_ntop(hent->h_addrtype, hent->h_addr_list[0], ipaddr, sizeof(ipaddr));
+  char* out;
+
+  if (myip)                  // If my (client's) IP address is already set.
+    strcpy(ipaddr, myip);
+  else {
+    char name[256];
+    gethostname(name, sizeof(name));
+    struct hostent *hent;
+    if ((hent = gethostbyname(name)) == NULL)
+      strcpy(ipaddr, "127.0.0.1");
+    else
+      inet_ntop(hent->h_addrtype, hent->h_addr_list[0], ipaddr, sizeof(ipaddr));
+  }
 
   out = JS_malloc(cx, strlen(ipaddr) + 1);
   strcpy(out, ipaddr);
@@ -159,6 +166,14 @@ JSClass global_class = {
     JS_PropertyStub,JS_PropertyStub,JS_PropertyStub,JS_PropertyStub,
     JS_EnumerateStub,JS_ResolveStub,JS_ConvertStub,JS_FinalizeStub
 };
+
+// Set my (client's) IP address.
+void
+pacparser_setmyip(char *ip)
+{
+  myip = malloc(strlen(ip) +1);         // Allocate space just to be sure.
+  strcpy(myip, ip);
+}
 
 // Initialize PAC parser.
 //

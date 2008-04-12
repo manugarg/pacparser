@@ -36,3 +36,7 @@ char *pacparser_just_find_proxy(const char *pacfile,  // PAC file
 // Destroys JavaSctipt context.
 // This function should be called once you're done with using pacparser engine.
 void pacparser_cleanup();
+
+// Set my ipaddress.
+// This is the IP address returned by myIpAddress() function.
+void pacparser_setmyip();
