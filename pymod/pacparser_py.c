@@ -105,13 +105,8 @@ py_pacparser_setmyip(PyObject *self, PyObject *args)
   const char *ip;
   if (!PyArg_ParseTuple(args, "s", &ip))
     return NULL;
-  if(pacparser_setmyip(ip))
-    Py_RETURN_NONE;
-  else
-  {
-    PyErr_SetString(PacparserError, "Could not set my ip address");
-    return NULL;
-  }
+  pacparser_setmyip(ip);
+  Py_RETURN_NONE;
 }
 
 static PyMethodDef  PpMethods[] = {

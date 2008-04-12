@@ -100,4 +100,4 @@ def setmyip(ip_address):
   """
   Set my ip address. This is the IP address returned by myIpAddress()
   """
-  _pacparser.setmyip()
+  _pacparser.setmyip(ip_address)
