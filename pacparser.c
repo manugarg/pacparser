@@ -80,16 +80,17 @@ read_file_into_str(const char *filename)
   char *str;
   int file_size;
   FILE *fptr;
+  int records_read;
   if (!(fptr = fopen(filename, "r"))) goto error1;
   if ((fseek(fptr, 0L, SEEK_END) != 0)) goto error2;
   if (!(file_size=ftell(fptr))) goto error2;
   if ((fseek(fptr, 0L, SEEK_SET) != 0)) goto error2;
   if (!(str = (char*) malloc(file_size+1))) goto error2;
-  if (fread(str, file_size, 1, fptr) != 1) {
+  if (!(records_read=fread(str, 1, file_size, fptr))) {
     free(str);
     goto error2;
   }
-  str[file_size] = '\0';
+  str[records_read] = '\0';
   fclose(fptr);
   return str;
 error2:
@@ -152,12 +153,6 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   return JS_TRUE;
 }
 
-// Functions to be exported to JavaScript context.
-JSFunctionSpec dns_functions[] = {
-  {"dnsResolve", dns_resolve, 1},
-  {"myIpAddress", my_ip, 0}
-};
-
 JSRuntime *rt = NULL;
 JSContext *cx = NULL;
 JSObject *global = NULL;
@@ -193,7 +188,9 @@ pacparser_init()
     return 0;
   JS_SetErrorReporter(cx, print_error);
   // Export our functions to Javascript engine
-  if (!JS_DefineFunctions(cx, global, dns_functions))
+  if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve, 1, 0))
+    return 0;
+  if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0))
     return 0;
   // Evaluate pacUtils. Utility functions required to parse pac files.
   if (!JS_EvaluateScript(cx,           // JS engine context
