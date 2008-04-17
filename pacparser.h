@@ -37,6 +37,8 @@ char *pacparser_just_find_proxy(const char *pacfile,  // PAC file
 // This function should be called once you're done with using pacparser engine.
 void pacparser_cleanup();
 
-// Set my ipaddress.
-// This is the IP address returned by myIpAddress() function.
-void pacparser_setmyip();
+// Sets my IP address.
+// Sets my IP address to a custom value. This is the IP address returned by
+// myIpAddress() javascript function.
+void pacparser_setmyip(const char *ip                 // Custom IP address.
+                       );

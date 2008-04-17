@@ -162,9 +162,9 @@ JSClass global_class = {
     JS_EnumerateStub,JS_ResolveStub,JS_ConvertStub,JS_FinalizeStub
 };
 
-// Set my (client's) IP address.
+// Set my (client's) IP address to a custom value.
 void
-pacparser_setmyip(char *ip)
+pacparser_setmyip(const char *ip)
 {
   myip = malloc(strlen(ip) +1);         // Allocate space just to be sure.
   strcpy(myip, ip);

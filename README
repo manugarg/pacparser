@@ -49,6 +49,9 @@ Using it in python:
 >>> pacparser.init()
 >>> pacparser.parse_pac('examples/wpad.dat')
 >>> pacparser.find_proxy('http://www.google.com', 'www.google.com')
+'DIRECT'
+>>> pacparser.setmyip("192.168.1.134")
+>>> pacparser.find_proxy('http://www.google.com', 'www.google.com')
 'PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT'
 >>> pacparser.find_proxy('http://www2.manugarg.com', 'www2.manugarg.com')
 'DIRECT'
