@@ -1,3 +1,14 @@
+pacparser (1.0.4) gutsy; urgency=low
+
+   * Add a feature to set my ip address (as returned by myIpAddress) to a
+     custom value.
+   * Fixed the bug reported in Issues (1) due to which myIpAddress function
+     was not working on Windows platform.
+   * Fixed another bug due to which pacparser failed to parse DOS mode PAC
+     files on Windows machines.
+
+ -- manugarg <manugarg@hobbiton.lan>  Fri, 18 Apr 2008 14:27:21 +0530
+
 pacparser (1.0.3-0) gutsy; urgency=low
 
   * Initial release
