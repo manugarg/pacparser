@@ -1,4 +1,4 @@
-pacparser (1.0.4) gutsy; urgency=low
+pacparser (1.0.4-0) gutsy; urgency=low
 
    * Add a feature to set my ip address (as returned by myIpAddress) to a
      custom value.
