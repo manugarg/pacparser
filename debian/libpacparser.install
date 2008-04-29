@@ -1,2 +1,3 @@
+usr/bin/pactester
 usr/lib/lib*.so.*
 usr/share/doc/libpacparser/html/*
