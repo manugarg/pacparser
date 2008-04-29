@@ -55,7 +55,7 @@ dist: pacparser.dll js3250.dll nspr4.dll pactester
 	xcopy *.dll dist
 	if exist libpacparser.a xcopy libpacparser.a dist
 	if exist pacparser.lib xcopy pacparser.lib dist
-	if exist pactester xcopy pactester dist
+	if exist pactester.exe xcopy pactester.exe dist
 	mkdir dist\docs
 	if exist docs\html xcopy docs\html dist\docs
 
