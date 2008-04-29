@@ -83,7 +83,7 @@ endif
 
 .PHONY: clean js install-js pymod install-pymod
 
-all: libpacparser.so
+all: pactester
 
 pacparser.o: pacparser.c pac_utils.h
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
@@ -95,10 +95,14 @@ libpacparser.so.${LIB_VER}: pacparser.o
 libpacparser.so: libpacparser.so.${LIB_VER}
 	ln -sf libpacparser.so.${LIB_VER} libpacparser.so
 
+pactester: pactester.c pacparser.h libpacparser.so
+	$(CC) pactester.c -o pactester -lpacparser -L. -I.
+
 install: all
 	install -d $(DESTDIR)/usr/lib $(DESTDIR)/usr/include
 	install -m 644 libpacparser.so.${LIB_VER} $(DESTDIR)/usr/lib/libpacparser.so.${LIB_VER}
 	ln -sf libpacparser.so.${LIB_VER} $(DESTDIR)/usr/lib/libpacparser.so
+	install -m 755 pactester $(DESTDIR)/usr/bin/pactester
 	install -m 644 pacparser.h $(DESTDIR)/usr/include/pacparser.h
 	# install manpages
 	install -d $(DESTDIR)/usr/share/man/man3/
@@ -124,6 +128,6 @@ install-pymod: pymod
 	cd pymod && $(PYTHON) setup.py install
 
 clean:
-	rm -f libpacparser.so libpacparser.so.${LIB_VER} pacparser.o pymod/pacparser_o_buildstamp
+	rm -f libpacparser.so libpacparser.so.${LIB_VER} pacparser.o pactester pymod/pacparser_o_buildstamp
 	cd pymod && python setup.py clean
 	cd spidermonkey && $(MAKE) clean

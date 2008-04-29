@@ -24,7 +24,7 @@ CC=gcc
 
 .PHONY: clean pymod install-pymod
 
-all: pacparser.dll
+all: pacparser.dll pactester
 
 pacparser.o: pacparser.c pac_utils.h
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
@@ -46,12 +46,16 @@ pacparser.dll: pacparser.o js3250.lib
 	$(CC) -shared -o pacparser.dll -Wl,--output-def,pacparser.def -Wl,--out-implib,libpacparser.a pacparser.o -L. -ljs3250 -L..\lib -lws2_32
 	lib /machine:i386 /def:pacparser.def
 
-dist: pacparser.dll js3250.dll nspr4.dll
+pactester: pactester.c pacparser.h libpacparser.a
+	$(CC) pactester.c -o pactester -lpacparser -L. -I.
+
+dist: pacparser.dll js3250.dll nspr4.dll pactester
 	if exist dist rmdir /s /q dist
 	mkdir dist
 	xcopy *.dll dist
 	if exist libpacparser.a xcopy libpacparser.a dist
 	if exist pacparser.lib xcopy pacparser.lib dist
+	if exist pactester xcopy pactester dist
 	mkdir dist\docs
 	if exist docs\html xcopy docs\html dist\docs
 
@@ -65,4 +69,5 @@ dist-pymod: pymod js3250.dll nspr4.dll
 clean:
 	if exist pacparser.dll del pacparser.dll
 	if exist pacparser.o del pacparser.o
+	if exist pactester del pactester
 	cd pymod && setup.py clean
