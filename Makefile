@@ -99,7 +99,7 @@ pactester: pactester.c pacparser.h libpacparser.so
 	$(CC) pactester.c -o pactester -lpacparser -L. -I.
 
 install: all
-	install -d $(DESTDIR)/usr/lib $(DESTDIR)/usr/include
+	install -d $(DESTDIR)/usr/lib $(DESTDIR)/usr/include $(DESTDIR)/usr/bin
 	install -m 644 libpacparser.so.${LIB_VER} $(DESTDIR)/usr/lib/libpacparser.so.${LIB_VER}
 	ln -sf libpacparser.so.${LIB_VER} $(DESTDIR)/usr/lib/libpacparser.so
 	install -m 755 pactester $(DESTDIR)/usr/bin/pactester
