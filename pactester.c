@@ -26,11 +26,16 @@ char *get_host_from_url(const char *url)
   // copy  url to a  pointer that we'll use to seek through the string.
   char *p = strdup(url);
   char *proto = p;
-  // Move to first /
-  while (*p != '/' && *p != '\0')
+  // Move to :
+  while (*p != ':' && *p != '\0')
     p++;
-  char *protoend = p - 1;
-  *protoend = '\0';
+  if (p[0] == '\0'||                    // We reached end without hitting :
+      p[1] != '/' || p[2] != '/'        // Next to characters are not //
+      ) {
+    fprintf(stderr, "Not a proper URL\n");
+    return NULL;
+  }
+  *p = '\0';                            // Terminate proto here.
   // Make sure protocol is either http, https or ftp.
   if ( strcmp(proto, "http") &&
        strcmp(proto, "https") &&
@@ -38,20 +43,17 @@ char *get_host_from_url(const char *url)
     fprintf(stderr, "Not a proper URL\n");
     return NULL;
   }
-  if ( p[0] != '/' || p[1] != '/') {
-    fprintf(stderr, "Not a proper URL\n");
-    return NULL;
-  }
-  p++; p++;                      // Getting past '//'
+  p++; p++; p++;                      // Getting past '://'
+  // Host part starts from here.
   char *host = p;
-  char *hostend = host;          // We'll move hostend to the end of host part.
-  if (*host == '\0' || *host == '/') {
+  if (*p == '\0' || *p == '/' || *p == ':') {   // If host part is null.
     fprintf(stderr, "Not a proper URL\n");
     return NULL;
   }
-  while (*hostend != '/' && *hostend != '\0')
-    hostend++;
-  *hostend = '\0';
+  // Seek until next /, : or end of string.
+  while (*p != '/' && *p != ':' && *p != '\0')
+    p++;
+  *p = '\0';
   return host;
 }
 
