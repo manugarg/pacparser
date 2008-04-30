@@ -4,12 +4,12 @@
 #include <string.h>
 #include <unistd.h>
 
-void usage()
+void usage(const char *progname)
 {
-  fprintf(stderr, "\nUsage:  ./pactester <-p pacfile> <-u url> [-h host] "
-          "[-c client_ip]");
-  fprintf(stderr, "\n        ./pactester <-p pacfile> <-f urlslist> "
-          "[-c client_ip]\n");
+  fprintf(stderr, "\nUsage:  %s <-p pacfile> <-u url> [-h host] "
+          "[-c client_ip]", progname);
+  fprintf(stderr, "\n        %s <-p pacfile> <-f urlslist> "
+          "[-c client_ip]\n", progname);
   fprintf(stderr, "\nOptions:\n");
   fprintf(stderr, "  -p pacfile   : PAC file to test\n");
   fprintf(stderr, "  -u url       : URL to test\n");
@@ -80,11 +80,11 @@ int main(int argc, char* argv[])
       case '?':
         if (optopt == 'p' || optopt == 'u' || optopt == 'h' ||
             optopt == 'f' || optopt == 'c')
-          usage();
+          usage(argv[0]);
         else if (isprint (optopt))
-          usage();
+          usage(argv[0]);
         else
-          usage();
+          usage(argv[0]);
         return 1;
       default:
         abort ();
@@ -92,12 +92,12 @@ int main(int argc, char* argv[])
 
   if (!pacfile) {
     fprintf(stderr, "You didn't specify the PAC file\n");
-    usage();
+    usage(argv[0]);
     return 1;
   }
   if (!url && !urlslist) {
     fprintf(stderr, "You didn't specify the URL\n");
-    usage();
+    usage(argv[0]);
     return 1;
   }
 
