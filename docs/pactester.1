@@ -1,0 +1,52 @@
+.TH "pactester" 1
+.SH NAME
+pactester \- Tool to test proxy auto-config (pac) files.
+.SH SYNOPSIS
+.B pactester <-p pacfile> <-u url> [-h host] [-c client_ip]
+.PP
+.B pactester <-p pacfile> <-f urlslist> [-c client_ip]
+.SH DESCRIPTION
+pactester is a tool to test proxy auto-config (pac) files. It uses pacparser
+library to parse pac files and return proxy string for the specified URL.
+.SH OPTIONS
+.TP
+.B \-p pacfile
+PAC file to test.
+.TP
+.B \-u url
+URL to test PAC file for.
+.TP
+.B \-h host
+Host part of the URL. If not specified, it's determined from the URL.
+.TP
+.B \-c client_ip
+Client's IP address (as returned by the function myIpAddress() in PAC files).
+If not specified, it defaults to the IP address of the machine on which
+it is running.
+.TP
+.B \-f urlslist
+A file containing list of URLs to be tested. This is good for testing a PAC
+file against a set of URLs.
+.SH EXAMPLES
+.PP
+To find out proxy string as returned by pac file wpad.dat for the URL
+http://www.google.com:
+.PP
+$ pactester -p wpad.dat -u http://www.google.com
+
+For a client with IP address 10.0.12.123:
+.PP
+$ pactester -p wpad.dat -c 10.0.12.123 -u http://www.google.com
+
+To find out proxy string for a list of urls specified in /tmp/urls:
+.PP
+$ pactester -p wpad.dat -f /tmp/urls
+.SH BUGS
+If you have come across a bug in pactester, please submit a bug report at
+http://code.google.com/p/pacparser/issues/list.
+.SH AUTHOR
+Written by Manu Garg (http://www.manugarg.com).
+.SH SEE ALSO
+More information about this version of pactester and pacparser library can be
+found at pacparser homepage: http://code.google.com/p/pacparser.
+

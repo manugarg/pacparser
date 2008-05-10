@@ -104,7 +104,10 @@ install: all
 	ln -sf libpacparser.so.${LIB_VER} $(DESTDIR)/usr/lib/libpacparser.so
 	install -m 755 pactester $(DESTDIR)/usr/bin/pactester
 	install -m 644 pacparser.h $(DESTDIR)/usr/include/pacparser.h
-	# install manpages
+	# install pactester manpages
+	install -d $(DESTDIR)/usr/share/man/man1/
+	(test -d docs && install -m 644 docs/*.1 $(DESTDIR)/usr/share/man/man1/) || /bin/true
+	# install pacparser manpages
 	install -d $(DESTDIR)/usr/share/man/man3/
 	(test -d docs && install -m 644 docs/*.3 $(DESTDIR)/usr/share/man/man3/) || /bin/true
 	# install html docs
