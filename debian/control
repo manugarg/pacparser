@@ -1,7 +1,7 @@
 Source: pacparser
 Priority: extra
 Maintainer: manu garg <manugarg@gmail.com>
-Build-Depends: debhelper (>= 5), libmozjs-dev | libsmjs-dev, python-dev (>=2.2)
+Build-Depends: debhelper (>= 5), libmozjs-dev | libsmjs-dev, python-dev (>=2.4)
 Standards-Version: 3.7.2
 Section: libs
 
@@ -23,7 +23,7 @@ Description: pacparser C shared library.
 Package: python-pacparser
 Section: python
 Architecture: any
-Depends: ${shlibs:Depends}, python (>=2.2)
+Depends: ${shlibs:Depends}, python (>=2.4)
 Description: pacparser python module.
  pacparser python module provides methods needed to parse proxy auto-config
  (PAC) files. Homepage: http://code.google.com/p/pacparser
