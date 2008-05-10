@@ -1,3 +1,27 @@
+// Copyright (C) 2008 Manu Garg.
+// Author: Manu Garg <manugarg@gmail.com>
+//
+// This file implements pactester (http://code.google.com/p/pactester) using
+// pacparser.
+//
+// pacparser is a library that provides methods to parse proxy auto-config
+// (PAC) files. Please read README file included with this package for more
+// information about this library.
+//
+// pacparser is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public
+// License as published by the Free Software Foundation; either
+// version 2.1 of the License, or (at your option) any later version.
+
+// pacparser is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Lesser General Public License for more details.
+
+// You should have received a copy of the GNU Lesser General Public
+// License along with this library; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
+
 #include <pacparser.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -111,6 +135,7 @@ int main(int argc, char* argv[])
 
   if(!pacparser_parse_pac(pacfile)) {
     fprintf(stderr, "Could not parse pac file: %s\n", pacfile);
+    pacparser_cleanup();
     return 1;
   }
 
@@ -118,6 +143,7 @@ int main(int argc, char* argv[])
     pacparser_setmyip(client_ip);
 
   char *proxy;
+
   if (url) {
     if (!host)
       host = get_host_from_url(url);
@@ -127,9 +153,8 @@ int main(int argc, char* argv[])
       if(proxy) printf("%s\n", proxy);
     }
   }
-
   else if (urlslist) {
-    char line[1000];
+    char line[1000];                    // this limits line length to 1000.
     FILE *fp;
     if (!(fp = fopen(urlslist, "r"))) {
       fprintf(stderr, "Could not open urlslist: %s", urlslist);
