@@ -1,3 +1,10 @@
+pacparser (1.0.5-0) gutsy; urgency=low
+
+  * Implemented pactester in C using pacparser. Add it to the libpacparser
+    package.
+
+ -- manugarg <manugarg@hobbiton.hyd.corp.google.com>  Sat, 10 May 2008 15:23:52 +0530
+
 pacparser (1.0.4-0) gutsy; urgency=low
 
    * Add a feature to set my ip address (as returned by myIpAddress) to a

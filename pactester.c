@@ -36,11 +36,12 @@ void usage(const char *progname)
           "[-c client_ip]\n", progname);
   fprintf(stderr, "\nOptions:\n");
   fprintf(stderr, "  -p pacfile   : PAC file to test\n");
-  fprintf(stderr, "  -u url       : URL to test\n");
+  fprintf(stderr, "  -u url       : URL to test for\n");
   fprintf(stderr, "  -h host      : Host part of the URL\n");
-  fprintf(stderr, "  -c client_ip : client IP address (defaults to IP "
-          "address of the machine \n");
-  fprintf(stderr, "                 on which script is running)\n");
+  fprintf(stderr, "  -c client_ip : client IP address (as returned by "
+                  "myIpAddres() function\n");
+  fprintf(stderr, "                 in PAC files), defaults to IP address "
+                  "on which it is running.\n");
   fprintf(stderr, "  -f urlslist  : a file containing list of URLs to be "
           "tested.\n");
 }
