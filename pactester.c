@@ -159,13 +159,19 @@ int main(int argc, char* argv[])
     FILE *fp;
     if (!(fp = fopen(urlslist, "r"))) {
       fprintf(stderr, "Could not open urlslist: %s", urlslist);
+      pacparser_cleanup();
       return 1;
     }
     while (fgets(line, sizeof(line), fp)) {
-      char *url = strdup(line);
+      char *url = line;
       // remove spaces from the beginning.
       while (*url == ' ' || *url == '\t')
         url++;
+      // skip comment lines
+      if (*url == '#') {
+        printf("%s", url);
+        continue;
+      }
       char *urlend = url;
       while (*urlend != '\r' && *urlend != '\n' && *urlend != '\0' &&
              *urlend != ' ' && *urlend != '\t')
@@ -176,8 +182,9 @@ int main(int argc, char* argv[])
         continue;
       proxy = NULL;
       proxy = pacparser_find_proxy(url, host);
-      if(proxy) printf("%s\n", proxy);
+      if(proxy) printf("%s : %s\n", url, proxy);
     }
+    fclose(fp);
   }
   pacparser_cleanup();
 }
