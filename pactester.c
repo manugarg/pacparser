@@ -50,25 +50,16 @@ char *get_host_from_url(const char *url)
 {
   // copy  url to a  pointer that we'll use to seek through the string.
   char *p = strdup(url);
-  char *proto = p;
   // Move to :
   while (*p != ':' && *p != '\0')
     p++;
   if (p[0] == '\0'||                    // We reached end without hitting :
-      p[1] != '/' || p[2] != '/'        // Next to characters are not //
+      p[1] != '/' || p[2] != '/'        // Next two characters are not //
       ) {
     fprintf(stderr, "Not a proper URL\n");
     return NULL;
   }
-  *p = '\0';                            // Terminate proto here.
-  // Make sure protocol is either http, https or ftp.
-  if ( strcmp(proto, "http") &&
-       strcmp(proto, "https") &&
-       strcmp(proto, "ftp") ) {
-    fprintf(stderr, "Not a proper URL\n");
-    return NULL;
-  }
-  p++; p++; p++;                      // Getting past '://'
+  p = p + 3;                            // Get past '://'
   // Host part starts from here.
   char *host = p;
   if (*p == '\0' || *p == '/' || *p == ':') {   // If host part is null.
