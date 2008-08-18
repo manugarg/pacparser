@@ -1,6 +1,8 @@
 // Copyright (C) 2007 Manu Garg.
 // Author: Manu Garg <manugarg@gmail.com>
 //
+// This file defines API for pacparser library.
+//
 // pacparser is a library that provides methods to parse proxy auto-config
 // (PAC) files. Please read README file included with this package for more
 // information about this library.
@@ -8,7 +10,7 @@
 // pacparser is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
-// version 2.1 of the License, or (at your option) any later version.
+// version 3 of the License, or (at your option) any later version.
 
 // pacparser is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of

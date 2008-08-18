@@ -5,11 +5,11 @@ It was downloaded from <http://code.google.com/p/pacparser/downloads/list>
 
 Upstream Author(s): Manu Garg <manugarg@gmail.com>
 
-Copyright: 2008 - 2010 Manu Garg
+Copyright: 2007 - 2008 Manu Garg
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as
-published by the Free Software Foundation; either version 2.1 of the
+published by the Free Software Foundation; either version 3 of the
 License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful, but
@@ -19,9 +19,9 @@ Lesser General Public License for more details.
 
 You should have received a copy of the GNU Lesser General Public
 License with the Debian GNU/Linux distribution in file
-/usr/share/common-licenses/LGPL-2.1; if not, write to the Free
+/usr/share/common-licenses/LGPL-3; if not, write to the Free
 Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307  USA
 
 On Debian systems, the complete text of the GNU Lesser General Public
-License, version 2.1, can be found in /usr/share/common-licenses/LGPL-2.1.
+License, version 3, can be found in /usr/share/common-licenses/LGPL-3.
