@@ -32,7 +32,7 @@ import _pacparser
 import os
 import re
 
-url_regex = re.compile('(http[s]?|ftp)\:\/\/([^\/]+).*')
+url_regex = re.compile('.*\:\/\/([^\/]+).*')
 
 def init():
   """
@@ -56,8 +56,8 @@ def find_proxy(url, host=None):
     if not m:
       print 'URL: %s is not a valid URL' % url
       return None
-    if len(m.groups()) is 2:
-      host = m.groups()[1]
+    if len(m.groups()) is 1:
+      host = m.groups()[0]
     else:
       print 'URL: %s is not a valid URL' % url
       return None
@@ -85,8 +85,8 @@ def just_find_proxy(pacfile, url, host=None):
     if not m:
       print 'URL: %s is not a valid URL' % url
       return None
-    if len(m.groups()) is 2:
-      host = m.groups()[1]
+    if len(m.groups()) is 1:
+      host = m.groups()[0]
     else:
       print 'URL: %s is not a valid URL' % url
       return None
