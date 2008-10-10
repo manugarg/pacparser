@@ -1,3 +1,12 @@
+pacparser (1.0.6-0) unstable; urgency=low
+
+  * Fix some memory leakages in pactester.c (patch by Phil Randal).
+  * Make pactester independent of protocol field in URLs.
+  * Fix LGPL version in copyright headers.
+  * Add copyright headers to pacparser.h.
+
+ -- manugarg <manugarg@gmail.com>  Sat, 10 Oct 2008 14:58:25 +0530
+
 pacparser (1.0.5-0) gutsy; urgency=low
 
   * Implemented pactester in C using pacparser. Add it to the libpacparser
