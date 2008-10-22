@@ -37,19 +37,13 @@ endif
 
 CFLAGS+=$(PY_INC)
 
-# We need PIC code for shared libraries on x86_64 platform.
-CPU_ARCH = $(shell uname -m)
-ifeq ($(CPU_ARCH),x86_64)
-  CFLAGS+= -fPIC
-endif
-
 all: _pacparser$(PY_VER).so
 
 pacparser_py$(PY_VER).o: pacparser_py.c
-	$(CC) $(CFLAGS) -c pacparser_py.c -o pacparser_py$(PY_VER).o
+	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser_py.c -o pacparser_py$(PY_VER).o
 
 _pacparser$(PY_VER).so: pacparser_py$(PY_VER).o pacparser_o_buildstamp
-	$(LD) -soname=pacparser.so -rpath . -o _pacparser$(PY_VER).so ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS)
+	$(CC) $(SHFLAGS) -o _pacparser$(PY_VER).so ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS)
 
 install: all
 	install -d $(DESTDIR)/usr/lib/python$(PY_VER)/site-packages/pacparser

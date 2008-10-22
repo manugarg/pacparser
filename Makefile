@@ -22,14 +22,10 @@ LIB_VER=1
 CFLAGS=-g -DXP_UNIX -Wall
 LDFLAGS=-shared
 
+SHFLAGS=-fPIC
+
 ifndef PYTHON
   PYTHON=python
-endif
-
-# We need PIC code for shared libraries on x86_64 platform.
-CPU_ARCH = $(shell uname -m)
-ifeq ($(CPU_ARCH),x86_64)
-  CFLAGS+= -fPIC
 endif
 
 NOSO=clean js install-js
@@ -86,11 +82,11 @@ endif
 all: pactester
 
 pacparser.o: pacparser.c pac_utils.h
-	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
+	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
 libpacparser.so.${LIB_VER}: pacparser.o
-	$(LD) -soname=libpacparser.so.${LIB_VER} -o libpacparser.so.${LIB_VER} pacparser.o $(LDFLAGS)
+	$(CC) $(SHFLAGS) -Wl,-soname=libpacparser.so.${LIB_VER} -o libpacparser.so.${LIB_VER} pacparser.o $(LDFLAGS)
 
 libpacparser.so: libpacparser.so.${LIB_VER}
 	ln -sf libpacparser.so.${LIB_VER} libpacparser.so
@@ -125,7 +121,7 @@ install-js: js
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h
-	cd pymod && LDFLAGS="$(LDFLAGS)" $(PYTHON) setup.py
+	cd pymod && LDFLAGS="$(LDFLAGS)" SHFLAGS="$(SHFLAGS)" $(PYTHON) setup.py
 
 install-pymod: pymod
 	cd pymod && $(PYTHON) setup.py install

@@ -3,7 +3,7 @@ Mon, 17 Dec 2007 22:08:35 +0530.
 
 It was downloaded from <http://code.google.com/p/pacparser/downloads/list>
 
-Upstream Author(s): Manu Garg <manugarg@gmail.com>
+Upstream Author: Manu Garg <manugarg@gmail.com>
 
 Copyright: 2007 - 2008 Manu Garg
 
@@ -19,9 +19,9 @@ Lesser General Public License for more details.
 
 You should have received a copy of the GNU Lesser General Public
 License with the Debian GNU/Linux distribution in file
-/usr/share/common-licenses/LGPL-3; if not, write to the Free
-Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-02111-1307  USA
+/usr/share/common-licenses/LGPL-3; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301,
+USA.
 
 On Debian systems, the complete text of the GNU Lesser General Public
 License, version 3, can be found in /usr/share/common-licenses/LGPL-3.

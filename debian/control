@@ -8,24 +8,25 @@ Section: libs
 Package: libpacparser-dev
 Section: libdevel
 Architecture: any
-Depends: libpacparser (= ${Source-Version})
-Description: Development package for libpacparser.
+Depends: libpacparser1 (= ${Source-Version})
+Homepage: http://code.google.com/p/pacparser
+Description: Development package for libpacparser1
  This package contains headers required to compile C programs against pacparser.
 
-Package: libpacparser
+Package: libpacparser1
 Section: libs
 Architecture: any
 Depends: ${shlibs:Depends}
-Description: pacparser C shared library.
+Homepage: http://code.google.com/p/pacparser
+Description: pacparser C shared library
  pacparser library defines and exports methods needed to parse proxy
  auto-config (PAC) files. For more information on pacparser, visit its
- homepage: http://code.google.com/p/pacparser
 
 Package: python-pacparser
 Section: python
 Architecture: any
 Depends: ${shlibs:Depends}, python (>=2.4)
-Description: pacparser python module.
- This module provides python bindings for pacparser library, a library to parse
+Homepage: http://code.google.com/p/pacparser
+Description: pacparser Python module
+ This module provides Python bindings for pacparser library, a library to parse
  proxy auto-config (PAC) files. For more information on pacparser, visit its
- homepage: http://code.google.com/p/pacparser
