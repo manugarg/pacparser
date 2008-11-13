@@ -1,0 +1,9 @@
+#!/bin/sh
+
+cd debian
+svn list > /tmp/debfiles
+for file in *
+do
+  grep -q ^$file$ /tmp/debfiles || rm -rf $file
+done
+

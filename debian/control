@@ -2,13 +2,13 @@ Source: pacparser
 Priority: extra
 Maintainer: manu garg <manugarg@gmail.com>
 Build-Depends: debhelper (>= 5), libmozjs-dev | libsmjs-dev, python-dev (>=2.4)
-Standards-Version: 3.7.2
+Standards-Version: 3.8.0
 Section: libs
 
 Package: libpacparser-dev
 Section: libdevel
 Architecture: any
-Depends: libpacparser1 (= ${Source-Version})
+Depends: libpacparser1 (= ${binary:Version})
 Homepage: http://code.google.com/p/pacparser
 Description: Development package for libpacparser1
  This package contains headers required to compile C programs against pacparser.

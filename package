@@ -1,0 +1,6 @@
+rm -rf packages/pacparser-$1 packages/pacparser-$1.tar.gz
+rsync -avz --exclude-from=package_excludes . packages/pacparser-$1
+cd packages
+tar cvf pacparser-$1.tar pacparser-$1
+gzip pacparser-$1.tar
+cp -a ../debian pacparser-$1/

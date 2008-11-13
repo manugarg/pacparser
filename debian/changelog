@@ -1,3 +1,13 @@
+pacparser (1.0.7) unstable; urgency=low
+
+  * More changes to make it debian friendly.
+  * Modified Makefile to produce PIC code for shared library even on i386
+    platforms.
+  * See http://code.google.com/p/pacparser/source/detail?r=100 for detailed
+    list of changes.
+
+ -- manu garg <manugarg@gmail.com>  Sat, 13 Nov 2008 14:48:15 +0530
+
 pacparser (1.0.6-0) unstable; urgency=low
 
   * Fix some memory leakages in pactester.c (patch by Phil Randal).
@@ -5,14 +15,14 @@ pacparser (1.0.6-0) unstable; urgency=low
   * Fix LGPL version in copyright headers.
   * Add copyright headers to pacparser.h.
 
- -- manugarg <manugarg@gmail.com>  Sat, 10 Oct 2008 14:58:25 +0530
+ -- manu garg <manugarg@gmail.com>  Sat, 10 Oct 2008 14:58:25 +0530
 
 pacparser (1.0.5-0) gutsy; urgency=low
 
   * Implemented pactester in C using pacparser. Add it to the libpacparser
     package.
 
- -- manugarg <manugarg@hobbiton.hyd.corp.google.com>  Sat, 10 May 2008 15:23:52 +0530
+ -- manu garg <manugarg@hobbiton.hyd.corp.google.com>  Sat, 10 May 2008 15:23:52 +0530
 
 pacparser (1.0.4-0) gutsy; urgency=low
 
@@ -23,7 +33,7 @@ pacparser (1.0.4-0) gutsy; urgency=low
    * Fixed another bug due to which pacparser failed to parse DOS mode PAC
      files on Windows machines.
 
- -- manugarg <manugarg@hobbiton.lan>  Fri, 18 Apr 2008 14:27:21 +0530
+ -- manu garg <manugarg@hobbiton.lan>  Fri, 18 Apr 2008 14:27:21 +0530
 
 pacparser (1.0.3-0) gutsy; urgency=low
 
