@@ -1,4 +1,4 @@
 usr/bin/pactester
 usr/lib/lib*.so.*
-usr/share/doc/libpacparser/html/*
+usr/share/doc/pacparser/html/*
 usr/share/man/man1/*

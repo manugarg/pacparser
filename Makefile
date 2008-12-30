@@ -107,11 +107,11 @@ install: all
 	install -d $(DESTDIR)/usr/share/man/man3/
 	(test -d docs && install -m 644 docs/*.3 $(DESTDIR)/usr/share/man/man3/) || /bin/true
 	# install html docs
-	install -d $(DESTDIR)/usr/share/doc/libpacparser/html/
-	(test -d docs/html && install -m 644 docs/html/* $(DESTDIR)/usr/share/doc/libpacparser/html/) || /bin/true
+	install -d $(DESTDIR)/usr/share/doc/pacparser/html/
+	(test -d docs/html && install -m 644 docs/html/* $(DESTDIR)/usr/share/doc/pacparser/html/) || /bin/true
 	# install examples
-	install -d $(DESTDIR)/usr/share/doc/libpacparser/examples/
-	(test -d examples && install -m 644 examples/* $(DESTDIR)/usr/share/doc/libpacparser/examples/) || /bin/true
+	install -d $(DESTDIR)/usr/share/doc/pacparser/examples/
+	(test -d examples && install -m 644 examples/* $(DESTDIR)/usr/share/doc//pacparser/examples/) || /bin/true
 
 js:
 	cd spidermonkey && $(MAKE)
