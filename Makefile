@@ -28,7 +28,7 @@ ifndef PYTHON
   PYTHON=python
 endif
 
-NOSO=clean js install-js
+NOSO=clean
 
 ifndef SM_LIB
 ifeq (yes, $(shell [ -e /usr/lib/libjs.so -o -e /usr/local/lib/libjs.so ] && echo yes))
@@ -53,10 +53,6 @@ else
   else
     ifeq (yes, $(shell [ -e /usr/include/mozjs ] && echo yes))
       SM_INC= -I/usr/include/mozjs
-    else
-      ifeq (yes, $(shell [ -e spidermonkey/js/src ] && echo yes))
-        SM_INC= -Ispidermonkey/js/src
-      endif
     endif
   endif
 endif
@@ -64,20 +60,18 @@ endif
 
 ifeq ($(NOSO), $(filter-out $(MAKECMDGOALS),$(NOSO)))
   ifndef SM_LIB
-  $(error SpiderMonkey library not found. For unix based systems, to build \
-          and install it, run 'make js' followed by 'sudo make install-js'.)
+  $(error SpiderMonkey library not found. See 'README_SM' file.)
   else
     LDFLAGS+= ${SM_LIB}
   endif
   ifdef SM_INC
     CFLAGS+= ${SM_INC}
   else
-    $(error SpiderMonkey api not found. It is required to build pacparser. Run \
-	    'make js' now to get it)
+    $(error SpiderMonkey api not found. See 'README_SM' file.)
   endif
 endif
 
-.PHONY: clean js install-js pymod install-pymod
+.PHONY: clean pymod install-pymod
 
 all: pactester
 
@@ -113,12 +107,6 @@ install: all
 	install -d $(DESTDIR)/usr/share/doc/pacparser/examples/
 	(test -d examples && install -m 644 examples/* $(DESTDIR)/usr/share/doc//pacparser/examples/) || /bin/true
 
-js:
-	cd spidermonkey && $(MAKE)
-
-install-js: js
-	cd spidermonkey && $(MAKE) install
-
 # Targets to build python module
 pymod: pacparser.o pacparser.h
 	cd pymod && LDFLAGS="$(LDFLAGS)" SHFLAGS="$(SHFLAGS)" $(PYTHON) setup.py
@@ -129,4 +117,3 @@ install-pymod: pymod
 clean:
 	rm -f libpacparser.so libpacparser.so.${LIB_VER} pacparser.o pactester pymod/pacparser_o_buildstamp
 	cd pymod && python setup.py clean
-	cd spidermonkey && $(MAKE) clean

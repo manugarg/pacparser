@@ -1,0 +1,19 @@
+pacparser uses SpiderMonkey JavaScript library to parse and interpret
+JavaScript in PAC files. You will need to install SM javascript library and
+headers to be able to compile and use pacparser.
+
+On a Debian based (including Ubuntu) system:
+-------------------------------------------
+On a Debian system, you can install spidermonkey library with:
+
+sudo apt-get install libmozjs-dev
+
+
+On a RPM based system (e.g. Fedora, Redhat):
+-------------------------------------------
+yum install js-devel
+
+
+On other Unix based system:
+--------------------------
+sudo spidermonkey/install_sm.sh
