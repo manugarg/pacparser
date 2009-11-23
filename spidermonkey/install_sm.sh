@@ -45,7 +45,7 @@ echo -e "[Note] Compiling SM...\n"
 sleep 1
 cd js/src; make -f Makefile.ref
 
-if find . -name "libjs.so"; then
+if find . -name "libjs.so" | grep libjs.so; then
   echo -e "\nCompiled successfully.\n"
   # Install now.
   install_stuff
