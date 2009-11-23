@@ -19,7 +19,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 LIB_VER=1
-CFLAGS=-g -DXP_WIN -Ispidermonkey\win32 -Wall
+CFLAGS=-g -DXP_WIN -Ispidermonkey\smapi_win32 -Wall
 CC=gcc
 
 .PHONY: clean pymod install-pymod

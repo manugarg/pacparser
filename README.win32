@@ -57,7 +57,7 @@ Set up tools:
     MASM32 assembler (www.masm32.com). You can either download it from masm32
     webpage and add masm install directory to your path. Or, you can download
     minimal package from
-    http://manugarg.googlepages.com/masm32-bin.zip
+    http://pacparser.googlecode.com/files/masm32-bin.zip
     to your working directory.
 
 6.  Extract all the files into your working directory. In a command prompt
@@ -78,20 +78,27 @@ Set up tools:
       7z x pacparser*.tar.gz
       7z x pacparser*.tar
 
-9. Compile pacparser. (Make sure that you have Firefox installed on your
-   machine in standard location i.e. C:\Program Files\Mozilla Firefox before
-   running this step.)
+9.  We'll also need SpiderMonkey JavaScript API to build pacparser. Get it
+    from:
+    http://pacparser.googlecode.com/files/smapi_win32.zip and save it in
+    'pacparser-x.x.x\spidermonkey' directory. Extract it using 7z:
+      cd c:\devel\pacparser-1.0.x\spidermonkey\
+      7z x *.zip -y
+
+10. Compile pacparser. (Make sure that you have Firefox installed on your
+    machine in standard location i.e. C:\Program Files\Mozilla Firefox before
+    running this step.)
       cd c:\devel\pacparser-1.0.1 (for version 1.0.1)
       make -f Makefile.win32
     This will create pacparser.dll, libpacparser.a (file needed to link in
     pacparser with mingw compiler tools), pacparser.lib (file needed to link in
     pacparser on Visual Studio).
 
-10. Move just compiled library and other files required at runtime to a
+11. Move just compiled library and other files required at runtime to a
     directory (dist).
       make -f Makefile.win32 dist
 
-11. Compile pacparser python module and copy required files to a directory
+12. Compile pacparser python module and copy required files to a directory
     (dist).
       make -f Makefile.win32 pymod
       make -f Makefile.win32 dist-pymod
