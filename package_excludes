@@ -1,4 +1,4 @@
-.svn*
+*.svn*
 package_excludes
 package*
 cleandeb

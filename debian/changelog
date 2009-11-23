@@ -1,3 +1,10 @@
+pacparser (1.0.8) unstable; urgency=low
+
+  * Remove spidermonkey source code from pacparser.
+  * Add a helper script to download and install spidermonkey for user.
+
+ -- manu garg <manugarg@gmail.com>  Tue, 24 Nov 2009 00:02:41 +0530
+
 pacparser (1.0.7) unstable; urgency=low
 
   * More changes to make it debian friendly.

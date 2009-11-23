@@ -4,4 +4,3 @@ cd packages
 tar cvf pacparser-$1.tar pacparser-$1
 gzip pacparser-$1.tar
 cp pacparser-$1.tar.gz pacparser_$1.orig.tar.gz
-cp -a ../debian pacparser-$1/
