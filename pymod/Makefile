@@ -36,7 +36,7 @@ endif
 endif
 
 CFLAGS += $(PY_INC)
-LDFLAGS += -lpython
+LDFLAGS += -lpython$(PY_VER)
 
 all: _pacparser$(PY_VER).so
 
