@@ -18,44 +18,54 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
-LIB_VER=1
-CFLAGS=-g -DXP_UNIX -Wall
-LDFLAGS=-shared
+OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 
-SHFLAGS=-fPIC
-
-ifndef PYTHON
-  PYTHON=python
+ifeq ($(OS_ARCH),Linux)
+  SO_SUFFIX = so
+  MKSHLIB = $(CC) -shared
+  LDFLAGS += -Wl,-soname=$(LIBRARY)
+endif
+ifeq ($(OS_ARCH),Darwin)
+  SO_SUFFIX = dylib
+  MKSHLIB = $(CC) -dynamiclib -framework System
 endif
 
-NOSO=clean
+LIB_VER = 1
+CFLAGS = -g -DXP_UNIX -Wall
+SHFLAGS = -fPIC
+
+ifndef PYTHON
+  PYTHON = python
+endif
+
+NOSO = clean
 
 ifndef SM_LIB
-ifeq (yes, $(shell [ -e /usr/lib/libjs.so -o -e /usr/local/lib/libjs.so ] && echo yes))
-  SM_LIB= -ljs
+ifeq (yes, $(shell [ -e /usr/lib/libjs.$(SO_SUFFIX) -o -e /usr/local/lib/libjs.$(SO_SUFFIX) ] && echo yes))
+  SM_LIB = -ljs
 else
-  ifeq (yes, $(shell [ -e /usr/lib/libsmjs.so ] && echo yes))
-    SM_LIB= -lsmjs
+  ifeq (yes, $(shell [ -e /usr/lib/libsmjs.$(SO_SUFFIX) ] && echo yes))
+    SM_LIB = -lsmjs
   else
-    ifeq (yes, $(shell [ -e /usr/lib/libmozjs.so ] && echo yes))
-      SM_LIB= -lmozjs
+    ifeq (yes, $(shell [ -e /usr/lib/libmozjs.$(SO_SUFFIX) ] && echo yes))
+      SM_LIB = -lmozjs
     endif
   endif
 endif
 endif
 
 ifndef SM_INC
-ifeq (yes, $(shell [ -e /usr/include/js ] && echo yes))
-  SM_INC= -I/usr/include/js
+ifeq (yes, $(shell [ -e /usr/local/include/js ] && echo yes))
+  SM_INC = -I/usr/local/include/js
 else
   ifeq (yes, $(shell [ -e /usr/local/include/js ] && echo yes))
-    SM_INC= -I/usr/local/include/js
+    SM_INC = -I/usr/local/include/js
   else
     ifeq (yes, $(shell [ -e /usr/include/smjs ] && echo yes))
-      SM_INC= -I/usr/include/smjs
+      SM_INC = -I/usr/include/smjs
     else
       ifeq (yes, $(shell [ -e /usr/include/mozjs ] && echo yes))
-        SM_INC= -I/usr/include/mozjs
+        SM_INC = -I/usr/include/mozjs
       endif
     endif
   endif
@@ -66,58 +76,64 @@ ifeq ($(NOSO), $(filter-out $(MAKECMDGOALS),$(NOSO)))
   ifndef SM_LIB
   $(error SpiderMonkey library not found. See 'README_SM' file.)
   else
-    LDFLAGS+= ${SM_LIB}
+    LDFLAGS += ${SM_LIB}
   endif
   ifdef SM_INC
-    CFLAGS+= ${SM_INC}
+    CFLAGS += ${SM_INC}
   else
     $(error SpiderMonkey api not found. See 'README_SM' file.)
   endif
 endif
 
-.PHONY: clean pymod install-pymod
+LIBRARY = libpacparser.$(SO_SUFFIX).$(LIB_VER)
+PREFIX ?= /usr
+LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
+INC_PREFIX = $(DESTDIR)$(PREFIX)/include
+BIN_PREFIX = $(DESTDIR)$(PREFIX)/bin
+MAN_PREFIX = $(DESTDIR)$(PREFIX)/share/man
 
+.PHONY: clean pymod install-pymod
 all: pactester
 
 pacparser.o: pacparser.c pac_utils.h
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
-libpacparser.so.${LIB_VER}: pacparser.o
-	$(CC) $(SHFLAGS) -Wl,-soname=libpacparser.so.${LIB_VER} -o libpacparser.so.${LIB_VER} pacparser.o $(LDFLAGS)
+$(LIBRARY): pacparser.o
+	$(MKSHLIB) -o $(LIBRARY) pacparser.o $(LDFLAGS)
 
-libpacparser.so: libpacparser.so.${LIB_VER}
-	ln -sf libpacparser.so.${LIB_VER} libpacparser.so
+libpacparser.$(SO_SUFFIX): $(LIBRARY)
+	ln -sf $(LIBRARY) libpacparser.$(SO_SUFFIX)
 
-pactester: pactester.c pacparser.h libpacparser.so
+pactester: pactester.c pacparser.h libpacparser.$(SO_SUFFIX)
 	$(CC) pactester.c -o pactester -lpacparser -L. -I.
 
 install: all
-	install -d $(DESTDIR)/usr/lib $(DESTDIR)/usr/include $(DESTDIR)/usr/bin
-	install -m 644 libpacparser.so.${LIB_VER} $(DESTDIR)/usr/lib/libpacparser.so.${LIB_VER}
-	ln -sf libpacparser.so.${LIB_VER} $(DESTDIR)/usr/lib/libpacparser.so
-	install -m 755 pactester $(DESTDIR)/usr/bin/pactester
-	install -m 644 pacparser.h $(DESTDIR)/usr/include/pacparser.h
+	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
+	install -m 644 $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY)
+	ln -sf $(LIBRARY) $(LIB_PREFIX)/libpacparser.$(SO_SUFFIX)
+	install -m 755 pactester $(BIN_PREFIX)/pactester
+	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
 	# install pactester manpages
-	install -d $(DESTDIR)/usr/share/man/man1/
-	(test -d docs && install -m 644 docs/*.1 $(DESTDIR)/usr/share/man/man1/) || /bin/true
+	install -d $(MAN_PREFIX)/man1/
+	(test -d docs && install -m 644 docs/*.1 $(MAN_PREFIX)/man1/) || /bin/true
 	# install pacparser manpages
-	install -d $(DESTDIR)/usr/share/man/man3/
-	(test -d docs && install -m 644 docs/*.3 $(DESTDIR)/usr/share/man/man3/) || /bin/true
+	install -d $(MAN_PREFIX)/man3/
+	(test -d docs && install -m 644 docs/*.3 $(MAN_PREFIX)/man3/) || /bin/true
 	# install html docs
-	install -d $(DESTDIR)/usr/share/doc/pacparser/html/
-	(test -d docs/html && install -m 644 docs/html/* $(DESTDIR)/usr/share/doc/pacparser/html/) || /bin/true
+	install -d $(DESTDIR)$(PREFIX)/share/doc/pacparser/html/
+	(test -d docs/html && install -m 644 docs/html/* $(DESTDIR)$(PREFIX)/share/doc/pacparser/html/) || /bin/true
 	# install examples
-	install -d $(DESTDIR)/usr/share/doc/pacparser/examples/
-	(test -d examples && install -m 644 examples/* $(DESTDIR)/usr/share/doc//pacparser/examples/) || /bin/true
+	install -d $(DESTDIR)$(PREFIX)/share/doc/pacparser/examples/
+	(test -d examples && install -m 644 examples/* $(DESTDIR)$(PREFIX)/share/doc//pacparser/examples/) || /bin/true
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h
-	cd pymod && LDFLAGS="$(LDFLAGS)" SHFLAGS="$(SHFLAGS)" $(PYTHON) setup.py
+	cd pymod && LDFLAGS="$(LDFLAGS)" SHFLAGS="$(SHFLAGS)" MKSHLIB="$(MKSHLIB)" $(PYTHON) setup.py
 
 install-pymod: pymod
-	cd pymod && $(PYTHON) setup.py install
+	cd pymod && LIB_PREFIX="$(LIB_PREFIX)" $(PYTHON) setup.py install
 
 clean:
-	rm -f libpacparser.so libpacparser.so.${LIB_VER} pacparser.o pactester pymod/pacparser_o_buildstamp
+	rm -f libpacparser.$(SO_SUFFIX) $(LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp
 	cd pymod && python setup.py clean

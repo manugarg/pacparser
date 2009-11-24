@@ -35,14 +35,9 @@ else:
   target = sys.argv[1]
 
 ver = sys.version[0:3]
-
-if sys.platform.startswith("linux"):
-  env = ''
-  if 'LDFLAGS' in os.environ:
-    env = '%s LDFLAGS="%s"' % (env, os.environ['LDFLAGS'])
-  if 'CFLAGS' in os.environ:
-    env = '%s CFLAGS="%s"' % (env, os.environ['CFLAGS'])
-  os.system('%s make %s PY_VER="%s"' % (env, target, ver))
+print sys.platform
+if sys.platform.startswith("linux") or sys.platform == "darwin":
+  os.system('make %s PY_VER="%s"' % (target, ver))
 
 if sys.platform == 'win32':
   #install target is used to just install compiled files.
