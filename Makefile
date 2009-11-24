@@ -48,11 +48,15 @@ ifndef SM_INC
 ifeq (yes, $(shell [ -e /usr/include/js ] && echo yes))
   SM_INC= -I/usr/include/js
 else
-  ifeq (yes, $(shell [ -e /usr/include/smjs ] && echo yes))
-    SM_INC= -I/usr/include/smjs
+  ifeq (yes, $(shell [ -e /usr/local/include/js ] && echo yes))
+    SM_INC= -I/usr/local/include/js
   else
-    ifeq (yes, $(shell [ -e /usr/include/mozjs ] && echo yes))
-      SM_INC= -I/usr/include/mozjs
+    ifeq (yes, $(shell [ -e /usr/include/smjs ] && echo yes))
+      SM_INC= -I/usr/include/smjs
+    else
+      ifeq (yes, $(shell [ -e /usr/include/mozjs ] && echo yes))
+        SM_INC= -I/usr/include/mozjs
+      endif
     endif
   endif
 endif
