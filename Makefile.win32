@@ -32,8 +32,10 @@ pacparser.o: pacparser.c pac_utils.h
 js3250.dll:
 	copy "C:\Program Files\Mozilla Firefox\js3250.dll" .
 
-nspr4.dll:
+jslib_deps:
 	copy "C:\Program Files\Mozilla Firefox\nspr4.dll" .
+	if exist "C:\Program Files\Mozilla Firefox\mozcrt19.dll" copy "C:\Program Files\Mozilla Firefox\mozcrt19.dll" .
+	echo '' > jslibs_deps
 
 js3250.lib: js3250.dll
 	dumpbin /EXPORTS js3250.dll > js3250.dumpbin
@@ -49,7 +51,7 @@ pacparser.dll: pacparser.o js3250.lib
 pactester: pactester.c pacparser.h libpacparser.a
 	$(CC) pactester.c -o pactester -lpacparser -L. -I.
 
-dist: pacparser.dll js3250.dll nspr4.dll pactester
+dist: pacparser.dll js3250.dll jslib_deps pactester
 	if exist dist rmdir /s /q dist
 	mkdir dist
 	xcopy *.dll dist
@@ -67,7 +69,7 @@ dist: pacparser.dll js3250.dll nspr4.dll pactester
 pymod: pacparser.o pacparser.h js3250.lib
 	cd pymod && setup.py build
 
-dist-pymod: pymod js3250.dll nspr4.dll
+dist-pymod: pymod js3250.dll jslib_deps
 	cd pymod && setup.py dist
 
 clean:
