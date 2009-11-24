@@ -1,4 +1,5 @@
 *.svn*
+js*
 package_excludes
 package*
 cleandeb

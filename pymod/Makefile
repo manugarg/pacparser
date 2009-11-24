@@ -48,7 +48,7 @@ _pacparser$(PY_VER).so: pacparser_py$(PY_VER).o pacparser_o_buildstamp
 
 install: all
 	install -d $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser
-	install -m 644 *.py $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/
+	install -m 644 __init__.py $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/
 	install -m 644 _pacparser$(PY_VER).so $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/_pacparser.so
 
 clean:
