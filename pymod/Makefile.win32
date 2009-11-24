@@ -61,6 +61,7 @@ dist: _pacparser.pyd __init__.py
 	copy _pacparser.pyd dist
 	copy ..\js3250.dll dist
 	copy ..\nspr4.dll dist
+	if exist ..\mozcrt19.dll copy ..\mozcrt19.dll dist
 	copy ..\COPYING dist
 	copy ..\README dist
 	copy ..\README.win32 dist
