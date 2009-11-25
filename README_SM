@@ -4,16 +4,33 @@ headers to be able to compile and use pacparser.
 
 On a Debian based (including Ubuntu) system:
 -------------------------------------------
-On a Debian system, you can install spidermonkey library with:
-
-sudo apt-get install libmozjs-dev
+$ sudo apt-get install libmozjs-dev
 
 
 On a RPM based system (e.g. Fedora, Redhat):
 -------------------------------------------
-yum install js-devel
+$ yum install js-devel
 
 
-On other Unix based system:
---------------------------
-sudo spidermonkey/install_sm.sh
+On Mac OS X:
+------------
+On Mac you'll need to install Xcode[1] and MacPorts[2]. If MacPorts is
+already installed, ensure that it's up to date and install spidermonkey library
+using it.
+
+$ sudo port selfupdate
+$ sudo port sync
+$ sudo port install spidermonkey
+
+
+On other Unix like system:
+-------------------------
+$ sudo spidermonkey/install_sm.sh
+
+This script downloads spidermonkey source code from mozilla website, compiles
+it and installs it.
+
+
+Notes:
+[1] - http://developer.apple.com/technology/xcode.html
+[2] - http://www.macports.org/install.php
