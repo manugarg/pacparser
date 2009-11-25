@@ -44,11 +44,16 @@ ifndef SM_LIB
 ifeq (yes, $(shell [ -e /usr/lib/libjs.$(SO_SUFFIX) -o -e /usr/local/lib/libjs.$(SO_SUFFIX) ] && echo yes))
   SM_LIB = -ljs
 else
-  ifeq (yes, $(shell [ -e /usr/lib/libsmjs.$(SO_SUFFIX) ] && echo yes))
-    SM_LIB = -lsmjs
+  ifeq (yes, $(shell [ -e /opt/local/lib/libjs.$(SO_SUFFIX) ] && echo yes))
+    SM_LIB = -ljs
+    LDFLAGS += -L/opt/local/lib
   else
-    ifeq (yes, $(shell [ -e /usr/lib/libmozjs.$(SO_SUFFIX) ] && echo yes))
-      SM_LIB = -lmozjs
+    ifeq (yes, $(shell [ -e /usr/lib/libsmjs.$(SO_SUFFIX) ] && echo yes))
+      SM_LIB = -lsmjs
+    else
+      ifeq (yes, $(shell [ -e /usr/lib/libmozjs.$(SO_SUFFIX) ] && echo yes))
+        SM_LIB = -lmozjs
+      endif
     endif
   endif
 endif
@@ -58,8 +63,8 @@ ifndef SM_INC
 ifeq (yes, $(shell [ -e /usr/local/include/js ] && echo yes))
   SM_INC = -I/usr/local/include/js
 else
-  ifeq (yes, $(shell [ -e /usr/local/include/js ] && echo yes))
-    SM_INC = -I/usr/local/include/js
+  ifeq (yes, $(shell [ -e /opt/local/include/js ] && echo yes))
+    SM_INC = -I/opt/local/include/js
   else
     ifeq (yes, $(shell [ -e /usr/include/smjs ] && echo yes))
       SM_INC = -I/usr/include/smjs
