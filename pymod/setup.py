@@ -35,7 +35,6 @@ else:
   target = sys.argv[1]
 
 ver = sys.version[0:3]
-print sys.platform
 if sys.platform.startswith("linux") or sys.platform == "darwin":
   os.system('make %s PY_VER="%s"' % (target, ver))
 
