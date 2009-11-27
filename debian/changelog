@@ -1,6 +1,6 @@
 pacparser (1.0.8) unstable; urgency=low
 
-  * Fix build scripts to make build Mac compatible.
+  * Big changes to build scripts to make them Mac compatible.
   * Remove spidermonkey source code from pacparser.
   * Add a helper script to download and install spidermonkey.
   * Fix a bug in weekdayRange() utility function.
