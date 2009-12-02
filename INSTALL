@@ -8,25 +8,9 @@ You can also get the latest source code from subversion (svn) repository by
 following instructions at:
   http://code.google.com/p/pacparser/source
 
-pacparser uses SpiderMonkey JavaScript (JS) engine to parse PAC files. So, we
-need to get SpiderMonkey JS engine first.
-
-* Installing SpiderMonkey JS Engine (required to build and use pacparser):
-  -----------------------------------------------------------------------
-  There are packages available for Ubuntu and Debian. For other systems, you
-  can compile it from sources.
-
-  * From packages:
-      For Debian and Ubuntu edgy+ (6.10+): libmozjs0d and libmozjs-dev.
-      => sudo apt-get install libmozjs0d libmozjs-dev
-      For Ubuntu dapper and earlier (6.06-): libsmjs1 and libsmjs-dev.
-      => sudo apt-get install libsmjs1 libsmjs-dev
-
-  * By compiling from source:
-      SpiderMonkey JS engine is included with pacparser source code, and can
-      be compiled and installed by running following:
-      => make js
-      => sudo make install-js
+pacparser uses SpiderMonkey JavaScript (JS) engine to parse PAC files. Please
+see README_SM file in the same directory for instructions on how to install
+spidermonkey on your system.
 
 * pacparser C library and pactester:
   ----------------------------------
