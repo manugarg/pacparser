@@ -1,6 +1,24 @@
-rm -rf packages/pacparser-$1 packages/pacparser-$1.tar.gz
-rsync -avz --exclude-from=package_excludes . packages/pacparser-$1
-cd packages
-tar cvf pacparser-$1.tar pacparser-$1
-gzip pacparser-$1.tar
-cp pacparser-$1.tar.gz pacparser_$1.orig.tar.gz
+#!/bin/bash
+
+ver=$1
+[ -z $ver ] && echo "Please specify package version." && exit
+
+tools_dir=$(dirname $0)
+if [ "$tools_dir" == "." ]; then
+  tools_dir=$PWD
+fi
+pkg_dir=${tools_dir}/packages/pacparser-${ver}
+
+if [ -d ${pkg_dir} ]; then
+  rm -rf ${pkg_dir}*
+fi
+mkdir -p ${pkg_dir}
+
+cd ${tools_dir}/..
+svn list -R | grep -v tools | rsync -av --files-from=- --no-dirs . ${pkg_dir}
+cd -
+
+cd ${tools_dir}/packages
+tar cvf ${pkg_dir}.tar $(basename ${pkg_dir})
+gzip ${pkg_dir}.tar
+cp ${pkg_dir}.tar.gz ${pkg_dir/pacparser-/pacparser_}.orig.tar.gz

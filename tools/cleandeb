@@ -1,9 +1,14 @@
-#!/bin/sh
+#!/bin/bash 
 
-cd debian
+tools_dir=$(dirname $0)
+if [ "$tools_dir" == "." ]; then
+  tools_dir=$PWD
+fi
+
+cd ${tools_dir}/../debian
 svn list > /tmp/debfiles
 for file in *
 do
   grep -q ^$file$ /tmp/debfiles || rm -rf $file
 done
-
+cd -
