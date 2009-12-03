@@ -21,4 +21,10 @@ cd ${tools_dir}/packages
 tar cvf ${pkg_dir}.tar $(basename ${pkg_dir})
 gzip ${pkg_dir}.tar
 cp ${pkg_dir}.tar.gz ${pkg_dir/pacparser-/pacparser_}.orig.tar.gz
-cp -a ${tools_dir}/../debian ${pkg_dir}/
+cd -
+
+# Copy debian directory to pkg_dir to make debian package building easy.
+mkdir ${pkg_dir}/debian
+cd ${tools_dir}/../debian
+svn list -R | rsync -av --files-from=- --no-dirs . ${pkg_dir}/debian/
+cd -
