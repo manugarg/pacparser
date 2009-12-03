@@ -1,3 +1,10 @@
+pacparser (1.0.9) unstable; urgency=low
+
+  * Match upstream version.
+  * Upstream change: remove 'debian' directory from source tarball.
+
+ -- manu garg <manugarg@gmail.com>  Thu, 03 Dec 2009 14:07:24 +0530
+
 pacparser (1.0.8) unstable; urgency=low
 
   * Big changes to build scripts to make them Mac compatible.
