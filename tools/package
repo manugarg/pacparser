@@ -3,10 +3,8 @@
 ver=$1
 [ -z $ver ] && echo "Please specify package version." && exit
 
-tools_dir=$(dirname $0)
-if [ "$tools_dir" == "." ]; then
-  tools_dir=$PWD
-fi
+cd $(dirname $0); tools_dir=$PWD; cd -
+
 pkg_dir=${tools_dir}/packages/pacparser-${ver}
 
 if [ -d ${pkg_dir} ]; then
@@ -15,7 +13,8 @@ fi
 mkdir -p ${pkg_dir}
 
 cd ${tools_dir}/..
-svn list -R | grep -v tools | rsync -av --files-from=- --no-dirs . ${pkg_dir}
+svn list -R | egrep -v 'tools|debian' | rsync -av --files-from=- --no-dirs . \
+${pkg_dir}
 cd -
 
 cd ${tools_dir}/packages
