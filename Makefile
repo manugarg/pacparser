@@ -18,6 +18,7 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
+PREFIX ?= /usr
 OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 
 ifeq ($(OS_ARCH),Linux)
@@ -27,7 +28,7 @@ ifeq ($(OS_ARCH),Linux)
 endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
-  MKSHLIB = $(CC) -dynamiclib -framework System
+  MKSHLIB = $(CC) -dynamiclib -framework System -install_name $(PREFIX)/lib/$(notdir $@)
 endif
 
 LIB_VER = 1
@@ -91,7 +92,6 @@ ifeq ($(NOSO), $(filter-out $(MAKECMDGOALS),$(NOSO)))
 endif
 
 LIBRARY = libpacparser.$(SO_SUFFIX).$(LIB_VER)
-PREFIX ?= /usr
 LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
 INC_PREFIX = $(DESTDIR)$(PREFIX)/include
 BIN_PREFIX = $(DESTDIR)$(PREFIX)/bin
