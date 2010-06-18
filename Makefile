@@ -23,12 +23,13 @@ OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 
 ifeq ($(OS_ARCH),Linux)
   SO_SUFFIX = so
-  MKSHLIB = $(CC) -shared 
+  MKSHLIB = $(CC) -shared
   LIB_OPTS = -Wl,-soname=$(LIBRARY),-rpath=.
+  BIN_OPTS = -Wl,-rpath=$(LIB_PREFIX)
 endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
-  MKSHLIB = $(CC) -dynamiclib -framework System 
+  MKSHLIB = $(CC) -dynamiclib -framework System
   LIB_OPTS = -install_name $(PREFIX)/lib/pacparser/$(notdir $@)
 endif
 
@@ -74,7 +75,7 @@ libpacparser.$(SO_SUFFIX): $(LIBRARY)
 	ln -sf $(LIBRARY) libpacparser.$(SO_SUFFIX)
 
 pactester: pactester.c pacparser.h libpacparser.$(SO_SUFFIX)
-	$(CC) pactester.c -o pactester -lpacparser -L. -I. -Wl,-rpath=$(LIB_PREFIX)
+	$(CC) pactester.c -o pactester -lpacparser -L. -I. $(BIN_OPTS)
 
 install: all
 	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
