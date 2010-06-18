@@ -99,7 +99,7 @@ install: all
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h
-	cd pymod && SO_SUFFIX=$(SO_SUFFIX) LDFLAGS="$(LDFLAGS) -L.." SHFLAGS="$(SHFLAGS)" MKSHLIB="$(MKSHLIB)" $(PYTHON) setup.py
+	cd pymod && $(PYTHON) setup.py
 
 install-pymod: pymod
 	cd pymod && LIB_PREFIX="$(LIB_PREFIX)" $(PYTHON) setup.py install

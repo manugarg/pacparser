@@ -19,6 +19,18 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 CFLAGS = -g -DXP_UNIX -Wall -I..
+SHFLAGS = -fPIC
+
+OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
+ifeq ($(OS_ARCH),Linux)
+  SO_SUFFIX = so
+  MKSHLIB = $(CC) -shared
+  LIB_OPTS = -Wl,-rpath=.
+endif
+ifeq ($(OS_ARCH),Darwin)
+  SO_SUFFIX = dylib
+  MKSHLIB = $(CC) -dynamiclib -framework System
+endif
 
 ifndef PY_VER
   PY_VER = 2.5
@@ -36,7 +48,7 @@ endif
 endif
 
 CFLAGS += $(PY_INC)
-LDFLAGS += -lpython$(PY_VER)
+LDFLAGS += -lpython$(PY_VER) -L.. -ljs
 
 all: _pacparser$(PY_VER).$(SO_SUFFIX)
 
@@ -44,7 +56,7 @@ pacparser_py$(PY_VER).o: pacparser_py.c
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser_py.c -o pacparser_py$(PY_VER).o
 
 _pacparser$(PY_VER).$(SO_SUFFIX): pacparser_py$(PY_VER).o pacparser_o_buildstamp
-	$(MKSHLIB) $(SHFLAGS) -o _pacparser$(PY_VER).$(SO_SUFFIX) ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS) -Wl,-rpath=.
+	$(MKSHLIB) $(SHFLAGS) -o _pacparser$(PY_VER).$(SO_SUFFIX) ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS) $(LIB_OPTS)
 
 install: all
 	install -d $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser
