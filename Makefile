@@ -28,7 +28,7 @@ ifeq ($(OS_ARCH),Linux)
 endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
-  MKSHLIB = $(CC) -dynamiclib -framework System -install_name $(PREFIX)/lib/$(notdir $@)
+  MKSHLIB = $(CC) -dynamiclib -framework System -install_name $(PREFIX)/lib/pacparser/$(notdir $@)
 endif
 
 LIB_VER = 1
@@ -39,60 +39,13 @@ ifndef PYTHON
   PYTHON = python
 endif
 
-NOSO = clean
-
-ifndef SM_LIB
-ifeq (yes, $(shell [ -e /usr/lib/libjs.$(SO_SUFFIX) -o -e /usr/local/lib/libjs.$(SO_SUFFIX) ] && echo yes))
-  SM_LIB = -ljs
-else
-  ifeq (yes, $(shell [ -e /opt/local/lib/libjs.$(SO_SUFFIX) ] && echo yes))
-    SM_LIB = -ljs
-    LDFLAGS += -L/opt/local/lib
-  else
-    ifeq (yes, $(shell [ -e /usr/lib/libsmjs.$(SO_SUFFIX) ] && echo yes))
-      SM_LIB = -lsmjs
-    else
-      ifeq (yes, $(shell [ -e /usr/lib/libmozjs.$(SO_SUFFIX) ] && echo yes))
-        SM_LIB = -lmozjs
-      endif
-    endif
-  endif
-endif
-endif
-
-ifndef SM_INC
-ifeq (yes, $(shell [ -e /usr/local/include/js ] && echo yes))
-  SM_INC = -I/usr/local/include/js
-else
-  ifeq (yes, $(shell [ -e /opt/local/include/js ] && echo yes))
-    SM_INC = -I/opt/local/include/js
-  else
-    ifeq (yes, $(shell [ -e /usr/include/smjs ] && echo yes))
-      SM_INC = -I/usr/include/smjs
-    else
-      ifeq (yes, $(shell [ -e /usr/include/mozjs ] && echo yes))
-        SM_INC = -I/usr/include/mozjs
-      endif
-    endif
-  endif
-endif
-endif
-
-ifeq ($(NOSO), $(filter-out $(MAKECMDGOALS),$(NOSO)))
-  ifndef SM_LIB
-  $(error SpiderMonkey library not found. See 'README_SM' file.)
-  else
-    LDFLAGS += ${SM_LIB}
-  endif
-  ifdef SM_INC
-    CFLAGS += ${SM_INC}
-  else
-    $(error SpiderMonkey api not found. See 'README_SM' file.)
-  endif
-endif
+# Spidermonkey library.
+CFLAGS += -Ispidermonkey/js/src
+LDFLAGS += -ljs -L.
 
 LIBRARY = libpacparser.$(SO_SUFFIX).$(LIB_VER)
-LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
+JS_LIBRARY = libjs.$(SO_SUFFIX)
+LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib/pacparser
 INC_PREFIX = $(DESTDIR)$(PREFIX)/include
 BIN_PREFIX = $(DESTDIR)$(PREFIX)/bin
 MAN_PREFIX = $(DESTDIR)$(PREFIX)/share/man
@@ -100,11 +53,20 @@ MAN_PREFIX = $(DESTDIR)$(PREFIX)/share/man
 .PHONY: clean pymod install-pymod
 all: pactester
 
-pacparser.o: pacparser.c pac_utils.h
+jsapi: spidermonkey/js.tar.gz
+	cd spidermonkey && $(MAKE) jsapi
+
+$(JS_LIBRARY): spidermonkey/js.tar.gz
+	cd spidermonkey && SO_SUFFIX=$(SO_SUFFIX) $(MAKE) jslib
+ifeq ($(OS_ARCH),Darwin)
+	install_name_tool -id "@loader_path/libjs.dylib" $(JS_LIBRARY)
+endif
+
+pacparser.o: pacparser.c pac_utils.h jsapi
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
-$(LIBRARY): pacparser.o
+$(LIBRARY): pacparser.o $(JS_LIBRARY)
 	$(MKSHLIB) -o $(LIBRARY) pacparser.o $(LDFLAGS)
 
 libpacparser.$(SO_SUFFIX): $(LIBRARY)
@@ -116,6 +78,7 @@ pactester: pactester.c pacparser.h libpacparser.$(SO_SUFFIX)
 install: all
 	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
 	install -m 644 $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY)
+	install -m 644 $(JS_LIBRARY) $(LIB_PREFIX)/$(JS_LIBRARY)
 	ln -sf $(LIBRARY) $(LIB_PREFIX)/libpacparser.$(SO_SUFFIX)
 	install -m 755 pactester $(BIN_PREFIX)/pactester
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
@@ -140,5 +103,6 @@ install-pymod: pymod
 	cd pymod && LIB_PREFIX="$(LIB_PREFIX)" $(PYTHON) setup.py install
 
 clean:
-	rm -f libpacparser.$(SO_SUFFIX) $(LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp
+	rm -f libpacparser.$(SO_SUFFIX) $(LIBRARY) $(JS_LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp
 	cd pymod && python setup.py clean
+	cd spidermonkey && $(MAKE) clean
