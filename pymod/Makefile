@@ -44,7 +44,7 @@ pacparser_py$(PY_VER).o: pacparser_py.c
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser_py.c -o pacparser_py$(PY_VER).o
 
 _pacparser$(PY_VER).$(SO_SUFFIX): pacparser_py$(PY_VER).o pacparser_o_buildstamp
-	$(MKSHLIB) $(SHFLAGS) -o _pacparser$(PY_VER).$(SO_SUFFIX) ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS)
+	$(MKSHLIB) $(SHFLAGS) -o _pacparser$(PY_VER).$(SO_SUFFIX) ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS) -Wl,-rpath=.
 
 install: all
 	install -d $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser
