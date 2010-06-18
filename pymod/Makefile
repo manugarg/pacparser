@@ -38,18 +38,19 @@ endif
 CFLAGS += $(PY_INC)
 LDFLAGS += -lpython$(PY_VER)
 
-all: _pacparser$(PY_VER).so
+all: _pacparser$(PY_VER).$(SO_SUFFIX)
 
 pacparser_py$(PY_VER).o: pacparser_py.c
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser_py.c -o pacparser_py$(PY_VER).o
 
-_pacparser$(PY_VER).so: pacparser_py$(PY_VER).o pacparser_o_buildstamp
-	$(MKSHLIB) $(SHFLAGS) -o _pacparser$(PY_VER).so ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS)
+_pacparser$(PY_VER).$(SO_SUFFIX): pacparser_py$(PY_VER).o pacparser_o_buildstamp
+	$(MKSHLIB) $(SHFLAGS) -o _pacparser$(PY_VER).$(SO_SUFFIX) ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS)
 
 install: all
 	install -d $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser
 	install -m 644 __init__.py $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/
-	install -m 644 _pacparser$(PY_VER).so $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/_pacparser.so
+	install -m 644 ../libjs.$(SO_SUFFIX) $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/_pacparser.$(SO_SUFFIX)
+	install -m 644 _pacparser$(PY_VER).$(SO_SUFFIX) $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/_pacparser.$(SO_SUFFIX)
 
 clean:
 	rm -f *.o *.so

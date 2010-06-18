@@ -1,5 +1,4 @@
 jsapi: js-buildstamp
-	cp js/src/*.h ../js/
 
 jslib: js-buildstamp
 	cd js/src

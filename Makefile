@@ -23,12 +23,13 @@ OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 
 ifeq ($(OS_ARCH),Linux)
   SO_SUFFIX = so
-  MKSHLIB = $(CC) -shared
-  LDFLAGS += -Wl,-soname=$(LIBRARY)
+  MKSHLIB = $(CC) -shared 
+  LIB_OPTS = -Wl,-soname=$(LIBRARY),-rpath=.
 endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
-  MKSHLIB = $(CC) -dynamiclib -framework System -install_name $(PREFIX)/lib/pacparser/$(notdir $@)
+  MKSHLIB = $(CC) -dynamiclib -framework System 
+  LIB_OPTS = -install_name $(PREFIX)/lib/pacparser/$(notdir $@)
 endif
 
 LIB_VER = 1
@@ -67,13 +68,13 @@ pacparser.o: pacparser.c pac_utils.h jsapi
 	touch pymod/pacparser_o_buildstamp
 
 $(LIBRARY): pacparser.o $(JS_LIBRARY)
-	$(MKSHLIB) -o $(LIBRARY) pacparser.o $(LDFLAGS)
+	$(MKSHLIB) $(LIB_OPTS) -o $(LIBRARY) pacparser.o $(LDFLAGS)
 
 libpacparser.$(SO_SUFFIX): $(LIBRARY)
 	ln -sf $(LIBRARY) libpacparser.$(SO_SUFFIX)
 
 pactester: pactester.c pacparser.h libpacparser.$(SO_SUFFIX)
-	$(CC) pactester.c -o pactester -lpacparser -L. -I.
+	$(CC) pactester.c -o pactester -lpacparser -L. -I. -Wl,-rpath=$(LIB_PREFIX)
 
 install: all
 	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
@@ -97,7 +98,7 @@ install: all
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h
-	cd pymod && LDFLAGS="$(LDFLAGS)" SHFLAGS="$(SHFLAGS)" MKSHLIB="$(MKSHLIB)" $(PYTHON) setup.py
+	cd pymod && SO_SUFFIX=$(SO_SUFFIX) LDFLAGS="$(LDFLAGS) -L.." SHFLAGS="$(SHFLAGS)" MKSHLIB="$(MKSHLIB)" $(PYTHON) setup.py
 
 install-pymod: pymod
 	cd pymod && LIB_PREFIX="$(LIB_PREFIX)" $(PYTHON) setup.py install
