@@ -25,7 +25,6 @@ OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 ifeq ($(OS_ARCH),Linux)
   SO_SUFFIX = so
   MKSHLIB = $(CC) -shared
-  LIB_OPTS = -Wl,-rpath=.
 endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
@@ -48,7 +47,9 @@ endif
 endif
 
 CFLAGS += $(PY_INC)
-LDFLAGS += -lpython$(PY_VER) -L.. -ljs
+LDFLAGS += -lpython$(PY_VER) -L.. -ljs -lm
+
+PYMODULES_PATH = $(LIB_PREFIX)/pymodules/python$(PY_VER)
 
 all: _pacparser$(PY_VER).so
 
@@ -56,13 +57,12 @@ pacparser_py$(PY_VER).o: pacparser_py.c
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser_py.c -o pacparser_py$(PY_VER).o
 
 _pacparser$(PY_VER).so: pacparser_py$(PY_VER).o pacparser_o_buildstamp
-	$(MKSHLIB) $(SHFLAGS) -o _pacparser$(PY_VER).so ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS) $(LIB_OPTS)
+	$(MKSHLIB) $(SHFLAGS) -o _pacparser$(PY_VER).so ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS)
 
 install: all
-	install -d $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser
-	install -m 644 __init__.py $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/
-	install -m 644 ../libjs.$(SO_SUFFIX) $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/libjs.$(SO_SUFFIX)
-	install -m 644 _pacparser$(PY_VER).so $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/_pacparser.so
+	install -d $(PYMODULES_PATH)/pacparser
+	install -m 644 __init__.py $(PYMODULES_PATH)/pacparser/
+	install -m 644 _pacparser$(PY_VER).so $(PYMODULES_PATH)/pacparser/_pacparser.so
 
 clean:
 	rm -f *.o *.so

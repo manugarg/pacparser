@@ -24,8 +24,7 @@ OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 ifeq ($(OS_ARCH),Linux)
   SO_SUFFIX = so
   MKSHLIB = $(CC) -shared
-  LIB_OPTS = -Wl,-soname=$(LIBRARY),-rpath=.
-  BIN_OPTS = -Wl,-rpath=$(LIB_PREFIX)
+  LIB_OPTS = -Wl,-soname=$(LIBRARY)
 endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
@@ -43,11 +42,10 @@ endif
 
 # Spidermonkey library.
 CFLAGS += -Ispidermonkey/js/src
-LDFLAGS += -ljs -L.
+LDFLAGS += -lm -L. -ljs
 
 LIBRARY = libpacparser.$(SO_SUFFIX).$(LIB_VER)
-JS_LIBRARY = libjs.$(SO_SUFFIX)
-LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib/pacparser
+LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
 PYLIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
 INC_PREFIX = $(DESTDIR)$(PREFIX)/include
 BIN_PREFIX = $(DESTDIR)$(PREFIX)/bin
@@ -59,31 +57,26 @@ all: pactester
 jsapi: spidermonkey/js.tar.gz
 	cd spidermonkey && $(MAKE) jsapi
 
-$(JS_LIBRARY): spidermonkey/js.tar.gz
-	cd spidermonkey && SO_SUFFIX=$(SO_SUFFIX) $(MAKE) jslib
-ifeq ($(OS_ARCH),Darwin)
-	install_name_tool -id "@loader_path/libjs.dylib" $(JS_LIBRARY)
-endif
+libjs.a: spidermonkey/js.tar.gz
+	cd spidermonkey && $(MAKE) jslib
 
 pacparser.o: pacparser.c pac_utils.h jsapi
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
-$(LIBRARY): pacparser.o $(JS_LIBRARY)
+$(LIBRARY): pacparser.o libjs.a
 	$(MKSHLIB) $(LIB_OPTS) -o $(LIBRARY) pacparser.o $(LDFLAGS)
 
 libpacparser.$(SO_SUFFIX): $(LIBRARY)
 	ln -sf $(LIBRARY) libpacparser.$(SO_SUFFIX)
 
 pactester: pactester.c pacparser.h libpacparser.$(SO_SUFFIX)
-	$(CC) pactester.c -o pactester -lpacparser -L. -I. $(BIN_OPTS)
+	$(CC) pactester.c -o pactester -lpacparser -L. -I.
 
 install: all
 	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
 	install -m 644 $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY)
-	install -m 644 $(JS_LIBRARY) $(LIB_PREFIX)/$(JS_LIBRARY)
 	ln -sf $(LIBRARY) $(LIB_PREFIX)/libpacparser.$(SO_SUFFIX)
-	ln -sf pacparser/$(LIBRARY) $(LIB_PREFIX)/../libpacparser.$(SO_SUFFIX)
 	install -m 755 pactester $(BIN_PREFIX)/pactester
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
 	# install pactester manpages
@@ -107,6 +100,6 @@ install-pymod: pymod
 	cd pymod && LIB_PREFIX="$(PYLIB_PREFIX)" $(PYTHON) setup.py install
 
 clean:
-	rm -f libpacparser.$(SO_SUFFIX) $(LIBRARY) $(JS_LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp
+	rm -f libpacparser.$(SO_SUFFIX) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp
 	cd pymod && python setup.py clean
 	cd spidermonkey && $(MAKE) clean

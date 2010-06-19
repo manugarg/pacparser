@@ -2,7 +2,7 @@ jsapi: js-buildstamp
 
 jslib: js-buildstamp
 	cd js/src
-	find . -name "libjs.$(SO_SUFFIX)" -exec cp {} .. \;
+	find . -name "libjs.a" -exec cp {} .. \;
 
 js-buildstamp:
 	tar xzvf js.tar.gz
