@@ -42,7 +42,7 @@ endif
 
 # Spidermonkey library.
 CFLAGS += -Ispidermonkey/js/src
-LDFLAGS += -lm -L. libjs.a
+LDFLAGS += -lm
 
 LIBRARY = libpacparser.$(SO_SUFFIX).$(LIB_VER)
 LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
@@ -65,7 +65,7 @@ pacparser.o: pacparser.c pac_utils.h jsapi
 	touch pymod/pacparser_o_buildstamp
 
 $(LIBRARY): pacparser.o libjs.a
-	$(MKSHLIB) $(LIB_OPTS) -o $(LIBRARY) pacparser.o $(LDFLAGS)
+	$(MKSHLIB) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a $(LDFLAGS)
 
 libpacparser.$(SO_SUFFIX): $(LIBRARY)
 	ln -sf $(LIBRARY) libpacparser.$(SO_SUFFIX)

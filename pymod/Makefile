@@ -47,7 +47,7 @@ endif
 endif
 
 CFLAGS += $(PY_INC)
-LDFLAGS += -lpython$(PY_VER) -L.. libjs.a -lm
+LDFLAGS += -lpython$(PY_VER) -lm
 
 PYMODULES_PATH = $(LIB_PREFIX)/pymodules/python$(PY_VER)
 
@@ -57,7 +57,7 @@ pacparser_py$(PY_VER).o: pacparser_py.c
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser_py.c -o pacparser_py$(PY_VER).o
 
 _pacparser$(PY_VER).so: pacparser_py$(PY_VER).o pacparser_o_buildstamp
-	$(MKSHLIB) $(SHFLAGS) -o _pacparser$(PY_VER).so ../pacparser.o pacparser_py$(PY_VER).o $(LDFLAGS)
+	$(MKSHLIB) $(SHFLAGS) -o _pacparser$(PY_VER).so ../pacparser.o ../libjs.a pacparser_py$(PY_VER).o $(LDFLAGS)
 
 install: all
 	install -d $(PYMODULES_PATH)/pacparser
