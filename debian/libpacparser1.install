@@ -1,4 +1,5 @@
 usr/bin/pactester
-usr/lib/lib*.so.*
+usr/lib/pacparser/libpacparser.so.1
+usr/lib/pacparser/libjs.so
 usr/share/doc/pacparser/html/*
 usr/share/man/man1/*

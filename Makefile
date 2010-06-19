@@ -48,6 +48,7 @@ LDFLAGS += -ljs -L.
 LIBRARY = libpacparser.$(SO_SUFFIX).$(LIB_VER)
 JS_LIBRARY = libjs.$(SO_SUFFIX)
 LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib/pacparser
+PYLIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
 INC_PREFIX = $(DESTDIR)$(PREFIX)/include
 BIN_PREFIX = $(DESTDIR)$(PREFIX)/bin
 MAN_PREFIX = $(DESTDIR)$(PREFIX)/share/man
@@ -82,6 +83,7 @@ install: all
 	install -m 644 $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY)
 	install -m 644 $(JS_LIBRARY) $(LIB_PREFIX)/$(JS_LIBRARY)
 	ln -sf $(LIBRARY) $(LIB_PREFIX)/libpacparser.$(SO_SUFFIX)
+	ln -sf pacparser/$(LIBRARY) $(LIB_PREFIX)/../libpacparser.$(SO_SUFFIX)
 	install -m 755 pactester $(BIN_PREFIX)/pactester
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
 	# install pactester manpages
@@ -102,7 +104,7 @@ pymod: pacparser.o pacparser.h
 	cd pymod && $(PYTHON) setup.py
 
 install-pymod: pymod
-	cd pymod && LIB_PREFIX="$(LIB_PREFIX)" $(PYTHON) setup.py install
+	cd pymod && LIB_PREFIX="$(PYLIB_PREFIX)" $(PYTHON) setup.py install
 
 clean:
 	rm -f libpacparser.$(SO_SUFFIX) $(LIBRARY) $(JS_LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp

@@ -61,7 +61,7 @@ _pacparser$(PY_VER).$(SO_SUFFIX): pacparser_py$(PY_VER).o pacparser_o_buildstamp
 install: all
 	install -d $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser
 	install -m 644 __init__.py $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/
-	install -m 644 ../libjs.$(SO_SUFFIX) $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/_pacparser.$(SO_SUFFIX)
+	install -m 644 ../libjs.$(SO_SUFFIX) $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/libjs.$(SO_SUFFIX)
 	install -m 644 _pacparser$(PY_VER).$(SO_SUFFIX) $(LIB_PREFIX)/python$(PY_VER)/site-packages/pacparser/_pacparser.$(SO_SUFFIX)
 
 clean:
