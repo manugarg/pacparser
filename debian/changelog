@@ -1,3 +1,9 @@
+pacparser (1.1.1) lucid; urgency=low
+
+  * Cut a bad release last time. Some changes that didn't go in.
+
+ -- manu garg <manugarg@gmail.com>  Sat, 19 Jun 2010 19:45:33 +0530
+
 pacparser (1.1.0) lucid; urgency=low
 
   * Match upstream version.
