@@ -47,7 +47,7 @@ endif
 endif
 
 CFLAGS += $(PY_INC)
-LDFLAGS += -lpython$(PY_VER) -L.. -ljs -lm
+LDFLAGS += -lpython$(PY_VER) -L.. libjs.a -lm
 
 PYMODULES_PATH = $(LIB_PREFIX)/pymodules/python$(PY_VER)
 

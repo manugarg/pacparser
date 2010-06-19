@@ -29,7 +29,7 @@ endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
   MKSHLIB = $(CC) -dynamiclib -framework System
-  LIB_OPTS = -install_name $(PREFIX)/lib/pacparser/$(notdir $@)
+  LIB_OPTS = -install_name $(PREFIX)/lib/$(notdir $@)
 endif
 
 LIB_VER = 1
@@ -42,7 +42,7 @@ endif
 
 # Spidermonkey library.
 CFLAGS += -Ispidermonkey/js/src
-LDFLAGS += -lm -L. -ljs
+LDFLAGS += -lm -L. libjs.a
 
 LIBRARY = libpacparser.$(SO_SUFFIX).$(LIB_VER)
 LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
