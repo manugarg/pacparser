@@ -21,18 +21,22 @@
 PREFIX ?= /usr
 OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 
+LIBRARY_NAME = libpacparser
+LIB_VER = 1
+
 ifeq ($(OS_ARCH),Linux)
   SO_SUFFIX = so
+  LIBRARY = $(LIBRARY_NAME).$(SO_SUFFIX).$(LIB_VER)
   MKSHLIB = $(CC) -shared
   LIB_OPTS = -Wl,-soname=$(LIBRARY)
 endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
+  LIBRARY = $(LIBRARY_NAME).$(LIB_VER).$(SO_SUFFIX)
   MKSHLIB = $(CC) -dynamiclib -framework System
   LIB_OPTS = -install_name $(PREFIX)/lib/$(notdir $@)
 endif
 
-LIB_VER = 1
 CFLAGS = -g -DXP_UNIX -Wall
 SHFLAGS = -fPIC
 
@@ -44,7 +48,7 @@ endif
 CFLAGS += -Ispidermonkey/js/src
 LDFLAGS += -lm
 
-LIBRARY = libpacparser.$(SO_SUFFIX).$(LIB_VER)
+LIBRARY_LINK = $(LIBRARY_NAME).$(SO_SUFFIX)
 LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
 PYLIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
 INC_PREFIX = $(DESTDIR)$(PREFIX)/include
@@ -67,16 +71,16 @@ pacparser.o: pacparser.c pac_utils.h jsapi
 $(LIBRARY): pacparser.o libjs.a
 	$(MKSHLIB) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a $(LDFLAGS)
 
-libpacparser.$(SO_SUFFIX): $(LIBRARY)
-	ln -sf $(LIBRARY) libpacparser.$(SO_SUFFIX)
+$(LIBRARY_LINK): $(LIBRARY)
+	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
-pactester: pactester.c pacparser.h libpacparser.$(SO_SUFFIX)
+pactester: pactester.c pacparser.h $(LIBRARY_LINK)
 	$(CC) pactester.c -o pactester -lpacparser -L. -I.
 
 install: all
 	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
 	install -m 644 $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY)
-	ln -sf $(LIBRARY) $(LIB_PREFIX)/libpacparser.$(SO_SUFFIX)
+	ln -sf $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY_LINK)
 	install -m 755 pactester $(BIN_PREFIX)/pactester
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
 	# install pactester manpages
@@ -100,6 +104,6 @@ install-pymod: pymod
 	cd pymod && LIB_PREFIX="$(PYLIB_PREFIX)" $(PYTHON) setup.py install
 
 clean:
-	rm -f libpacparser.$(SO_SUFFIX) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp
+	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp
 	cd pymod && python setup.py clean
 	cd spidermonkey && $(MAKE) clean
