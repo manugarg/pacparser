@@ -43,7 +43,10 @@
 
 #include "pac_utils.h"
 
+#define MAX_IP_RESULTS 10
+
 static char *myip = NULL;
+static int define_extensions = 0; //0: False, 1: True
 
 // inet_ntop is not defined on iindows. Define it as a wrapper to functions
 // available on windows.
@@ -107,19 +110,68 @@ print_error(JSContext *cx, const char *message, JSErrorReport *report)
             message);
 }
 
-// Define DNS Resolve function; not available in JavaScript.
+// DNS Resolve function; used by other routines.
+int
+resolve_host(const char *hostname, char *ipaddr_list, int max_results)
+{
+  struct addrinfo hints;
+  struct addrinfo *result;
+  struct addrinfo *ai;
+  char ipaddr[INET6_ADDRSTRLEN];
+  int error;
+
+  memset(&hints, 0, sizeof(struct addrinfo));
+
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+
+  error = getaddrinfo(hostname, NULL, &hints, &result);
+  if (error) return error;
+  int i = 0;
+  for(ai = result; ai != NULL && i < max_results; ai = ai->ai_next, i++) {
+    getnameinfo(ai->ai_addr, ai->ai_addrlen, ipaddr, sizeof(ipaddr), NULL, 0,
+                NI_NUMERICHOST);
+    if (ipaddr_list[0] == '\0') sprintf(ipaddr_list, "%s", ipaddr);
+    else sprintf(ipaddr_list, "%s;%s", ipaddr_list, ipaddr);
+  }
+  freeaddrinfo(ai);
+  return 0;
+}
+
+// Define dnsResolve in JS context; not available in JavaScript.
 static JSBool                                  // JS_TRUE or JS_FALSE
 dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
   char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
   char* out;
-  struct hostent *hent;
-  char ipaddr[INET_ADDRSTRLEN];
-  if ((hent = gethostbyname(name)) == NULL) {
+  char ipaddr[INET6_ADDRSTRLEN] = "";
+
+  if(resolve_host(name, ipaddr, 1)) {
     *rval = JSVAL_NULL;
     return JS_TRUE;
   }
-  inet_ntop(hent->h_addrtype, hent->h_addr_list[0], ipaddr, sizeof(ipaddr));
+
+  out = JS_malloc(cx, strlen(ipaddr) + 1);
+  strcpy(out, ipaddr);
+  JSString *str = JS_NewString(cx, out, strlen(out));
+  *rval = STRING_TO_JSVAL(str);
+  return JS_TRUE;
+}
+
+// Define dnsResolveEx in JS context; not available in JavaScript.
+static JSBool                                  // JS_TRUE or JS_FALSE
+dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
+               jsval *rval)
+{
+  char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
+  char* out;
+  char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS] = "";
+
+  if(resolve_host(name, ipaddr, MAX_IP_RESULTS)) {
+    *rval = JSVAL_NULL;
+    return JS_TRUE;
+  }
+
   out = JS_malloc(cx, strlen(ipaddr) + 1);
   strcpy(out, ipaddr);
   JSString *str = JS_NewString(cx, out, strlen(out));
@@ -131,7 +183,7 @@ dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 static JSBool                                  // JS_TRUE or JS_FALSE
 my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
-  char ipaddr[INET_ADDRSTRLEN];
+  char ipaddr[INET6_ADDRSTRLEN];
   char* out;
 
   if (myip)                  // If my (client's) IP address is already set.
@@ -139,11 +191,9 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   else {
     char name[256];
     gethostname(name, sizeof(name));
-    struct hostent *hent;
-    if ((hent = gethostbyname(name)) == NULL)
+    if (resolve_host(name, ipaddr, 1)) {
       strcpy(ipaddr, "127.0.0.1");
-    else
-      inet_ntop(hent->h_addrtype, hent->h_addr_list[0], ipaddr, sizeof(ipaddr));
+    }
   }
 
   out = JS_malloc(cx, strlen(ipaddr) + 1);
@@ -153,6 +203,31 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   return JS_TRUE;
 }
 
+// Define myIpAddressEx function; not available in JavaScript.
+static JSBool                                  // JS_TRUE or JS_FALSE
+my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+{
+  char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS];
+  char* out;
+
+  if (myip)                  // If my (client's) IP address is already set.
+    strcpy(ipaddr, myip);
+  else {
+    char name[256];
+    gethostname(name, sizeof(name));
+    if (resolve_host(name, ipaddr, MAX_IP_RESULTS)) {
+      strcpy(ipaddr, "127.0.0.1");
+    }
+  }
+
+  out = JS_malloc(cx, strlen(ipaddr) + 1);
+  strcpy(out, ipaddr);
+  JSString *str = JS_NewString(cx, out, strlen(out));
+  *rval = STRING_TO_JSVAL(str);
+  return JS_TRUE;
+}
+
+// Define some JS context related variables.
 JSRuntime *rt = NULL;
 JSContext *cx = NULL;
 JSObject *global = NULL;
@@ -168,6 +243,12 @@ pacparser_setmyip(const char *ip)
 {
   myip = malloc(strlen(ip) +1);         // Allocate space just to be sure.
   strcpy(myip, ip);
+}
+
+void
+pacparser_enable_extensions(const int enable_extensions)
+{
+  define_extensions = enable_extensions;
 }
 
 // Initialize PAC parser.
@@ -192,6 +273,12 @@ pacparser_init()
     return 0;
   if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0))
     return 0;
+  if (define_extensions) {
+    if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0))
+      return 0;
+    if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0))
+      return 0;
+  }
   // Evaluate pacUtils. Utility functions required to parse pac files.
   if (!JS_EvaluateScript(cx,           // JS engine context
                          global,       // global object

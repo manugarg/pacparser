@@ -31,9 +31,9 @@
 void usage(const char *progname)
 {
   fprintf(stderr, "\nUsage:  %s <-p pacfile> <-u url> [-h host] "
-          "[-c client_ip]", progname);
+          "[-c client_ip] [-e]", progname);
   fprintf(stderr, "\n        %s <-p pacfile> <-f urlslist> "
-          "[-c client_ip]\n", progname);
+          "[-c client_ip] [-e]\n", progname);
   fprintf(stderr, "\nOptions:\n");
   fprintf(stderr, "  -p pacfile   : PAC file to test\n");
   fprintf(stderr, "  -u url       : URL to test for\n");
@@ -42,6 +42,7 @@ void usage(const char *progname)
                   "myIpAddres() function\n");
   fprintf(stderr, "                 in PAC files), defaults to IP address "
                   "on which it is running.\n");
+  fprintf(stderr, "  -e           :  enable extensions (Ex functions)\n");
   fprintf(stderr, "  -f urlslist  : a file containing list of URLs to be "
           "tested.\n");
 }
@@ -76,8 +77,9 @@ char *get_host_from_url(const char *url)
 int main(int argc, char* argv[])
 {
   char *pacfile=NULL, *url=NULL, *host=NULL, *urlslist=NULL, *client_ip=NULL;
+  int enable_extensions=0;
   char c;
-  while ((c = getopt(argc, argv, "p:u:h:f:c:")) != -1)
+  while ((c = getopt(argc, argv, "ep:u:h:f:c:")) != -1)
     switch (c)
     {
       case 'p':
@@ -94,6 +96,9 @@ int main(int argc, char* argv[])
         break;
       case 'c':
         client_ip = optarg;
+        break;
+      case 'e':
+        enable_extensions = 1;
         break;
       case '?':
         if (optopt == 'p' || optopt == 'u' || optopt == 'h' ||
@@ -118,6 +123,9 @@ int main(int argc, char* argv[])
     usage(argv[0]);
     return 1;
   }
+
+  if(enable_extensions)
+    pacparser_enable_extensions(1);
 
   // initialize pacparser
   if (!pacparser_init()) {

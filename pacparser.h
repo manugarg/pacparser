@@ -65,3 +65,10 @@ void pacparser_cleanup();
 // myIpAddress() javascript function.
 void pacparser_setmyip(const char *ip                 // Custom IP address.
                        );
+
+// Enable extension functions.
+// Enables extension functions - dnsResolveEx, myIpAddressEx, isResolvableEx.
+// These functions are used by Google Chrome and IE to work with IPv6.
+void pacparser_enable_extensions(
+    const int enable_extension          // Whether to enable extensions (0: No, 1: Yes
+    );

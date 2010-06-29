@@ -71,6 +71,13 @@ const char *pacUtils =
 "    return (ip != null);\n"
 "}\n"
 
+"if (typeof(dnsResolveEx) == \"function\") {\n"
+  "function isResolvableEx(host) {\n"
+  "    var ip = dnsResolveEx(host);\n"
+  "    return (ip != null);\n"
+  "}\n"
+"}\n"
+
 "function localHostOrDomainIs(host, hostdom) {\n"
 "    return (host == hostdom) ||\n"
 "           (hostdom.lastIndexOf(host + '.', 0) == 0);\n"
