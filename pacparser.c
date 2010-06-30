@@ -27,7 +27,6 @@
 #ifdef XP_UNIX
 #include <unistd.h>
 #include <sys/socket.h>                // for AF_INET
-#include <arpa/inet.h>
 #include <netdb.h>
 #endif
 
@@ -46,7 +45,7 @@
 #define MAX_IP_RESULTS 10
 
 static char *myip = NULL;
-static int define_extensions = 0; //0: False, 1: True
+static int define_microsoft_extensions = 0; //0: False, 1: True
 
 // inet_ntop is not defined on iindows. Define it as a wrapper to functions
 // available on windows.
@@ -111,6 +110,8 @@ print_error(JSContext *cx, const char *message, JSErrorReport *report)
 }
 
 // DNS Resolve function; used by other routines.
+// This function is used by dnsResolve, dnsResolveEx, myIpAddress,
+// myIpAddressEx.
 int
 resolve_host(const char *hostname, char *ipaddr_list, int max_results)
 {
@@ -138,7 +139,8 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results)
   return 0;
 }
 
-// Define dnsResolve in JS context; not available in JavaScript.
+// dnsResolve in JS context; not available in core JavaScript.
+// returns javascript null if not able to resolve.
 static JSBool                                  // JS_TRUE or JS_FALSE
 dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
@@ -158,7 +160,8 @@ dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   return JS_TRUE;
 }
 
-// Define dnsResolveEx in JS context; not available in JavaScript.
+// dnsResolveEx in JS context; not available in core JavaScript.
+// returns javascript null if not able to resolve.
 static JSBool                                  // JS_TRUE or JS_FALSE
 dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
                jsval *rval)
@@ -179,7 +182,8 @@ dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
   return JS_TRUE;
 }
 
-// Define myIpAddress function; not available in JavaScript.
+// myIpAddress in JS context; not available in core JavaScript.
+// returns 127.0.0.1 if not able to determine local ip.
 static JSBool                                  // JS_TRUE or JS_FALSE
 my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
@@ -203,7 +207,8 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   return JS_TRUE;
 }
 
-// Define myIpAddressEx function; not available in JavaScript.
+// myIpAddressEx in JS context; not available in core JavaScript.
+// returns 127.0.0.1 if not able to determine local ip.
 static JSBool                                  // JS_TRUE or JS_FALSE
 my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
@@ -228,10 +233,10 @@ my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 }
 
 // Define some JS context related variables.
-JSRuntime *rt = NULL;
-JSContext *cx = NULL;
-JSObject *global = NULL;
-JSClass global_class = {
+static JSRuntime *rt = NULL;
+static JSContext *cx = NULL;
+static JSObject *global = NULL;
+static JSClass global_class = {
     "global",0,
     JS_PropertyStub,JS_PropertyStub,JS_PropertyStub,JS_PropertyStub,
     JS_EnumerateStub,JS_ResolveStub,JS_ConvertStub,JS_FinalizeStub
@@ -246,9 +251,9 @@ pacparser_setmyip(const char *ip)
 }
 
 void
-pacparser_enable_extensions(const int enable_extensions)
+pacparser_enable_microsoft_extensions(int enable)
 {
-  define_extensions = enable_extensions;
+  define_microsoft_extensions = enable;
 }
 
 // Initialize PAC parser.
@@ -273,7 +278,7 @@ pacparser_init()
     return 0;
   if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0))
     return 0;
-  if (define_extensions) {
+  if (define_microsoft_extensions) {
     if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0))
       return 0;
     if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0))

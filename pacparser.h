@@ -66,9 +66,10 @@ void pacparser_cleanup();
 void pacparser_setmyip(const char *ip                 // Custom IP address.
                        );
 
-// Enable extension functions.
-// Enables extension functions - dnsResolveEx, myIpAddressEx, isResolvableEx.
-// These functions are used by Google Chrome and IE to work with IPv6.
-void pacparser_enable_extensions(
-    const int enable_extension          // Whether to enable extensions (0: No, 1: Yes
+// Enable Microsoft PAC extensions.
+// Enables a subset of Microsoft PAC extensions - dnsResolveEx, myIpAddressEx,
+// isResolvableEx. These functions are used by Google Chrome and IE to work
+// with IPv6. More info: http://code.google.com/p/pacparser/issues/detail?id=4
+void pacparser_enable_microsoft_extensions(
+    int enable_extensions       // Whether to enable extensions (0: No, 1: Yes)
     );

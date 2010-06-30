@@ -3,39 +3,43 @@
 
 <html>
 <head>
-<title>"pacparser_setmyip"(3) manual page</title>
+<title>"pacparser_enable_microsoft_extensions"(3) manual page</title>
 </head>
 <body bgcolor='white'>
 <a href='#toc'>Table of Contents</a><p>
 
 <h2><a name='sect0' href='#toc0'>Name</a></h2>
-pacparser_setmyip - Sets my IP address. 
+pacparser_enable_microsoft_extensions - Enable Microsoft PAC extensions.
+
 <h2><a name='sect1' href='#toc1'>Synopsis</a></h2>
-<b>#include &lt;../pacparser.h&gt;
-<p>
-void pacparser_setmyip(const char *ip); 
+<b>#include &lt;../pacparser.h&gt; <p>
+void pacparser_enable_microsoft_extensions(int
+enable_extensions); 
 <h2><a name='sect2' href='#toc2'></b>Parameters</a></h2>
 
 <dl>
 
-<dt><b>const char *ip</b> </dt>
-<dd>Custom
-IP address. </dd>
+<dt><b>int enable_extensions</b> </dt>
+<dd>Whether to enable extensions
+(0: No, 1: Yes). </dd>
 </dl>
 
 <h2><a name='sect3' href='#toc3'>Description</a></h2>
-Sets my IP address to a custom value. This is the
-IP address returned by myIpAddress() javascript function. 
+Enables a subset of Microsoft PAC extensions
+- dnsResolveEx, myIpAddressEx, isResolvableEx. These functions are used by
+Google Chrome and IE to work with IPv6. More info: <a href='http://code.google.com/p/pacparser/issues/detail?id=4.'>http://code.google.com/p/pacparser/issues/detail?id=4.</a>
+
+
 <h2><a name='sect4' href='#toc4'>See Also</a></h2>
 <a href='pacparser_init.3.html'>pacparser_init(3)</a>
-,
-<a href='pacparser_parse_pac.3.html'>pacparser_parse_pac(3)</a>
+, <a href='pacparser_parse_pac.3.html'>pacparser_parse_pac(3)</a>
 , <a href='pacparser_find_proxy.3.html'>pacparser_find_proxy(3)</a>
-, <a href='pacparser_just_find_proxy.3.html'>pacparser_just_find_proxy(3)</a>
 ,
-<a href='pacparser_cleanup.3.html'>pacparser_cleanup(3)</a>
-, <a href='pacparser_enable_microsoft_extensions.3.html'>pacparser_enable_microsoft_extensions(3)</a>
- <p>
+<a href='pacparser_just_find_proxy.3.html'>pacparser_just_find_proxy(3)</a>
+, <a href='pacparser_cleanup.3.html'>pacparser_cleanup(3)</a>
+, <a href='pacparser_setmyip.3.html'>pacparser_setmyip(3)</a>
+
+<p>
 
 <hr><p>
 <a name='toc'><b>Table of Contents</b></a><p>
