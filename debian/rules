@@ -88,7 +88,7 @@ binary-arch: build install
 	dh_installchangelogs 
 	dh_installdocs
 	dh_installexamples
-	dh_install --sourcedir=debian/tmp
+	dh_install --sourcedir=debian/tmp -X*.pyc
 #	dh_installmenu
 #	dh_installdebconf	
 #	dh_installlogrotate
