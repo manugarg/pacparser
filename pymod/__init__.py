@@ -101,3 +101,10 @@ def setmyip(ip_address):
   Set my ip address. This is the IP address returned by myIpAddress()
   """
   _pacparser.setmyip(ip_address)
+
+def enable_microsoft_extensions():
+  """
+  Enables Microsoft PAC extensions (dnsResolveEx, isResolvableEx,
+  myIpAddressEx).
+  """
+  _pacparser.enable_microsoft_extensions()

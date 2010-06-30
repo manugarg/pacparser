@@ -91,15 +91,15 @@ py_pacparser_find_proxy(PyObject *self, PyObject *args)
 }
 
 // Destroys JavaSctipt Engine.
-static PyObject * 
+static PyObject *
 py_pacparser_cleanup()
 {
   pacparser_cleanup();
   Py_RETURN_NONE;
 }
 
-// Destroys JavaSctipt Engine.
-static PyObject * 
+// Sets local ip to the argument.
+static PyObject *
 py_pacparser_setmyip(PyObject *self, PyObject *args)
 {
   const char *ip;
@@ -109,12 +109,22 @@ py_pacparser_setmyip(PyObject *self, PyObject *args)
   Py_RETURN_NONE;
 }
 
+// Enables Microsoft extensions.
+static PyObject *
+py_pacparser_enable_microsoft_extensions(PyObject *self, PyObject *args)
+{
+  pacparser_enable_microsoft_extensions();
+  Py_RETURN_NONE;
+}
+
 static PyMethodDef  PpMethods[] = {
   {"init", py_pacparser_init, METH_VARARGS, "initialize pacparser"},
   {"parse_pac", py_pacparser_parse_pac, METH_VARARGS, "parse pacfile"},
   {"find_proxy", py_pacparser_find_proxy, METH_VARARGS, "returns proxy string"},
   {"cleanup", py_pacparser_cleanup, METH_VARARGS, "destroy pacparser engine"},
   {"setmyip", py_pacparser_setmyip, METH_VARARGS, "set my ip address"},
+  {"enable_microsoft_extensions", py_pacparser_enable_microsoft_extensions,
+    METH_VARARGS, "enable Microsoft extensions"},
   {NULL, NULL, 0, NULL}
 };
 

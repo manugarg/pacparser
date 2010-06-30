@@ -222,9 +222,15 @@ pacparser_setmyip(const char *ip)
 }
 
 void
-pacparser_enable_microsoft_extensions(int enable)
+pacparser_enable_microsoft_extensions()
 {
-  define_microsoft_extensions = enable;
+  if(cx) {
+    fprintf(stderr, "pacparser.c: pacparser_enable_microsoft_extensions: "
+            "Can not enable microsoft extensions now. This function should be "
+            "called before pacparser_init.\n");
+    return;
+  }
+  define_microsoft_extensions = 1;
 }
 
 // Initialize PAC parser.
@@ -277,12 +283,12 @@ pacparser_parse_pac(const char *pacfile)
   jsval rval;
   char *script = NULL;
   if ((script = read_file_into_str(pacfile)) == NULL) {
-    fprintf(stderr, "libpacparser.so: pacparser_parse_pac: %s %s\n", "Could not"
+    fprintf(stderr, "pacparser.c: pacparser_parse_pac: %s %s\n", "Could not"
             " read pacfile", pacfile);
     return 0;
   }
   if (cx == NULL || global == NULL) {
-    fprintf(stderr, "libpacparser.so: pacparser_parse_pac: %s\n", "Pac parser"
+    fprintf(stderr, "pacparser.c: pacparser_parse_pac: %s\n", "Pac parser"
             " is not initialized.");
     return 0;
   }
@@ -311,17 +317,17 @@ pacparser_find_proxy(const char *url, const char *host)
   jsval rval;
   char *script;
   if (url == NULL || (strcmp(url, "") == 0)) {
-    fprintf(stderr, "libpacparser.so: pacparser_find_proxy: %s\n", "URL not "
+    fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n", "URL not "
             "defined");
     return NULL;
   }
   if (host == NULL || (strcmp(host,"") == 0)) {
-    fprintf(stderr, "libpacparser.so: pacparser_find_proxy: %s\n", "Host not "
+    fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n", "Host not "
             "defined");
     return NULL;
   }
   if (cx == NULL || global == NULL) {
-    fprintf(stderr, "libpacparser.so: pacparser_find_proxy: %s\n",
+    fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n",
             "Pac parser is not initialized.");
     return NULL;
   }
@@ -330,7 +336,7 @@ pacparser_find_proxy(const char *url, const char *host)
   if ( !JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval) )
     return NULL;
   if ( strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0 ) {
-    fprintf(stderr, "libpacparser.so: pacparser_find_proxy: %s\n", "Javascript"
+    fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n", "Javascript"
             " function FindProxyForURL not defined.");
     return NULL;
   }
@@ -350,6 +356,9 @@ pacparser_find_proxy(const char *url, const char *host)
 void
 pacparser_cleanup()
 {
+  // Reinitliaze config variables.
+  myip = NULL;
+  define_microsoft_extensions = 0;
   if (cx) {
     JS_DestroyContext(cx);
     cx = NULL;
@@ -378,20 +387,20 @@ pacparser_just_find_proxy(const char *pacfile,
   int initialized_here = 0;
   if (!global) {
     if (!pacparser_init()) {
-      fprintf(stderr, "libpacparser.so: pacparser_just_find_proxy: %s\n",
+      fprintf(stderr, "pacparser.c: pacparser_just_find_proxy: %s\n",
               "Could not initialize pac parser");
       return NULL;
     }
     initialized_here = 1;
   }
   if (!pacparser_parse_pac(pacfile)) {
-    fprintf(stderr, "libpacparser.so: pacparser_just_find_proxy: %s %s\n",
+    fprintf(stderr, "pacparser.c: pacparser_just_find_proxy: %s %s\n",
             "Could not parse pacfile", pacfile);
     if (initialized_here) pacparser_cleanup();
     return NULL;
   }
   if (!(out = pacparser_find_proxy(url, host))) {
-    fprintf(stderr, "libpacparser.so: pacparser_just_find_proxy: %s %s\n",
+    fprintf(stderr, "pacparser.c: pacparser_just_find_proxy: %s %s\n",
             "Could not determine proxy for url", url);
     if (initialized_here) pacparser_cleanup();
     return NULL;

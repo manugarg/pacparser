@@ -126,7 +126,7 @@ int main(int argc, char* argv[])
   }
 
   if(enable_microsoft_extensions)
-    pacparser_enable_microsoft_extensions(1);
+    pacparser_enable_microsoft_extensions();
 
   // initialize pacparser
   if (!pacparser_init()) {
