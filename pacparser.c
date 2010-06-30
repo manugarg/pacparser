@@ -30,14 +30,13 @@
 #include <netdb.h>
 #endif
 
-#ifdef XP_WIN
+#ifdef _WIN32
+#ifdef __MINGW32__
+// MinGW enables definition of getaddrinfo et al only if WINVER >= 0x0501.
+#define WINVER 0x0501
+#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
-// wspiapi.h is needed because ws2tcpip.h that comes with mingw doesn't have
-// complete definition of getnameinfo.
-#define _inline __inline
-#include <wspiapi.h>
-#undef _inline
 #endif
 
 #include "pac_utils.h"
@@ -46,34 +45,6 @@
 
 static char *myip = NULL;
 static int define_microsoft_extensions = 0; //0: False, 1: True
-
-// inet_ntop is not defined on iindows. Define it as a wrapper to functions
-// available on windows.
-#ifdef _WIN32
-static const char *
-inet_ntop(int af, const void *src, char *dst, socklen_t cnt)
-{
-  if (af == AF_INET) {
-    struct sockaddr_in in;
-    memset(&in, 0, sizeof(in));
-    in.sin_family = AF_INET;
-    memcpy(&in.sin_addr, src, sizeof(struct in_addr));
-    getnameinfo((struct sockaddr *)&in, sizeof(struct sockaddr_in), dst, cnt,
-                NULL, 0, NI_NUMERICHOST);
-    return dst;
-  }
-  else if (af == AF_INET6) {
-    struct sockaddr_in6 in;
-    memset(&in, 0, sizeof(in));
-    in.sin6_family = AF_INET6;
-    memcpy(&in.sin6_addr, src, sizeof(struct in_addr6));
-    getnameinfo((struct sockaddr *)&in, sizeof(struct sockaddr_in6), dst, cnt,
-                NULL, 0, NI_NUMERICHOST);
-    return dst;
-  }
-  return NULL;
-}
-#endif
 
 // Utility function to read a file into string.
 static char *                      // File content in string or NULL if failed.
