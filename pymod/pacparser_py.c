@@ -92,7 +92,7 @@ py_pacparser_find_proxy(PyObject *self, PyObject *args)
 
 // Destroys JavaSctipt Engine.
 static PyObject *
-py_pacparser_cleanup()
+py_pacparser_cleanup(PyObject *self, PyObject *args)
 {
   pacparser_cleanup();
   Py_RETURN_NONE;

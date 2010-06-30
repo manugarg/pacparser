@@ -99,10 +99,10 @@ install: all
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h
-	cd pymod && $(PYTHON) setup.py build
+	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
 
 install-pymod: pymod
-	cd pymod && $(PYTHON) setup.py install --prefix="$(PREFIX)"
+	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --prefix="$(PREFIX)"
 
 clean:
 	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp

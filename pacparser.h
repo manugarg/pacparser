@@ -25,7 +25,7 @@
 // It initializes JavaScript engine and does few basic initializations specific
 // to pacparser.
 // returns 0 on failure and 1 on success.
-int pacparser_init();
+int pacparser_init(void);
 
 // Parse pac file
 // parses and evaulates PAC file in JavaScript context created by
@@ -58,7 +58,7 @@ char *pacparser_just_find_proxy(const char *pacfile,  // PAC file
 
 // Destroys JavaSctipt context.
 // This function should be called once you're done with using pacparser engine.
-void pacparser_cleanup();
+void pacparser_cleanup(void);
 
 // Sets my IP address.
 // Sets my IP address to a custom value. This is the IP address returned by
