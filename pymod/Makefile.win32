@@ -55,7 +55,7 @@ python.lib:
 _pacparser.pyd: pacparser_py.o python.lib
 	$(CC) -shared -o _pacparser.pyd ..\pacparser.o pacparser_py.o -L. -lpython -L.. -ljs3250 -L..\..\lib -lws2_32
 
-dist: _pacparser.pyd __init__.py
+dist: _pacparser.pyd
 	if exist dist rmdir /s /q dist
 	mkdir dist
 	copy _pacparser.pyd dist
@@ -66,7 +66,7 @@ dist: _pacparser.pyd __init__.py
 	copy ..\README dist
 	copy ..\README.win32 dist
 	copy ..\INSTALL dist
-	xcopy *.py dist
+	xcopy pacparser\__init__.py dist
 
 clean:
 	if exist pacparser_py.o del pacparser_py.o
