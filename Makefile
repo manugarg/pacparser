@@ -49,11 +49,12 @@ CFLAGS += -Ispidermonkey/js/src
 LDFLAGS += -lm
 
 LIBRARY_LINK = $(LIBRARY_NAME).$(SO_SUFFIX)
-LIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
-PYLIB_PREFIX = $(DESTDIR)$(PREFIX)/lib
-INC_PREFIX = $(DESTDIR)$(PREFIX)/include
-BIN_PREFIX = $(DESTDIR)$(PREFIX)/bin
-MAN_PREFIX = $(DESTDIR)$(PREFIX)/share/man
+PREFIX := $(DESTDIR)$(PREFIX)
+LIB_PREFIX = $(PREFIX)/lib
+PYLIB_PREFIX = $(PREFIX)/lib
+INC_PREFIX = $(PREFIX)/include
+BIN_PREFIX = $(PREFIX)/bin
+MAN_PREFIX = $(PREFIX)/share/man
 
 .PHONY: clean pymod install-pymod
 all: pactester
@@ -90,18 +91,18 @@ install: all
 	install -d $(MAN_PREFIX)/man3/
 	(test -d docs && install -m 644 docs/*.3 $(MAN_PREFIX)/man3/) || /bin/true
 	# install html docs
-	install -d $(DESTDIR)$(PREFIX)/share/doc/pacparser/html/
-	(test -d docs/html && install -m 644 docs/html/* $(DESTDIR)$(PREFIX)/share/doc/pacparser/html/) || /bin/true
+	install -d $(PREFIX)/share/doc/pacparser/html/
+	(test -d docs/html && install -m 644 docs/html/* $(PREFIX)/share/doc/pacparser/html/) || /bin/true
 	# install examples
-	install -d $(DESTDIR)$(PREFIX)/share/doc/pacparser/examples/
-	(test -d examples && install -m 644 examples/* $(DESTDIR)$(PREFIX)/share/doc//pacparser/examples/) || /bin/true
+	install -d $(PREFIX)/share/doc/pacparser/examples/
+	(test -d examples && install -m 644 examples/* $(PREFIX)/share/doc//pacparser/examples/) || /bin/true
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h
-	cd pymod && $(PYTHON) setup.py
+	cd pymod && $(PYTHON) setup.py build
 
 install-pymod: pymod
-	cd pymod && LIB_PREFIX="$(PYLIB_PREFIX)" $(PYTHON) setup.py install
+	cd pymod && $(PYTHON) setup.py install --prefix="$(PREFIX)"
 
 clean:
 	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp

@@ -25,28 +25,48 @@ Wrapper script around python module Makefiles. This script take care of
 identifying python setup and setting up some environment variables needed by
 Makefiles.
 """
-
 import sys
 import os
+
+from distutils.core import setup
+from distutils.core import Extension
+
+def main():
+  if sys.platform == 'win32':
+    #install target is used to just install compiled files.
+    if target == 'install':
+      import shutil
+      install_path = '%s\Lib\site-packages\pacparser' % sys.prefix
+      if os.path.isdir(install_path):
+        shutil.rmtree(install_path)
+      shutil.copytree('.', install_path)
+    else:
+      pydll = 'C:\windows\system32\python%s.dll' % ver.replace('.', '')
+      os.system('make -f Makefile.win32 %s PY_HOME="%s" PY_DLL="%s"' %
+                (target, sys.prefix, pydll))
+    return
+
+  pacparser_module = Extension('_pacparser',
+                               include_dirs = ['../spidermonkey/js/src', '..'],
+                               sources = ['pacparser_py.c'],
+                               extra_objects = ['../pacparser.o', '../libjs.a'])
+  setup (name = 'pacparser',
+         version = '1.1.1',
+         description = 'Pacparser package',
+         author = 'Manu Garg',
+         author_email = 'manugarg@gmail.com',
+         url = 'http://code.google.com/p/pacparser',
+         long_description = 'python library to parse proxy auto-config (PAC) '
+                           'files.',
+         license = 'LGPL',
+         ext_package = 'pacparser',
+         ext_modules = [pacparser_module],
+         py_modules = ['pacparser.__init__'])
 
 if len(sys.argv) < 2:
   target = ''
 else:
   target = sys.argv[1]
 
-ver = sys.version[0:3]
-if sys.platform.startswith("linux") or sys.platform == "darwin":
-  os.system('make %s PY_VER="%s"' % (target, ver))
-
-if sys.platform == 'win32':
-  #install target is used to just install compiled files.
-  if target == 'install':
-    import shutil
-    install_path = '%s\Lib\site-packages\pacparser' % sys.prefix
-    if os.path.isdir(install_path):
-      shutil.rmtree(install_path)
-    shutil.copytree('.', install_path)
-  else:
-    pydll = 'C:\windows\system32\python%s.dll' % ver.replace('.', '')
-    os.system('make -f Makefile.win32 %s PY_HOME="%s" PY_DLL="%s"' %
-              (target, sys.prefix, pydll))
+if __name__ == '__main__':
+  main()
