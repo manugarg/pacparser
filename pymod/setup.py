@@ -28,22 +28,28 @@ Makefiles.
 import sys
 import os
 
+from distutils import sysconfig
 from distutils.core import setup
 from distutils.core import Extension
 
 def main():
+  # Use Makefile for windows. distutils doesn't work well with windows.
   if sys.platform == 'win32':
-    #install target is used to just install compiled files.
-    if target == 'install':
+    # install target is handled by setup.py itself.
+    if len(sys.argv) > 1 and sys.argv[1] == 'install':
       import shutil
-      install_path = '%s\Lib\site-packages\pacparser' % sys.prefix
-      if os.path.isdir(install_path):
-        shutil.rmtree(install_path)
-      shutil.copytree('.', install_path)
+      if os.path.isdir('dist'):
+        install_path = '%s\pacparser' % sysconfig.get_python_lib()
+        if os.path.isdir(install_path): shutil.rmtree(install_path)
+        shutil.copytree('dist', install_path)
+      else:
+        print ('"dist" dir not found. You should run "python setup.py dist"'
+               ' first.')
     else:
-      pydll = 'C:\windows\system32\python%s.dll' % ver.replace('.', '')
+      pydll = ('C:\windows\system32\python%s.dll' %
+               sysconfig.get_config_vars('VERSION')[0])
       os.system('make -f Makefile.win32 %s PY_HOME="%s" PY_DLL="%s"' %
-                (target, sys.prefix, pydll))
+                (' '.join(sys.argv[1:]), sys.prefix, pydll))
     return
 
   pacparser_module = Extension('_pacparser',
@@ -62,11 +68,6 @@ def main():
          ext_package = 'pacparser',
          ext_modules = [pacparser_module],
          py_modules = ['pacparser.__init__'])
-
-if len(sys.argv) < 2:
-  target = ''
-else:
-  target = sys.argv[1]
 
 if __name__ == '__main__':
   main()
