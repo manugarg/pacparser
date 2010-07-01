@@ -57,7 +57,7 @@ def main():
                                sources = ['pacparser_py.c'],
                                extra_objects = ['../pacparser.o', '../libjs.a'])
   setup (name = 'pacparser',
-         version = '1.1.1',
+         version = '1',
          description = 'Pacparser package',
          author = 'Manu Garg',
          author_email = 'manugarg@gmail.com',
