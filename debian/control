@@ -1,7 +1,8 @@
 Source: pacparser
 Priority: extra
 Maintainer: manu garg <manugarg@gmail.com>
-Build-Depends: debhelper (>= 5), python-dev (>=2.4)
+Build-Depends: debhelper (>= 5), python-all-dev (>=2.2), python-central(>=0.5.6)
+XS-Python-Version: all
 Standards-Version: 3.8.4
 Section: libs
 
@@ -34,6 +35,7 @@ Package: python-pacparser
 Section: python
 Architecture: any
 Depends: ${shlibs:Depends}, ${python:Depends}, ${misc:Depends}
+XB-Python-Version: ${python:Versions}
 Homepage: http://code.google.com/p/pacparser
 Description: pacparser Python module
  This module provides Python bindings for pacparser library, a library to parse

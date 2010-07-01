@@ -104,7 +104,7 @@ binary-arch: build install
 	dh_compress
 	dh_fixperms
 #	dh_perl
-	dh_python
+	DH_PYCENTRAL=nomove dh_pycentral
 	dh_makeshlibs -X_pacparser.so
 	dh_installdeb
 	dh_shlibdeps
