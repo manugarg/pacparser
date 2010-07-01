@@ -22,6 +22,14 @@ Description: pacparser C shared library
  pacparser library defines and exports methods needed to parse proxy
  auto-config (PAC) files. For more information on pacparser, visit its
 
+Package: pactester
+Section: utils
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Homepage: http://code.google.com/p/pacparser
+Description: PAC (proxy auto-config) files tester
+ pactester is a command line utility to test pac (proxy auto-config) files.
+
 Package: python-pacparser
 Section: python
 Architecture: any
