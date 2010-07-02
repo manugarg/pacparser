@@ -1,3 +1,14 @@
+pacparser (1.2.0b) lucid; urgency=low
+
+  * Implement a subset of Microsoft PAC extensions for IPv6. This adds
+    following functions - dnsResolveEx, myIpAddressEx, isResolvableEx. More
+    about this change at:
+    http://code.google.com/p/pacparser/issues/detail?id=4
+  * Use distutils to build python module. This simplifies the build setup a
+    lot.
+
+ -- manu garg <manugarg@gmail.com>  Fri, 02 Jul 2010 12:51:59 +0530
+
 pacparser (1.1.1) lucid; urgency=low
 
   * Cut a bad release last time. Some changes that didn't go in.

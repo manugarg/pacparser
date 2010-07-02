@@ -24,6 +24,9 @@ endif
 ifeq (yes, $(shell [ -e /usr/bin/python2.6 ] && echo yes))
   PYVERS+= python2.6
 endif
+ifeq (yes, $(shell [ -e /usr/bin/python3.1 ] && echo yes))
+  PYVERS+= python3.1
+endif
 
 CFLAGS = -Wall -g
 

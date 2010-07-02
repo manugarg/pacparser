@@ -36,6 +36,7 @@ Section: python
 Architecture: any
 Depends: ${shlibs:Depends}, ${python:Depends}, ${misc:Depends}
 XB-Python-Version: ${python:Versions}
+Provides: ${python:Provides}
 Homepage: http://code.google.com/p/pacparser
 Description: pacparser Python module
  This module provides Python bindings for pacparser library, a library to parse
