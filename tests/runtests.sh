@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd $(dirname $0); script_dir=$PWD; cd -
+script_dir=$(dirname $PWD/$0)
 
 PACTESTER=$script_dir/../pactester
 PACFILE=$script_dir/proxy.pac
@@ -20,3 +20,5 @@ while read line
       exit 1;
     fi
   done < $TESTDATA
+
+echo "All tests were successful."

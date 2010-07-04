@@ -56,7 +56,7 @@ BIN_PREFIX = $(PREFIX)/bin
 MAN_PREFIX = $(PREFIX)/share/man
 
 .PHONY: clean pymod install-pymod
-all: pactester
+all: testpactester
 
 jsapi: spidermonkey/js.tar.gz
 	cd spidermonkey && $(MAKE) jsapi
@@ -76,6 +76,10 @@ $(LIBRARY_LINK): $(LIBRARY)
 
 pactester: pactester.c pacparser.h $(LIBRARY_LINK)
 	$(CC) pactester.c -o pactester -lpacparser -L. -I.
+
+testpactester: pactester
+	echo "Running tests for pactester."
+	tests/runtests.sh
 
 install: all
 	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
@@ -99,6 +103,7 @@ install: all
 # Targets to build python module
 pymod: pacparser.o pacparser.h
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
+	$(PYTHON) tests/runtests.py
 
 install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --prefix="$(PREFIX)"
