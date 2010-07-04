@@ -6,6 +6,7 @@ PACTESTER=$script_dir/../pactester
 PACFILE=$script_dir/proxy.pac
 TESTDATA=$script_dir/testdata
 export DYLD_LIBRARY_PATH=$script_dir/..
+export LD_LIBRARY_PATH=$script_dir/..
 
 while read line
   do
