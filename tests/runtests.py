@@ -40,6 +40,7 @@ def runtests(pacfile, testdata, tests_dir):
     if result != expected_result:
       print 'Tests failed. Got "%s", expected "%s"' % (result, expected_result)
       return 1
+  print 'All tests were successful.'
 
 
 def main():
