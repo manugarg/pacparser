@@ -54,12 +54,12 @@ def find_proxy(url, host=None):
   if host is None:
     m = url_regex.match(url)
     if not m:
-      print 'URL: %s is not a valid URL' % url
+      print('URL: %s is not a valid URL' % url)
       return None
     if len(m.groups()) is 1:
       host = m.groups()[0]
     else:
-      print 'URL: %s is not a valid URL' % url
+      print('URL: %s is not a valid URL' % url)
       return None
   return _pacparser.find_proxy(url, host)
 
@@ -78,17 +78,17 @@ def just_find_proxy(pacfile, url, host=None):
   if os.path.isfile(pacfile):
     pass
   else:
-    print 'PAC file: %s doesn\'t exist' % pacfile
+    print('PAC file: %s doesn\'t exist' % pacfile)
     return None
   if host is None:
     m = url_regex.match(url)
     if not m:
-      print 'URL: %s is not a valid URL' % url
+      print('URL: %s is not a valid URL' % url)
       return None
     if len(m.groups()) is 1:
       host = m.groups()[0]
     else:
-      print 'URL: %s is not a valid URL' % url
+      print('URL: %s is not a valid URL' % url)
       return None
   init()
   parse_pac(pacfile)
