@@ -1,4 +1,4 @@
-pacparser (1.2.0b) lucid; urgency=low
+pacparser (1.2.0b) unstable; urgency=low
 
   * Implement a subset of Microsoft PAC extensions for IPv6. This adds
     following functions - dnsResolveEx, myIpAddressEx, isResolvableEx. More
@@ -9,13 +9,13 @@ pacparser (1.2.0b) lucid; urgency=low
 
  -- manu garg <manugarg@gmail.com>  Fri, 02 Jul 2010 12:51:59 +0530
 
-pacparser (1.1.1) lucid; urgency=low
+pacparser (1.1.1) unstable; urgency=low
 
   * Cut a bad release last time. Some changes that didn't go in.
 
  -- manu garg <manugarg@gmail.com>  Sat, 19 Jun 2010 19:45:33 +0530
 
-pacparser (1.1.0) lucid; urgency=low
+pacparser (1.1.0) unstable; urgency=low
 
   * Match upstream version.
 

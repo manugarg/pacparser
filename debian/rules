@@ -19,6 +19,10 @@ else
 	CFLAGS += -O2
 endif
 
+ifneq (,$(findstring 2.6,$(PYVERS)))
+	DISTUTILS_EXTRA = --install-layout=deb
+endif
+
 # shared library versions, option 1
 version=1.0.0
 major=1
@@ -60,7 +64,7 @@ install: build
 	# Install python module
 	set -e; \
 	for pyver in $(PYVERS); do \
-	  $(MAKE) DESTDIR=$(CURDIR)/debian/python-pacparser install-pymod PYTHON=python$$pyver; \
+	  $(MAKE) DESTDIR=$(CURDIR)/debian/python-pacparser install-pymod PYTHON=python$$pyver EXTRA_ARGS=$(DISTUTILS_EXTRA); \
 	done
 
 # Build architecture-independent files here.

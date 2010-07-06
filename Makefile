@@ -106,7 +106,7 @@ pymod: pacparser.o pacparser.h libjs.a
 	$(PYTHON) tests/runtests.py
 
 install-pymod: pymod
-	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/"
+	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
 clean:
 	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp

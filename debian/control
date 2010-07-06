@@ -1,7 +1,7 @@
 Source: pacparser
 Priority: extra
 Maintainer: manu garg <manugarg@gmail.com>
-Build-Depends: debhelper (>= 5), python-all-dev (>=2.2), python-central(>=0.5.6)
+Build-Depends: debhelper (>= 5), python-dev (>=2.2), python-central(>=0.5.6)
 XS-Python-Version: >=2.2, <<3.0
 Standards-Version: 3.8.4
 Section: libs
