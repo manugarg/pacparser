@@ -28,7 +28,7 @@ __author__ = 'manugarg@gmail.com (Manu Garg)'
 __copyright__ = 'Copyright (C) 2008 Manu Garg'
 __license__ = 'LGPL'
 
-import _pacparser
+from pacparser import _pacparser
 import os
 import re
 
