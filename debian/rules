@@ -9,21 +9,7 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 
-ifeq (yes, $(shell [ -e /usr/bin/python2.2 ] && echo yes))
-  PYVERS+= python2.2
-endif
-ifeq (yes, $(shell [ -e /usr/bin/python2.3 ] && echo yes))
-  PYVERS+= python2.3
-endif
-ifeq (yes, $(shell [ -e /usr/bin/python2.4 ] && echo yes))
-  PYVERS+= python2.4
-endif
-ifeq (yes, $(shell [ -e /usr/bin/python2.5 ] && echo yes))
-  PYVERS+= python2.5
-endif
-ifeq (yes, $(shell [ -e /usr/bin/python2.6 ] && echo yes))
-  PYVERS+= python2.6
-endif
+PYVERS=$(shell pyversions -vr)
 
 CFLAGS = -Wall -g
 
@@ -42,40 +28,40 @@ major=1
 #major=`ls src/.libs/lib*.so.* | \
 # awk '{if (match($$0,/\.so\.[0-9]+$$/)) print substr($$0,RSTART+4)}'`
 
-build: build-stamp
-build-stamp: 
+build: build-pactester build-pymod
+build-pactester:
 	dh_testdir
 	$(MAKE)
-	set -e; \
-	for python in $(PYVERS); do \
-	  $(MAKE) pymod PYTHON=$$python; \
-	done
+	touch $@
+
+build-pymod: $(PYVERS:%=build-python%)
+	touch $@
+
+build-python%:
+	PYTHON=python$* $(MAKE) pymod 
 	touch $@
 
 clean:
 	dh_testdir
 	dh_testroot
 	rm -f build-stamp
-
 	# Add here commands to clean up after the build process.
 	$(MAKE) clean
 
-	dh_clean 
+	dh_clean
 
 install: build
 	dh_testdir
 	dh_testroot
-	dh_clean -k 
+	dh_clean -k
 	dh_installdirs
-
 	# Add here commands to install the package into debian/tmp
 	$(MAKE) DESTDIR=$(CURDIR)/debian/tmp install
 	# Install python module
 	set -e; \
-	for python in $(PYVERS); do \
-	  $(MAKE) DESTDIR=$(CURDIR)/debian/tmp install-pymod PYTHON=$$python; \
+	for pyver in $(PYVERS); do \
+	  $(MAKE) DESTDIR=$(CURDIR)/debian/python-pacparser install-pymod PYTHON=python$$pyver; \
 	done
-
 
 # Build architecture-independent files here.
 binary-indep: build install
