@@ -17,6 +17,9 @@ svn list -R | egrep -v 'tools|debian' | rsync -av --files-from=- --no-dirs . \
 ${pkg_dir}
 cd -
 
+# Write svn info to $pkg_dir.
+svn info > ${pkg_dir}/SVN-INFO
+
 cd ${tools_dir}/packages
 tar cvf ${pkg_dir}.tar $(basename ${pkg_dir})
 gzip ${pkg_dir}.tar
