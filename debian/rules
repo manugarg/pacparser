@@ -24,9 +24,6 @@ endif
 ifeq (yes, $(shell [ -e /usr/bin/python2.6 ] && echo yes))
   PYVERS+= python2.6
 endif
-ifeq (yes, $(shell [ -e /usr/bin/python3.1 ] && echo yes))
-  PYVERS+= python3.1
-endif
 
 CFLAGS = -Wall -g
 
@@ -107,7 +104,7 @@ binary-arch: build install
 	dh_compress
 	dh_fixperms
 #	dh_perl
-	DH_PYCENTRAL=nomove dh_pycentral
+	dh_pycentral
 	dh_makeshlibs -X_pacparser.so
 	dh_installdeb
 	dh_shlibdeps
