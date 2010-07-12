@@ -1,6 +1,6 @@
 #!/bin/bash
 
-script_dir=$(dirname $PWD/$0)
+pushd $(dirname $0) > /dev/null; script_dir=$PWD; popd > /dev/null
 
 PACTESTER=$script_dir/../pactester
 PACFILE=$script_dir/proxy.pac
