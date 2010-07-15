@@ -79,7 +79,7 @@ pactester: pactester.c pacparser.h $(LIBRARY_LINK)
 
 testpactester: pactester
 	echo "Running tests for pactester."
-	tests/runtests.sh
+	../tests/runtests.sh
 
 install: all
 	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
@@ -89,13 +89,13 @@ install: all
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
 	# install pactester manpages
 	install -d $(MAN_PREFIX)/man1/
-	(test -d docs && install -m 644 docs/*.1 $(MAN_PREFIX)/man1/) || /bin/true
+	(test -d ../docs && install -m 644 ../docs/*.1 $(MAN_PREFIX)/man1/) || /bin/true
 	# install pacparser manpages
 	install -d $(MAN_PREFIX)/man3/
-	(test -d docs && install -m 644 docs/*.3 $(MAN_PREFIX)/man3/) || /bin/true
+	(test -d ../docs && install -m 644 ../docs/*.3 $(MAN_PREFIX)/man3/) || /bin/true
 	# install html docs
 	install -d $(PREFIX)/share/doc/pacparser/html/
-	(test -d docs/html && install -m 644 docs/html/* $(PREFIX)/share/doc/pacparser/html/) || /bin/true
+	(test -d ../docs/html && install -m 644 ../docs/html/* $(PREFIX)/share/doc/pacparser/html/) || /bin/true
 	# install examples
 	install -d $(PREFIX)/share/doc/pacparser/examples/
 	(test -d examples && install -m 644 examples/* $(PREFIX)/share/doc//pacparser/examples/) || /bin/true
@@ -103,7 +103,7 @@ install: all
 # Targets to build python module
 pymod: pacparser.o pacparser.h libjs.a
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
-	$(PYTHON) tests/runtests.py
+	$(PYTHON) ../tests/runtests.py
 
 install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)

@@ -10,7 +10,6 @@
 #export DH_VERBOSE=1
 
 PYVERS=$(shell pyversions -vr)
-
 CFLAGS = -Wall -g
 
 ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
@@ -35,14 +34,14 @@ major=1
 build: build-pactester build-pymod
 build-pactester:
 	dh_testdir
-	$(MAKE)
+	$(MAKE) -C src
 	touch $@
 
 build-pymod: $(PYVERS:%=build-python%)
 	touch $@
 
 build-python%:
-	PYTHON=python$* $(MAKE) pymod 
+	PYTHON=python$* $(MAKE) -C src pymod
 	touch $@
 
 clean:
@@ -50,7 +49,7 @@ clean:
 	dh_testroot
 	rm -f build-stamp
 	# Add here commands to clean up after the build process.
-	$(MAKE) clean
+	$(MAKE) -C src clean
 
 	dh_clean
 
@@ -60,11 +59,11 @@ install: build
 	dh_clean -k
 	dh_installdirs
 	# Add here commands to install the package into debian/tmp
-	$(MAKE) DESTDIR=$(CURDIR)/debian/tmp install
+	$(MAKE) -C src DESTDIR=$(CURDIR)/debian/tmp install
 	# Install python module
 	set -e; \
 	for pyver in $(PYVERS); do \
-	  $(MAKE) DESTDIR=$(CURDIR)/debian/python-pacparser install-pymod PYTHON=python$$pyver EXTRA_ARGS=$(DISTUTILS_EXTRA); \
+	  $(MAKE) -C src DESTDIR=$(CURDIR)/debian/python-pacparser install-pymod PYTHON=python$$pyver EXTRA_ARGS=$(DISTUTILS_EXTRA); \
 	done
 
 # Build architecture-independent files here.

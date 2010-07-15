@@ -2,7 +2,7 @@
 
 pushd $(dirname $0) > /dev/null; script_dir=$PWD; popd > /dev/null
 
-PACTESTER=$script_dir/../pactester
+PACTESTER=$script_dir/../src/pactester
 PACFILE=$script_dir/proxy.pac
 TESTDATA=$script_dir/testdata
 export DYLD_LIBRARY_PATH=$script_dir/..
