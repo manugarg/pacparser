@@ -12,12 +12,14 @@ following instructions at:
   ----------------------------------
   Compiling and installing pacparser is as easy as running the following
   commands:
+     => cd src
      => make
      => sudo make install
 
 * pacparser python module:
   ------------------------------------------------
   To compile and install pacparser python module:
+    => make src/pymod
     => make pymod
     => make install-pymod
 
