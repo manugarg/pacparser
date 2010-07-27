@@ -3,31 +3,14 @@
 ver=$1
 [ -z $ver ] && echo "Please specify package version." && exit
 
-cd $(dirname $0); tools_dir=$PWD; cd -
+cd $(dirname $0); tools_dir=$PWD; cd - > /dev/null
 
 pkg_dir=${tools_dir}/packages/pacparser-${ver}
+pkg=${pkg_dir}.tar.gz
 
-if [ -d ${pkg_dir} ]; then
-  rm -rf ${pkg_dir}*
-fi
-mkdir -p ${pkg_dir}
-
+mkdir -p ${tools_dir}/packages
 cd ${tools_dir}/..
-svn list -R | egrep -v 'tools|debian' | rsync -av --files-from=- --no-dirs . \
-${pkg_dir}
-cd -
+hg archive -t tgz -X tools -X debian -X .hgtags $pkg
+cd - > /dev/null
 
-# Write svn info to $pkg_dir.
-svn info > ${pkg_dir}/SVN-INFO
-
-cd ${tools_dir}/packages
-tar cvf ${pkg_dir}.tar $(basename ${pkg_dir})
-gzip ${pkg_dir}.tar
-#cp ${pkg_dir}.tar.gz ${pkg_dir%-$ver}_${ver}.orig.tar.gz
-cd -
-
-# Copy debian directory to pkg_dir to make debian package building easy.
-mkdir ${pkg_dir}/debian
-cd ${tools_dir}/../debian
-svn list -R | rsync -av --files-from=- --no-dirs . ${pkg_dir}/debian/
-cd -
+hg archive -t files -X tools -X .hgtags $pkg_dir
