@@ -18,74 +18,41 @@ library from that definition file and .dll file using dlltool.
 
 Detailed Instructions:
 ----------------------
-Create a working directory somewhere on your system. This is where you'll
-install your tools and compile pacparser. Following instructions assume that
-working directory is C:\devel.
-
-1.  First of all we need an unzip utility. 7-zip is a good one and it's open
-    source too. Download and install 7-zip on your system:
-    http://downloads.sourceforge.net/sourceforge/sevenzip/7z442.exe
-    (You can use any other unzip/unarchiver utility, but you'll have to modify
-    rest of the instructions for that.)
-
-2.  Add 7-zip binaries to your system path (My Computer -> Properties ->
-    Advanced -> Environment Variables).
 
 Set up tools:
 
-3.  Download mingw packages -- gcc-core, mingw-runtime, w32api, binutils and
-    make from mingw download page: http://www.mingw.org/download.shtml to your
-    working directory. Direct links:
+1.  Install MinGW. Download the automated installer from here:
+    http://sourceforge.net/projects/mingw/files/
+    Running this installer lets you select what component you want to install.
+    Apart from minimal MinGW, we'll need MinGW make. This will install all the
+    necessary files in C:\MinGW.
 
-    http://downloads.sourceforge.net/mingw/gcc-core-3.4.5-20060117-1.tar.gz
-    http://downloads.sourceforge.net/mingw/binutils-2.17.50-20060824-1.tar.gz
-    http://downloads.sourceforge.net/mingw/mingw-runtime-3.13.tar.gz
-    http://downloads.sourceforge.net/mingw/w32api-3.10.tar.gz
-    http://downloads.sourceforge.net/mingw/mingw32-make-3.81-2.tar.gz
+2.  Get the following package from GnuWin32 project:
+    http://gnuwin32.sourceforge.net/downlinks/gawk.php
+    and install this in C:\MinGW
 
-    However it's better to download latest packages from
-    http://downloads.sourceforge.net/mingw.
-
-4.  Get following packages from GnuWin32 project:
-    http://gnuwin32.sourceforge.net/downlinks/libiconv-bin-zip.php
-    http://gnuwin32.sourceforge.net/downlinks/libintl-bin-zip.php
-    http://gnuwin32.sourceforge.net/downlinks/gawk-bin-zip.php
-    and save them in your working directory.
-
-5.  Next we need to get the dumpbin utility to create import library from
+3.  Next we need to get the dumpbin utility to create import library from
     js3250.dll that comes with Mozilla Firefox. dumpbin utility comes with
     MASM32 assembler (www.masm32.com). You can either download it from masm32
     webpage and add masm install directory to your path. Or, you can download
     minimal package from
     http://pacparser.googlecode.com/files/masm32-bin.zip
-    to your working directory.
+    and extract it in C:\MinGW.
 
-6.  Extract all the files into your working directory. In a command prompt
-    window, run:
-      cd c:\devel
-      7z x *.gz -y
-      7z x *.tar -y
-      7z x *.zip -y
-
-7.  Add your working directory's bin (C:\devel\bin) to your path.
+4.  Add your MinGW directory's bin (C:\MinGW\bin) to your path.
 
 ======== Done setting up tools ==========
 
-8.  Now download pacparser source code tarball from
-    http://code.google.com/p/pacparser/downloads/list and save it in your
-    working directory. Then extract it using 7z:
-      cd c:\devel
-      7z x pacparser*.tar.gz
-      7z x pacparser*.tar
+5.  Now download pacparser source code tarball from
+    http://code.google.com/p/pacparser/downloads/list and extract it somewhere,
+    say C:\workspace.
 
-9.  We'll also need SpiderMonkey JavaScript API to build pacparser. Get it
+6.  We'll also need SpiderMonkey JavaScript API to build pacparser. Get it
     from:
-    http://pacparser.googlecode.com/files/smapi_win32.zip and save it in
-    'pacparser-x.x.x\spidermonkey' directory. Extract it using 7z:
-      cd c:\devel\pacparser-1.0.x\spidermonkey\
-      7z x *.zip -y
+    http://pacparser.googlecode.com/files/smapi_win32.zip and extract it in
+    'pacparser-x.x.x\spidermonkey' directory.
 
-10. Compile pacparser. (Make sure that you have Firefox installed on your
+7. Compile pacparser. (Make sure that you have Firefox installed on your
     machine in standard location i.e. C:\Program Files\Mozilla Firefox before
     running this step.)
       cd c:\devel\pacparser-1.0.1 (for version 1.0.1)
@@ -94,11 +61,11 @@ Set up tools:
     pacparser with mingw compiler tools), pacparser.lib (file needed to link in
     pacparser on Visual Studio).
 
-11. Move just compiled library and other files required at runtime to a
+8. Move just compiled library and other files required at runtime to a
     directory (dist).
       make -f Makefile.win32 dist
 
-12. Compile pacparser python module and copy required files to a directory
+9. Compile pacparser python module and copy required files to a directory
     (dist).
       make -f Makefile.win32 pymod
       make -f Makefile.win32 dist-pymod
