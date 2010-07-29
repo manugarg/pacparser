@@ -14,9 +14,9 @@ stage_dir=/tmp/pacparser_$RANDOM
 sudo rm -rf /tmp/pacparser*
 mkdir -p ${stage_dir}/usr/{bin,lib}
 
-install -m 555 libpacparser.${major_ver}.dylib ${stage_dir}/usr/lib
+install -m 555 src/libpacparser.${major_ver}.dylib ${stage_dir}/usr/lib
 ln -sf libpacparser.${major_ver}.dylib ${stage_dir}/usr/lib/libpacparser.dylib
-install -m 555 pactester ${stage_dir}/usr/bin
+install -m 555 src/pactester ${stage_dir}/usr/bin
 
 sudo chown -R root:wheel ${stage_dir}
 

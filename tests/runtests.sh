@@ -5,8 +5,21 @@ pushd $(dirname $0) > /dev/null; script_dir=$PWD; popd > /dev/null
 PACTESTER=$script_dir/../src/pactester
 PACFILE=$script_dir/proxy.pac
 TESTDATA=$script_dir/testdata
-export DYLD_LIBRARY_PATH=$script_dir/..
-export LD_LIBRARY_PATH=$script_dir/..
+LIBRARY_PATH=$script_dir/../src
+export DYLD_LIBRARY_PATH=$LIBRARY_PATH
+export LD_LIBRARY_PATH=$LIBRARY_PATH
+
+OS_ARCH=$(uname -s | sed /\ /s//_/)
+if [ "$OS_ARCH" = "Linux" ]; then
+  LIB=$LIBRARY_PATH/libpacparser.so.1
+elif [ "$OS_ARCH" = "Darwin" ]; then
+  LIB=$LIBRARY_PATH/libpacparser.1.dylib
+fi
+
+if test ! -f "$LIB"; then
+  echo "Test failed. pacparser library not found."
+  exit 1
+fi
 
 while read line
   do
