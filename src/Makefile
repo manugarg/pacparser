@@ -28,7 +28,7 @@ ifeq ($(OS_ARCH),Linux)
   SO_SUFFIX = so
   LIBRARY = $(LIBRARY_NAME).$(SO_SUFFIX).$(LIB_VER)
   MKSHLIB = $(CC) -shared
-  LIB_OPTS = -Wl,-soname=$(LIBRARY)
+  LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
 endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
