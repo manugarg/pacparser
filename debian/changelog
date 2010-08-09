@@ -1,4 +1,4 @@
-pacparser (1.2.0b) unstable; urgency=low
+pacparser (1.2.1) unstable; urgency=low
 
   * Implement a subset of Microsoft PAC extensions for IPv6. This adds
     following functions - dnsResolveEx, myIpAddressEx, isResolvableEx. More
@@ -6,8 +6,11 @@ pacparser (1.2.0b) unstable; urgency=low
     http://code.google.com/p/pacparser/issues/detail?id=4
   * Use distutils to build python module. This simplifies the build setup a
     lot.
+  * Include spidermonkey sources in pacparser tarball (spidermonkey is not
+    available as a package in debian anymore) and link spidermonkey library
+    statically. This simplifies the distribution.
 
- -- manu garg <manugarg@gmail.com>  Fri, 02 Jul 2010 12:51:59 +0530
+ -- manu garg <manugarg@gmail.com>  Mon, 09 Aug 2010 23:46:59 +0530
 
 pacparser (1.1.1) unstable; urgency=low
 
