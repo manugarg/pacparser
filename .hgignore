@@ -1,6 +1,7 @@
 syntax: regexp
 
-.*\.(a|o|so|so\.[0-9]+|dylib|pyc)
+.*\.(a|o|so|so\.[0-9]+|dylib|pyc|pkg)
 src/spidermonkey/js/*
 .*buildstamp
 pactester
+pymod/build

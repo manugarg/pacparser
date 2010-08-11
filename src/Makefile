@@ -58,13 +58,14 @@ MAN_PREFIX = $(PREFIX)/share/man
 .PHONY: clean pymod install-pymod
 all: testpactester
 
-jsapi: spidermonkey/js.tar.gz
+jsapi_buildstamp: spidermonkey/js.tar.gz
 	cd spidermonkey && $(MAKE) jsapi
+	touch jsapi_buildstamp
 
 libjs.a: spidermonkey/js.tar.gz
 	cd spidermonkey && $(MAKE) jslib
 
-pacparser.o: pacparser.c pac_utils.h jsapi
+pacparser.o: pacparser.c pac_utils.h jsapi_buildstamp
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
@@ -89,16 +90,16 @@ install: all
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
 	# install pactester manpages
 	install -d $(MAN_PREFIX)/man1/
-	(test -d ../docs && install -m 644 ../docs/*.1 $(MAN_PREFIX)/man1/) || /bin/true
+	(test -d ../docs && install -m 644 ../docs/*.1 $(MAN_PREFIX)/man1/) || true
 	# install pacparser manpages
 	install -d $(MAN_PREFIX)/man3/
-	(test -d ../docs && install -m 644 ../docs/*.3 $(MAN_PREFIX)/man3/) || /bin/true
+	(test -d ../docs && install -m 644 ../docs/*.3 $(MAN_PREFIX)/man3/) || true
 	# install html docs
 	install -d $(PREFIX)/share/doc/pacparser/html/
-	(test -d ../docs/html && install -m 644 ../docs/html/* $(PREFIX)/share/doc/pacparser/html/) || /bin/true
+	(test -d ../docs/html && install -m 644 ../docs/html/* $(PREFIX)/share/doc/pacparser/html/) || true
 	# install examples
 	install -d $(PREFIX)/share/doc/pacparser/examples/
-	(test -d examples && install -m 644 examples/* $(PREFIX)/share/doc//pacparser/examples/) || /bin/true
+	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc//pacparser/examples/) || true
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h libjs.a
@@ -109,6 +110,6 @@ install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
 clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp
+	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
 	cd pymod && python setup.py clean
 	cd spidermonkey && $(MAKE) clean
