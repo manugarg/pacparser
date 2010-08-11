@@ -5,7 +5,6 @@
 
 ver=$1
 [ -z $ver ] && echo "Please specify package version." && exit
-major_ver=${ver/.*.*/}
 
 # $stage_dir is where we'll install our package files.
 stage_dir=/tmp/pacparser_$RANDOM
@@ -23,7 +22,19 @@ make -C src pymod
 DESTDIR=$stage_dir make -C src install-pymod
 
 sudo chown -R root:wheel ${stage_dir}
+
 /Developer/Applications/Utilities/PackageMaker.app/Contents/MacOS/PackageMaker \
  -v -i com.manugarg -r ${stage_dir} -n ${ver} -t pacparser -m -o pacparser.pkg
+
+sudo rm -rf $stage_dir
+
+# Build disk image
+tmp_dir=/tmp/pacparser-$ver-$RANDOM
+disk_image=pacparser-$ver.dmg
+rm -rf $tmp_dir $disk_image
+mkdir $tmp_dir
+mv pacparser.pkg $tmp_dir
+hdiutil create -srcfolder $tmp_dir pacparser-$ver.dmg
+rm -rf $tmp_dir
 
 cd -
