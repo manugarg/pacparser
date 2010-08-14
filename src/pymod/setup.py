@@ -35,17 +35,6 @@ from distutils.core import Extension
 def main():
   # Use Makefile for windows. distutils doesn't work well with windows.
   if sys.platform == 'win32':
-    # install target is handled by setup.py itself.
-    if len(sys.argv) > 1 and sys.argv[1] == 'install':
-      import shutil
-      if os.path.isdir('dist'):
-        install_path = '%s\pacparser' % sysconfig.get_python_lib()
-        if os.path.isdir(install_path): shutil.rmtree(install_path)
-        shutil.copytree('dist', install_path)
-      else:
-        print ('"dist" dir not found. You should run "python setup.py dist"'
-               ' first.')
-    else:
       pydll = ('C:\windows\system32\python%s.dll' %
                sysconfig.get_config_vars('VERSION')[0])
       os.system('make -f Makefile.win32 %s PY_HOME="%s" PY_DLL="%s"' %

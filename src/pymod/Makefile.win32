@@ -51,13 +51,14 @@ python.dll:
 _pacparser.pyd: pacparser_py.o python.dll ..\pacparser.dll
 	$(CC) -shared -o _pacparser.pyd pacparser_py.o -lpython -L. -lpacparser -L.. -lws2_32
 
-dist: _pacparser.pyd
+dist: build
 	if exist dist rmdir /s /q dist
 	mkdir dist
-	copy _pacparser.pyd pacparser
-	copy ..\pacparser.dll pacparser
 	mkdir dist\pacparser
 	xcopy pacparser dist\pacparser
+	copy _pacparser.pyd dist\pacparser
+	copy ..\pacparser.dll dist\pacparser
+	copy install_win32.py dist\install.py
 	copy ..\..\COPYING dist\COPYING.txt
 	copy ..\..\README dist\README.txt
 	copy ..\..\README.win32 dist\README.win32.txt
