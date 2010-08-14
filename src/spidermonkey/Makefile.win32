@@ -1,0 +1,85 @@
+# Project: fdlibm
+
+CC = gcc.exe
+FDLIBM_SRCDIR = js/src/fdlibm
+
+FDLIBM_OBJECTS= \
+$(FDLIBM_SRCDIR)/w_sqrt.o \
+$(FDLIBM_SRCDIR)/e_pow.o \
+$(FDLIBM_SRCDIR)/e_sqrt.o \
+$(FDLIBM_SRCDIR)/k_standard.o \
+$(FDLIBM_SRCDIR)/s_atan.o \
+$(FDLIBM_SRCDIR)/s_finite.o \
+$(FDLIBM_SRCDIR)/s_isnan.o \
+$(FDLIBM_SRCDIR)/s_matherr.o \
+$(FDLIBM_SRCDIR)/s_rint.o \
+$(FDLIBM_SRCDIR)/s_scalbn.o \
+$(FDLIBM_SRCDIR)/w_atan2.o \
+$(FDLIBM_SRCDIR)/e_atan2.o \
+$(FDLIBM_SRCDIR)/s_fabs.o \
+$(FDLIBM_SRCDIR)/s_copysign.o \
+$(FDLIBM_SRCDIR)/w_pow.o \
+$(FDLIBM_SRCDIR)/s_lib_version.o
+
+JS_SRCDIR = js/src
+JS_OBJECTS = \
+    $(JS_SRCDIR)/jsapi.o \
+    $(JS_SRCDIR)/jsarena.o \
+    $(JS_SRCDIR)/jsarray.o \
+    $(JS_SRCDIR)/jsatom.o \
+    $(JS_SRCDIR)/jsbool.o \
+    $(JS_SRCDIR)/jscntxt.o \
+    $(JS_SRCDIR)/jsdate.o \
+    $(JS_SRCDIR)/jsdbgapi.o \
+    $(JS_SRCDIR)/jsdhash.o \
+    $(JS_SRCDIR)/jsdtoa.o \
+    $(JS_SRCDIR)/jsemit.o \
+    $(JS_SRCDIR)/jsexn.o \
+    $(JS_SRCDIR)/jsfun.o \
+    $(JS_SRCDIR)/jsgc.o \
+    $(JS_SRCDIR)/jshash.o \
+    $(JS_SRCDIR)/jsiter.o \
+    $(JS_SRCDIR)/jsinterp.o \
+    $(JS_SRCDIR)/jslock.o \
+    $(JS_SRCDIR)/jslog2.o \
+    $(JS_SRCDIR)/jslong.o \
+    $(JS_SRCDIR)/jsmath.o \
+    $(JS_SRCDIR)/jsnum.o \
+    $(JS_SRCDIR)/jsobj.o \
+    $(JS_SRCDIR)/jsopcode.o \
+    $(JS_SRCDIR)/jsparse.o \
+    $(JS_SRCDIR)/jsprf.o \
+    $(JS_SRCDIR)/jsregexp.o \
+    $(JS_SRCDIR)/jsscan.o \
+    $(JS_SRCDIR)/jsscope.o \
+    $(JS_SRCDIR)/jsscript.o \
+    $(JS_SRCDIR)/jsstr.o \
+    $(JS_SRCDIR)/jsutil.o \
+    $(JS_SRCDIR)/jsxml.o \
+    $(JS_SRCDIR)/jsxdrapi.o \
+    $(JS_SRCDIR)/prmjtime.o
+
+CFLAGS = -I smapi_win32 -D_IEEE_LIBM -DEXPORT_JS_API -DWIN32 -D_MINGW -D_WINDOWS -DXP_WIN -s
+
+all: js.lib fdlibm.lib
+
+.c.o: $(CC) -c $(CFLAGS) -o $@ $(FDLIBM_SRCDIR)/$*.c
+
+.c.o: $(CC) -c $(CFLAGS) -o $@ $(JS_SRCDIR)/$*.c
+
+fdlibm.lib: js $(FDLIBM_OBJECTS)
+	ar r fdlibm.lib $(FDLIBM_OBJECTS)
+	ranlib fdlibm.lib
+	
+js.lib: js $(JS_OBJECTS)
+	ar r js.lib $(JS_OBJECTS)
+	ranlib js.lib
+	
+js:
+	7z e js-1.7.0.tar.gz
+	7z e js-1.7.0.tar
+	
+clean:
+	del js\src\*.o
+	del js\src\fdlibm\*.o
+	del *.lib

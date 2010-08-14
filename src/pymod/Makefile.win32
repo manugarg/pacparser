@@ -44,29 +44,24 @@ build: _pacparser.pyd
 
 pacparser_py.o: pacparser_py.c
 	$(CC) $(CFLAGS) -c pacparser_py.c -o pacparser_py.o
+	
+python.dll:
+	copy $(PY_DLL) python.dll
 
-python.lib:
-	copy $(PY_DLL) .
-	dumpbin /EXPORTS $(PY_DLL) > python.dumpbin
-	echo EXPORTS > python.def
-	gawk "/[ ]+[0-9]+[ ]+[0-9A-F]+[ ]+[0-9A-F]+/ {print $$4}" python.dumpbin >> python.def
-	dlltool --def python.def --dllname $(PY_DLL) --output-lib python.lib
-
-_pacparser.pyd: pacparser_py.o python.lib
-	$(CC) -shared -o _pacparser.pyd ..\pacparser.o pacparser_py.o -L. -lpython -L.. -ljs3250 -L..\..\lib -lws2_32
+_pacparser.pyd: pacparser_py.o python.dll ..\pacparser.dll
+	$(CC) -shared -o _pacparser.pyd pacparser_py.o -lpython -L. -lpacparser -L.. -lws2_32
 
 dist: _pacparser.pyd
 	if exist dist rmdir /s /q dist
 	mkdir dist
-	copy _pacparser.pyd dist
-	copy ..\js3250.dll dist
-	copy ..\nspr4.dll dist
-	if exist ..\mozcrt19.dll copy ..\mozcrt19.dll dist
-	copy ..\COPYING dist
-	copy ..\README dist
-	copy ..\README.win32 dist
-	copy ..\INSTALL dist
-	xcopy pacparser\__init__.py dist
+	copy _pacparser.pyd pacparser
+	copy ..\pacparser.dll pacparser
+	mkdir dist\pacparser
+	xcopy pacparser dist\pacparser
+	copy ..\..\COPYING dist\COPYING.txt
+	copy ..\..\README dist\README.txt
+	copy ..\..\README.win32 dist\README.win32.txt
+	copy ..\..\INSTALL dist\INSTALL.txt
 
 clean:
 	if exist pacparser_py.o del pacparser_py.o

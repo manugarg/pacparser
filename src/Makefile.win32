@@ -24,56 +24,52 @@ CC=gcc
 
 .PHONY: clean pymod install-pymod
 
-all: pacparser.dll pactester
+all: pacparser.dll pacparser.lib pactester
 
 pacparser.o: pacparser.c pac_utils.h
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
+	
+fdlibm.lib js.lib:
+	$(MAKE) -C spidermonkey -f Makefile.win32
+	copy spidermonkey\fdlibm.lib .
+	copy spidermonkey\js.lib .
 
-js3250.dll:
-	copy "C:\Program Files\Mozilla Firefox\js3250.dll" .
-
-jslib_deps:
-	copy "C:\Program Files\Mozilla Firefox\nspr4.dll" .
-	if exist "C:\Program Files\Mozilla Firefox\mozcrt19.dll" copy "C:\Program Files\Mozilla Firefox\mozcrt19.dll" .
-	echo '' > jslibs_deps
-
-js3250.lib: js3250.dll
-	dumpbin /EXPORTS js3250.dll > js3250.dumpbin
-	echo EXPORTS > js3250.def
-	gawk "/[ ]+[0-9]+[ ]+[0-9A-F]+[ ]+[0-9A-F]+/ {print $$4}" js3250.dumpbin >> js3250.def
-	dlltool --def js3250.def --dllname js3250.dll --output-lib js3250.lib
-	del js3250.dumpbin js3250.def
-
-pacparser.dll: pacparser.o js3250.lib
-	$(CC) -shared -o pacparser.dll -Wl,--output-def,pacparser.def -Wl,--out-implib,libpacparser.a pacparser.o -L. -ljs3250 -L..\lib -lws2_32
+pacparser.dll: pacparser.o fdlibm.lib js.lib
+	$(CC) -shared -o pacparser.dll \
+	-Wl,--output-def,pacparser.def \
+	-Wl,--out-implib,libpacparser.a \
+	-Wl,--export-all-symbols \
+	pacparser.o -ljs -L. -lws2_32
 	lib /machine:i386 /def:pacparser.def
 
-pactester: pactester.c pacparser.h libpacparser.a
+pactester: pactester.c pacparser.h pacparser.dll
 	$(CC) pactester.c -o pactester -lpacparser -L. -I.
 
-dist: pacparser.dll js3250.dll jslib_deps pactester
+dist: pacparser.dll pactester
 	if exist dist rmdir /s /q dist
 	mkdir dist
-	xcopy *.dll dist
-	if exist libpacparser.a xcopy libpacparser.a dist
-	if exist pacparser.lib xcopy pacparser.lib dist
+	copy pacparser.dll dist
+	copy pacparser.h dist
 	copy pactester.exe dist
-	copy README dist
-	copy README.win32 dist
-	copy COPYING dist
-	copy INSTALL dist
+	if exist pacparser.lib copy pacparser.lib dist
+	copy ..\README dist\README.txt
+	copy ..\COPYING dist\COPYING.txt
+	copy ..\INSTALL dist\INSTALL.txt
 	mkdir dist\docs
-	if exist docs\html xcopy docs\html dist\docs
+	copy ..\README.win32 dist\docs
+	if exist ..\docs\html xcopy ..\docs\html dist\docs
 
 # Targets to build python module
-pymod: pacparser.o pacparser.h js3250.lib
+pymod: pacparser.h pacparser.dll
 	cd pymod && setup.py build
 
-dist-pymod: pymod js3250.dll jslib_deps
+dist-pymod: pacparser.dll
 	cd pymod && setup.py dist
 
 clean:
 	if exist pacparser.dll del pacparser.dll
 	if exist pacparser.o del pacparser.o
 	if exist pactester del pactester
+	if exist fdlibm.lib del fdlibm.lib
+	if exist js.lib del js.lib
 	cd pymod && setup.py clean
