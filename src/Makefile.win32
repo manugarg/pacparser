@@ -19,14 +19,14 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 LIB_VER=1
-CFLAGS=-g -DXP_WIN -Ispidermonkey\smapi_win32 -Wall
+CFLAGS=-g -DXP_WIN -Ispidermonkey/js/src -Wall
 CC=gcc
 
 .PHONY: clean pymod install-pymod
 
 all: pacparser.dll pacparser.lib pactester
 
-pacparser.o: pacparser.c pac_utils.h
+pacparser.o: pacparser.c pac_utils.h js.lib
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
 	
 fdlibm.lib js.lib:
