@@ -4,17 +4,7 @@ directory.
 
 Building pacparser on Windows:
 -----------------------------
-To build pacparser on Windows you'll have to install some helper utilities
-first. For compiling and linking pacparser, you'll need MinGW (www.mingw.org)
-tools which can produce native windows programs. Apart from that, pacparser
-needs SpiderMonkey JavaScript interpreter to work. DLL for SpiderMonkey
-JavaScript interpreter is bundled with Mozilla Firefox (js3250.dll), which
-makes our job a little easier. But, to be able to compile against this DLL, we
-need import library (yes, it's different on Windows). Creating this import
-library is a two step process involving creation of definition file from .dll
-file using dumpbin utility that comes with masm32, and then creation of import
-library from that definition file and .dll file using dlltool.
-
+For compiling pacparser on Windows, you'll need MinGW (www.mingw.org) tools.
 
 Detailed Instructions:
 ----------------------
@@ -27,45 +17,21 @@ Set up tools:
     Apart from minimal MinGW, we'll need MinGW make. This will install all the
     necessary files in C:\MinGW.
 
-2.  Get the following package from GnuWin32 project:
-    http://gnuwin32.sourceforge.net/downlinks/gawk.php
-    and install this in C:\MinGW
-
-3.  Next we need to get the dumpbin utility to create import library from
-    js3250.dll that comes with Mozilla Firefox. dumpbin utility comes with
-    MASM32 assembler (www.masm32.com). You can either download it from masm32
-    webpage and add masm install directory to your path. Or, you can download
-    minimal package from
-    http://pacparser.googlecode.com/files/masm32-bin.zip
-    and extract it in C:\MinGW.
-
-4.  Add your MinGW directory's bin (C:\MinGW\bin) to your path.
+2.  Add your MinGW directory's bin (C:\MinGW\bin) to your system path variable.
 
 ======== Done setting up tools ==========
 
-5.  Now download pacparser source code tarball from
+3.  Now download pacparser source code tarball from
     http://code.google.com/p/pacparser/downloads/list and extract it somewhere,
     say C:\workspace.
 
-6.  We'll also need SpiderMonkey JavaScript API to build pacparser. Get it
-    from:
-    http://pacparser.googlecode.com/files/smapi_win32.zip and extract it in
-    'pacparser-x.x.x\spidermonkey' directory.
+4.  Now extract the spidermonekey source tarball, js-*.tar.gz, located at
+    src\spidermonkey\js-*.tar.gz inside the pacparser source directory.
 
-7. Compile pacparser. (Make sure that you have Firefox installed on your
-    machine in standard location i.e. C:\Program Files\Mozilla Firefox before
-    running this step.)
-      cd c:\devel\pacparser-1.0.1 (for version 1.0.1)
-      make -f Makefile.win32
-    This will create pacparser.dll, libpacparser.a (file needed to link in
-    pacparser with mingw compiler tools), pacparser.lib (file needed to link in
-    pacparser on Visual Studio).
-
-8. Move just compiled library and other files required at runtime to a
-    directory (dist).
+5.  Compile pacparser and create ditribution.
       make -f Makefile.win32 dist
 
-9. Compile pacparser python module and copy required files to a directory
+6. Compile pacparser python module and copy required files to a directory
     (dist).
       make -f Makefile.win32 pymod
       make -f Makefile.win32 dist-pymod
@@ -74,24 +40,22 @@ Using pacparser on Windows:
 --------------------------
 * In C programs:
 
-Make sure that you have 3 dlls - js3250.dll, nspr4.dll and pacparser.dll in the
-sytem path somewhere (current directory would do just fine for testing purpose).
-libpacparser.a is required only for compilation and can be in the same directory
-as your program.
+Make sure that you have pacparser.dll in the sytem path somewhere
+(current directory would do just fine for testing purpose).
   Change to your program's directory:
-  =>  cd c:\devel\pacparser-1.0.1\examples
-  Download pacarser package (pacparser-1.0.1-win32.zip) from
-  http://code.google.com/p/pacparser/downloads/list
-  => xcopy c:\pacparser-1.0.1\* .
-  Compile your program:
-  => gcc -o pactest pactest.c -L. -lpacparser
+  =>  cd c:\workspace\pacparser-1.2.1\examples
+  Copy pacparser.dll here and compile your program:
+  => gcc -o pactest pactest.c -lpacparser -L.
   Run your program:
   => pactest wpad.dat http://www.google.com www.google.com
   'PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT'
 
 * In python programs:
 
-You can use it with python programs in the same way as for Unix-like systems.
+Install pacparser python module by running install.py in the distribution
+folder. You'll then be able to use pacparser python module in the following
+manner:
+
   => C:\python25\python
   >>> import pacparser
   >>> pacparser.init()

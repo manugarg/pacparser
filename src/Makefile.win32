@@ -72,4 +72,5 @@ clean:
 	if exist pactester del pactester
 	if exist fdlibm.lib del fdlibm.lib
 	if exist js.lib del js.lib
+	$(MAKE) -C spidermonkey -f Makefile.win32 clean
 	cd pymod && setup.py clean
