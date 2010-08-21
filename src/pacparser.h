@@ -21,6 +21,14 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
+
+// Returns pacparser version
+// Version string is determined at the time of build. If built from a released
+// package, version corresponds to the latest release (hg) tag. If built from the
+// repository, it corresponds to the head revision of the repo.
+// returns version string if version defined, "" otherwise.
+char* pacparser_version(void);
+
 // Initializes pac parser
 // It initializes JavaScript engine and does few basic initializations specific
 // to pacparser.

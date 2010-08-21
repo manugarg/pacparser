@@ -40,6 +40,7 @@
 #endif
 
 #include "pac_utils.h"
+#include "pacparser.h"
 
 #define MAX_IP_RESULTS 10
 
@@ -409,4 +410,15 @@ pacparser_just_find_proxy(const char *pacfile,
   strcpy(proxy, out);
   if (initialized_here) pacparser_cleanup();
   return proxy;
+}
+
+#define QUOTEME_(x) #x
+#define QUOTEME(x) QUOTEME_(x)
+
+char* pacparser_version(void) {
+#ifndef VERSION
+  fprintf(stderr, "WARNING: VERSION not defined.");
+  return "";
+#endif
+  return QUOTEME(VERSION);
 }

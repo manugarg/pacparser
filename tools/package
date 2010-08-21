@@ -1,16 +1,66 @@
 #!/bin/bash -e
 
-ver=$1
-[ -z $ver ] && echo "Please specify package version." && exit
+USAGE="
+Usage: $0 [-n] [-v version]\n
+-n        : Create a new release. Tag the current repository revision as version\n
+-v version: Specify the version. If not specified, the latest hg tag is used. \n
+            This option is required for a new release.\n
+"
+
+while getopts "nv:" flag
+do
+  if [ "$flag" = "n" ]; then
+    newrelease="yes"
+  elif [ "$flag" = "v" ]; then
+    ver=$OPTARG
+  elif [ "$flag" = "?" ]; then
+    echo -e $USAGE
+    exit 2
+  fi
+done
+
+if [ "$newrelease" = "yes" ]; then
+  if [ -z "$ver" ];then
+    echo "Version should be specified while creating a new release."
+    echo -e $USAGE
+    exit 2
+  else
+    echo -n "Are you sure you want to create a new release and tag the current "
+    echo -n "repository revision as $ver (y/n): "
+    read response
+    if [ $response != "y" ]; then
+      echo "You said no. Not moving ahead."
+      exit 0
+    fi
+  fi
+fi
+
+if [ -z "$ver" ]; then
+  ver=$(hg tags | awk 'NR==2 {print $1}')
+fi
 
 cd $(dirname $0); tools_dir=$PWD; cd - > /dev/null
 
-pkg_dir=${tools_dir}/packages/pacparser-${ver}
-pkg=${pkg_dir}.tar.gz
+pkgdir=$tools_dir/packages/pacparser-$ver; rm -rf $pkgdir*
+pkg=pacparser-${ver}.tar.gz
 
-mkdir -p ${tools_dir}/packages
-cd ${tools_dir}/..
-hg archive -t tgz -X tools -X debian -X .hgtags $pkg
-cd - > /dev/null
+mkdir -p $tools_dir/packages
+pushd $tools_dir/.. > /dev/null
+hg archive -t files -X tools -X debian -X .hgtags $pkgdir
 
-hg archive -t files -X tools -X .hgtags $pkg_dir
+# Create a version string. This is used at the time of build.
+latesttag=$(awk '/latesttag:/{print $2}' $pkgdir/.hg_archival.txt)
+latesttagdistance=$(awk '/latesttagdistance:/{print $2}' $pkgdir/.hg_archival.txt)
+echo "VERSION=$latesttag-$latesttagdistance" > $pkgdir/src/version.mk
+
+# Create the tarball.
+pushd $tools_dir/packages > /dev/null
+tar czf $(basename $pkg) $(basename $pkgdir)
+rm -rf $pkgdir
+popd > /dev/null
+
+# Create the directory to be used for debian package.
+hg archive -t files -X tools -X .hgtags $pkgdir
+echo "VERSION=$latesttag-$latesttagdistance" > $pkgdir/src/version.mk
+
+popd > /dev/null

@@ -46,6 +46,7 @@ void usage(const char *progname)
                   "(Ex functions)\n");
   fprintf(stderr, "  -f urlslist  : a file containing list of URLs to be "
           "tested.\n");
+  fprintf(stderr, "  -v           : print version and exit\n");
 }
 
 char *get_host_from_url(const char *url)
@@ -80,9 +81,12 @@ int main(int argc, char* argv[])
   char *pacfile=NULL, *url=NULL, *host=NULL, *urlslist=NULL, *client_ip=NULL;
   int enable_microsoft_extensions=0;
   char c;
-  while ((c = getopt(argc, argv, "ep:u:h:f:c:")) != -1)
+  while ((c = getopt(argc, argv, "evp:u:h:f:c:")) != -1)
     switch (c)
     {
+      case 'v':
+        printf("%s\n", pacparser_version());
+        return 0;
       case 'p':
         pacfile = optarg;
         break;
