@@ -35,6 +35,7 @@ ifeq ($(OS_ARCH),Linux)
   LIBRARY = $(LIBRARY_NAME).$(SO_SUFFIX).$(LIB_VER)
   MKSHLIB = $(CC) -shared
   LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
+  SHFLAGS = -fPIC
 endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
@@ -44,7 +45,6 @@ ifeq ($(OS_ARCH),Darwin)
 endif
 
 CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
-SHFLAGS = -fPIC
 
 ifndef PYTHON
   PYTHON = python
@@ -65,11 +65,11 @@ MAN_PREFIX = $(PREFIX)/share/man
 all: testpactester
 
 jsapi_buildstamp: spidermonkey/js.tar.gz
-	cd spidermonkey && $(MAKE) jsapi
+	cd spidermonkey && SHFLAGS=$(SHFLAGS) $(MAKE) jsapi
 	touch jsapi_buildstamp
 
 libjs.a: spidermonkey/js.tar.gz
-	cd spidermonkey && $(MAKE) jslib
+	cd spidermonkey && SHFLAGS=$(SHFLAGS) $(MAKE) jslib
 
 pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
