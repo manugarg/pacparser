@@ -6,7 +6,7 @@ jslib: js-buildstamp
 
 js-buildstamp:
 	tar xzvf js.tar.gz
-	cd js/src; CFLAGS=$(SHFLAGS) $(MAKE) -f Makefile.ref
+	cd js/src; CFLAGS=$(SHFLAGS) $(MAKE) -f Makefile.ref libjs.a
 	find js/src -name "jsautocfg.h" -exec cp {} js/src \;
 	touch js-buildstamp
 
