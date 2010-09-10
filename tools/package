@@ -32,6 +32,7 @@ if [ "$newrelease" = "yes" ]; then
       echo "You said no. Not moving ahead."
       exit 0
     fi
+    hg tag $ver
   fi
 fi
 
