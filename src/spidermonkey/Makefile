@@ -6,7 +6,12 @@ jslib: js-buildstamp
 
 js-buildstamp:
 	tar xzvf js.tar.gz
-	cd js/src; CFLAGS=$(SHFLAGS) $(MAKE) -f Makefile.ref libjs.a
+	# Create $(OBJDIR), which is defined in config.mk
+	# This file is required to build libjs.a alone. 
+	echo 'include config.mk\nall:\n\tmkdir -p $$(OBJDIR)' > js/src/temp.mk
+	DEPTH=. make -C js/src -f temp.mk
+	rm js/src/temp.mk
+	CFLAGS=$(SHFLAGS) $(MAKE) -C js/src -f Makefile.ref libjs.a
 	find js/src -name "jsautocfg.h" -exec cp {} js/src \;
 	touch js-buildstamp
 
