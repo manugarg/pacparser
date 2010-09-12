@@ -36,6 +36,7 @@ ifeq ($(OS_ARCH),Linux)
   MKSHLIB = $(CC) -shared
   LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
   SHFLAGS = -fPIC
+  SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=__va_copy
 endif
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
@@ -65,11 +66,11 @@ MAN_PREFIX = $(PREFIX)/share/man
 all: testpactester
 
 jsapi_buildstamp: spidermonkey/js.tar.gz
-	cd spidermonkey && SHFLAGS=$(SHFLAGS) $(MAKE) jsapi
+	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jsapi
 	touch jsapi_buildstamp
 
 libjs.a: spidermonkey/js.tar.gz
-	cd spidermonkey && SHFLAGS=$(SHFLAGS) $(MAKE) jslib
+	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jslib
 
 pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
