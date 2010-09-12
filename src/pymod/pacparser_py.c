@@ -90,6 +90,14 @@ py_pacparser_find_proxy(PyObject *self, PyObject *args)
   return Py_BuildValue("s", proxy);
 }
 
+// Return pacparser version.
+static PyObject *                            // Version string.
+py_pacparser_version(PyObject *self, PyObject *args)
+{
+  return Py_BuildValue("s", pacparser_version());
+}
+
+
 // Destroys JavaSctipt Engine.
 static PyObject *
 py_pacparser_cleanup(PyObject *self, PyObject *args)
@@ -121,6 +129,7 @@ static PyMethodDef  PpMethods[] = {
   {"init", py_pacparser_init, METH_VARARGS, "initialize pacparser"},
   {"parse_pac", py_pacparser_parse_pac, METH_VARARGS, "parse pacfile"},
   {"find_proxy", py_pacparser_find_proxy, METH_VARARGS, "returns proxy string"},
+  {"version", py_pacparser_version, METH_VARARGS, "returns pacparser version"},
   {"cleanup", py_pacparser_cleanup, METH_VARARGS, "destroy pacparser engine"},
   {"setmyip", py_pacparser_setmyip, METH_VARARGS, "set my ip address"},
   {"enable_microsoft_extensions", py_pacparser_enable_microsoft_extensions,

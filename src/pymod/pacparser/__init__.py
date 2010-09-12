@@ -63,6 +63,12 @@ def find_proxy(url, host=None):
       return None
   return _pacparser.find_proxy(url, host)
 
+def version():
+  """
+  Returns the compiled pacparser version.
+  """
+  return _pacparser.version()
+
 def cleanup():
   """
   Destroys pacparser engine.
