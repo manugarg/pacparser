@@ -30,19 +30,25 @@ OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 LIBRARY_NAME = libpacparser
 LIB_VER = 1
 
-ifeq ($(OS_ARCH),Linux)
-  SO_SUFFIX = so
-  LIBRARY = $(LIBRARY_NAME).$(SO_SUFFIX).$(LIB_VER)
-  MKSHLIB = $(CC) -shared
-  LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
-  SHFLAGS = -fPIC
-  SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=__va_copy
-endif
+# This Makefile should at least work on Linux and Mac OS X. It should work on
+# most other types of Unix systems too, but I have not put any conscious effort
+# for that.
+#
+# Set variables according to Linux.
+SO_SUFFIX = so
+LIBRARY = $(LIBRARY_NAME).$(SO_SUFFIX).$(LIB_VER)
+MKSHLIB = $(CC) -shared
+LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
+SHFLAGS = -fPIC
+SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=__va_copy
+
 ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
   LIBRARY = $(LIBRARY_NAME).$(LIB_VER).$(SO_SUFFIX)
   MKSHLIB = $(CC) -dynamiclib -framework System
   LIB_OPTS = -install_name $(PREFIX)/lib/$(notdir $@)
+  SHFLAGS =
+  SMCFLAGS =
 endif
 
 CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
