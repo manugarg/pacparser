@@ -71,11 +71,14 @@ MAN_PREFIX = $(PREFIX)/share/man
 .PHONY: clean pymod install-pymod
 all: testpactester
 
-jsapi_buildstamp: spidermonkey/js.tar.gz
+spidermonkey/js/src: spidermonkey/js-?.?.?.tar.gz
+	tar xzvf spidermonkey/js-?.?.?.tar.gz -C spidermonkey
+
+jsapi_buildstamp: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jsapi
 	touch jsapi_buildstamp
 
-libjs.a: spidermonkey/js.tar.gz
+libjs.a: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jslib
 
 pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp

@@ -9,10 +9,10 @@ LIBRARY_PATH=$script_dir/../src
 export DYLD_LIBRARY_PATH=$LIBRARY_PATH
 export LD_LIBRARY_PATH=$LIBRARY_PATH
 
+LIB=$LIBRARY_PATH/libpacparser.so.1
+
 OS_ARCH=$(uname -s | sed /\ /s//_/)
-if [ "$OS_ARCH" = "Linux" ]; then
-  LIB=$LIBRARY_PATH/libpacparser.so.1
-elif [ "$OS_ARCH" = "Darwin" ]; then
+if [ "$OS_ARCH" = "Darwin" ]; then
   LIB=$LIBRARY_PATH/libpacparser.1.dylib
 fi
 
@@ -31,6 +31,7 @@ while read line
     [ $DEBUG ] && echo "Params: $PARAMS"
     if [ "$RESULT" != "$EXPECTED_RESULT" ]; then
       echo "Test failed: got \"$RESULT\", expected \"$EXPECTED_RESULT\""
+      echo "Params were: $PARAMS"
       exit 1;
     fi
   done < $TESTDATA
