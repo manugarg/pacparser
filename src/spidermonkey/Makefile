@@ -40,5 +40,4 @@ js-buildstamp:
 
 clean:
 	rm -rf js-buildstamp
-	rm -rf js/src/$(OBJDIR)
-	$(MAKE) -C js/src -f Makefile.ref clean
+	rm -rf js
