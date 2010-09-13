@@ -31,6 +31,7 @@ while read line
     [ $DEBUG ] && echo "Params: $PARAMS"
     if [ "$RESULT" != "$EXPECTED_RESULT" ]; then
       echo "Test failed: got \"$RESULT\", expected \"$EXPECTED_RESULT\""
+      echo "Params were: $PARAMS"
       exit 1;
     fi
   done < $TESTDATA

@@ -1,3 +1,31 @@
+# Copyright (C) 2007 Manu Garg.
+# Author: Manu Garg <manugarg@gmail.com>
+#
+# Makefile for pacparser. Please read README file included with this package
+# for more information about pacparser.
+#
+# pacparser is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 3 of the License, or (at your option) any later version.
+
+# pacparser is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+# Include config.mk to get the variable $(OBJDIR).
+# We need to create $(OBJDIR) first to be able to build libjs.a alone.
+
+ifneq ($(MAKECMDGOALS),clean)
+  DEPTH = js/src
+  include js/src/config.mk
+endif
+
 jsapi: js-buildstamp
 
 jslib: js-buildstamp
@@ -5,15 +33,12 @@ jslib: js-buildstamp
 	find . -name "libjs.a" -exec cp {} .. \;
 
 js-buildstamp:
-	tar xzvf js.tar.gz
-	# Create $(OBJDIR), which is defined in config.mk
-	# This file is required to build libjs.a alone. 
-	echo 'include config.mk\nall:\n\tmkdir -p $$(OBJDIR)' > js/src/temp.mk
-	DEPTH=. make -C js/src -f temp.mk
-	rm js/src/temp.mk
+	mkdir -p js/src/$(OBJDIR)
 	CFLAGS="$(SMCFLAGS)" $(MAKE) -C js/src -f Makefile.ref libjs.a
 	find js/src -name "jsautocfg.h" -exec cp {} js/src \;
 	touch js-buildstamp
 
 clean:
-	rm -rf js js-buildstamp
+	rm -rf js-buildstamp
+	rm -rf js/src/$(OBJDIR)
+	$(MAKE) -C js/src -f Makefile.ref clean
