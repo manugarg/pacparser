@@ -27,11 +27,22 @@ while read line
     PARAMS=$(echo "$line"|cut -d"|" -f1)
     EXPECTED_RESULT=$(echo $line|cut -d"|" -f2)
     RESULT=$($PACTESTER -p $PACFILE $PARAMS)
+    if [ $? != 0 ]; then
+      echo "pactester execution failed."
+      echo "Command tried: $PACTESTER -p $PACFILE $PARAMS"
+      echo "Running with debug mode on..."
+      echo "DEBUG=1 $PACTESTER -p $PACFILE $PARAMS"
+      DEBUG=1 $PACTESTER -p $PACFILE $PARAMS
+      exit 1
+    fi
     [ $DEBUG ] && echo "Test line: $line"
     [ $DEBUG ] && echo "Params: $PARAMS"
     if [ "$RESULT" != "$EXPECTED_RESULT" ]; then
       echo "Test failed: got \"$RESULT\", expected \"$EXPECTED_RESULT\""
-      echo "Params were: $PARAMS"
+      echo "Command tried: $PACTESTER -p $PACFILE $PARAMS"
+      echo "Running with debug mode on..."
+      echo "DEBUG=1 $PACTESTER -p $PACFILE $PARAMS"
+      DEBUG=1 $PACTESTER -p $PACFILE $PARAMS
       exit 1;
     fi
   done < $TESTDATA

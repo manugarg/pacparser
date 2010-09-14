@@ -47,6 +47,11 @@
 static char *myip = NULL;
 static int define_microsoft_extensions = 0; //0: False, 1: True
 
+int _debug(void) {
+  if(getenv("DEBUG")) return 1;
+  return 0;
+}
+
 // Utility function to read a file into string.
 static char *                      // File content in string or NULL if failed.
 read_file_into_str(const char *filename)
@@ -248,19 +253,35 @@ pacparser_init()
   if (!(rt = JS_NewRuntime(8L * 1024L * 1024L)) ||
       !(cx = JS_NewContext(rt, 8192)) ||
       !(global = JS_NewObject(cx, &global_class, NULL, NULL)) ||
-      !JS_InitStandardClasses(cx, global))
+      !JS_InitStandardClasses(cx, global)) {
+    fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not initialize"
+            " JavaScript runtime.");
     return 0;
+  }
   JS_SetErrorReporter(cx, print_error);
   // Export our functions to Javascript engine
-  if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve, 1, 0))
+  if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve, 1, 0)) {
+    fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not define"
+            " dnsResolve in JS context.");
     return 0;
-  if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0))
+  }
+  if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0)) {
+    fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not define"
+            " myIpAddress in JS context.");
     return 0;
+  }
   if (define_microsoft_extensions) {
-    if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0))
+    if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0)) {
+      fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not define"
+              " dnsResolveEx in JS context.");
       return 0;
-    if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0))
+    }
+    if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0)) {
+      fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not define"
+              " myIpAddressEx in JS context.");
+
       return 0;
+    }
   }
   // Evaluate pacUtils. Utility functions required to parse pac files.
   if (!JS_EvaluateScript(cx,           // JS engine context
@@ -269,8 +290,12 @@ pacparser_init()
                          strlen(pacUtils),
                          NULL,         // filename (NULL in this case)
                          1,            // line number, used for reporting.
-                         &rval))
+                         &rval)) {
+    fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not evaluate"
+            " pacUtils defined in pac_utils.h.");
     return 0;
+  }
+  if (_debug()) fprintf(stderr, "Pacparser Initalized.\n");
   return 1;
 }
 
@@ -300,10 +325,15 @@ pacparser_parse_pac(const char *pacfile)
                          pacfile,
                          1,
                          &rval)) {     // If script evaluation failed
+    fprintf(stderr, "pacparser.c: pacparser_parse_pac: %s %s\n", "Failed to"
+            "evaluate the pacfile", pacfile);
+    if(_debug()) fprintf(stderr, "Could not evaluate the pac script: %s\n",
+                         script);
     if (script != NULL) free(script);
     return 0;
   }
   if (script != NULL) free(script);
+  if (_debug()) fprintf(stderr, "Parsed PAC file.\n");
   return 1;
 }
 
@@ -315,6 +345,8 @@ pacparser_parse_pac(const char *pacfile)
 char *                                  // Proxy string or NULL if failed.
 pacparser_find_proxy(const char *url, const char *host)
 {
+  if (_debug()) fprintf(stderr, "Finding proxy for URL: %s and Host: %s\n",
+                        url, host);
   jsval rval;
   char *script;
   if (url == NULL || (strcmp(url, "") == 0)) {
@@ -334,13 +366,14 @@ pacparser_find_proxy(const char *url, const char *host)
   }
   // Test if FindProxyForURL is defined.
   script = "typeof(FindProxyForURL);";
-  if ( !JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval) )
-    return NULL;
-  if ( strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0 ) {
+  if (_debug()) fprintf(stderr, "Executing JavaScript: %s\n", script);
+  JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
+  if (strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0) {
     fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n", "Javascript"
             " function FindProxyForURL not defined.");
     return NULL;
   }
+
   script = (char*) malloc(32 + strlen(url) + strlen(host));
   script[0] = '\0';
   strcat(script, "FindProxyForURL('");
@@ -348,8 +381,8 @@ pacparser_find_proxy(const char *url, const char *host)
   strcat(script, "', '");
   strcat(script, host);
   strcat(script, "')");
-  if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval))
-    return NULL;
+  if (_debug()) fprintf(stderr, "Executing JavaScript: %s\n", script);
+  JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
   return JS_GetStringBytes(JS_ValueToString(cx, rval));
 }
 
@@ -370,6 +403,7 @@ pacparser_cleanup()
   }
   if (!cx && !rt) JS_ShutDown();
   global = NULL;
+  if (_debug()) fprintf(stderr, "Pacparser destroyed.\n");
 }
 
 // Finds proxy for a given PAC file, url and host.
@@ -389,7 +423,7 @@ pacparser_just_find_proxy(const char *pacfile,
   if (!global) {
     if (!pacparser_init()) {
       fprintf(stderr, "pacparser.c: pacparser_just_find_proxy: %s\n",
-              "Could not initialize pac parser");
+              "Could not initialize pacparser");
       return NULL;
     }
     initialized_here = 1;
