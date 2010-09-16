@@ -80,7 +80,7 @@ int main(int argc, char* argv[])
 {
   char *pacfile=NULL, *url=NULL, *host=NULL, *urlslist=NULL, *client_ip=NULL;
   int enable_microsoft_extensions=0;
-  char c;
+  signed char c;
   while ((c = getopt(argc, argv, "evp:u:h:f:c:")) != -1)
     switch (c)
     {
