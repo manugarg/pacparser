@@ -1,0 +1,11 @@
+--- ./src/spidermonkey/js/src/config.mk.orig	2010-10-10 00:22:07.063578492 +0530
++++ ./src/spidermonkey/js/src/config.mk	2010-10-10 00:22:52.223577247 +0530
+@@ -44,7 +44,7 @@
+ endif
+ 
+ # Set os+release dependent make variables
+-OS_ARCH         := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
++OS_ARCH         := $(subst /,_,$(shell uname -s | sed /\ /s//_/ | sed s,GNU.*,Linux,))
+ 
+ # Attempt to differentiate between SunOS 5.4 and x86 5.4
+ OS_CPUARCH      := $(shell uname -m)

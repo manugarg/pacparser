@@ -32,7 +32,7 @@ major=1
 # awk '{if (match($$0,/\.so\.[0-9]+$$/)) print substr($$0,RSTART+4)}'`
 
 build: build-pactester build-pymod
-build-pactester:
+build-pactester: build-patched
 	dh_testdir
 	$(MAKE) -C src
 	touch $@
@@ -40,17 +40,22 @@ build-pactester:
 build-pymod: $(PYVERS:%=build-python%)
 	touch $@
 
-build-python%:
+build-python%: build-patched
 	PYTHON=python$* $(MAKE) -C src pymod
+	touch $@
+
+build-patched:
+	$(MAKE) -C src spidermonkey/js/src
+	dh_quilt_patch
 	touch $@
 
 clean:
 	dh_testdir
 	dh_testroot
-	rm -f build-stamp
+	rm -f build-*
+	dh_quilt_unpatch
 	# Add here commands to clean up after the build process.
 	$(MAKE) -C src clean
-
 	dh_clean
 
 install: build
