@@ -5,3 +5,4 @@ src/spidermonkey/js/*
 .*buildstamp
 pactester
 pymod/build
+tools/packages
