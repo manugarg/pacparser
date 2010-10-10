@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -e
 #
 # This script creates a Mac package, that can be directly installed by
 # Installer on Mac.
@@ -11,8 +11,10 @@ stage_dir=/tmp/pacparser_$RANDOM
 sudo rm -rf /tmp/pacparser*
 mkdir -p $stage_dir
 
-cd $(dirname $0); tools_dir=$PWD; cd -
-cd $tools_dir/..
+if [ ! -e src/Makefile ]; then
+  echo "Call this script from the root of the source directory"
+  exit 1
+fi
 
 # Build pactester and pacparser library and install in $stage_dir
 make -C src
@@ -36,5 +38,3 @@ mkdir $tmp_dir
 mv pacparser.pkg $tmp_dir
 hdiutil create -srcfolder $tmp_dir pacparser-$ver.dmg
 rm -rf $tmp_dir
-
-cd -
