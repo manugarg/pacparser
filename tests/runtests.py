@@ -1,4 +1,24 @@
-#!/usr/bin/python
+# Copyright (C) 2007 Manu Garg.
+# Author: Manu Garg <manugarg@gmail.com>
+#
+# pacparser is a library that provides methods to parse proxy auto-config
+# (PAC) files. Please read README file included with this package for more
+# information about this library.
+#
+# pacparser is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+
+# pacparser is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
+# USA.
 
 import getopt
 import glob
@@ -8,12 +28,16 @@ import sys
 
 def runtests(pacfile, testdata, tests_dir):
   py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
-  try:
-    pacparser_module_path = glob.glob(os.path.join(
-      tests_dir, '..', 'src', 'pymod', 'build', 'lib*%s' % py_ver))[0]
-  except Exception:
-    print('Tests failed. Could not determine pacparser path.')
-    return 1
+  if sys.platform == 'win32':
+    pacparser_module_path = os.path.join(tests_dir, '..', 'src', 'pymod', 'dist')
+    if os.path.exists(os.path.join(pacparser_module_path, '_pacparser.pyd')):
+      raise Exception('Tests failed. Could not determine pacparser path.')
+  else:
+    try:
+      pacparser_module_path = glob.glob(os.path.join(
+        tests_dir, '..', 'src', 'pymod', 'build', 'lib*%s' % py_ver))[0]
+    except Exception:
+      raise Exception('Tests failed. Could not determine pacparser path.')
   if 'DEBUG' in os.environ: print('Pacparser module path: %s' %
                                   pacparser_module_path)
   sys.path.insert(0, pacparser_module_path)
@@ -21,8 +45,7 @@ def runtests(pacfile, testdata, tests_dir):
   try:
     import pacparser
   except ImportError:
-    print('Tests failed. Could not import pacparser.')
-    return 1
+    raise Exception('Tests failed. Could not import pacparser.')
 
   if 'DEBUG' in os.environ: print('Imported pacparser module: %s' %
                                   sys.modules['pacparser'])
@@ -43,8 +66,7 @@ def runtests(pacfile, testdata, tests_dir):
     result = pacparser.find_proxy(args['-u'])
     pacparser.cleanup()
     if result != expected_result:
-      print('Tests failed. Got "%s", expected "%s"' % (result, expected_result))
-      return 1
+      raise Exception('Tests failed. Got "%s", expected "%s"' % (result, expected_result))
   print('All tests were successful.')
 
 
