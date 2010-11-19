@@ -98,6 +98,12 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results)
   char ipaddr[INET6_ADDRSTRLEN];
   int error;
 
+#ifdef _WIN32
+  // On windows, we need to initialize the winsock dll first.
+  WSADATA WsaData;
+  WSAStartup(MAKEWORD(2,0), &WsaData);
+#endif
+
   memset(&hints, 0, sizeof(struct addrinfo));
 
   hints.ai_family = AF_UNSPEC;
@@ -113,6 +119,9 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results)
     else sprintf(ipaddr_list, "%s;%s", ipaddr_list, ipaddr);
   }
   freeaddrinfo(ai);
+#ifdef _WIN32
+  WSACleanup();
+#endif
   return 0;
 }
 

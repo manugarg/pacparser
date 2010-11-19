@@ -1,9 +1,11 @@
 # Command Line Parameters|Expected Result
--u http://www.google.com|END-OF-SCRIPT
+-u http://www.google.co.in|END-OF-SCRIPT
 -e -u http://www.google.com|dnsResolveEx defined
 -u http://host1|plainhost/.manugarg.com
 -u http://www1.manugarg.com|plainhost/.manugarg.com
 -u http://manugarg.externaldomain.com|externaldomain
--u https://www.google.com|secureUrl
--c 192.168.101.1 -u http://www.google.com|192.0.0.0
--c 10.10.100.112 -u http://www.google.com|10.10.0.0
+-u http://www.google.com|isResolvable
+-u http://www.notresolvabledomainXXX.com|isNotResolvable
+-u https://www.somehost.com|secureUrl
+-c 192.168.101.1 -u http://www.somehost.com|192.0.0.0
+-c 10.10.100.112 -u http://www.somehost.com|10.10.0.0
