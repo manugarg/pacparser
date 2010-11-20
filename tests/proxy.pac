@@ -16,6 +16,16 @@ function FindProxyForURL(url, host) {
   if (/.*\.externaldomain\.com/.test(host))
     return "externaldomain";
 
+  // Test if DNS resolving is working as intended
+  if (dnsDomainIs(host, ".google.com") &&
+      isResolvable(host))
+    return "isResolvable";
+
+  // Test if DNS resolving is working as intended
+  if (dnsDomainIs(host, ".notresolvabledomainXXX.com") &&
+      !isResolvable(host))
+    return "isNotResolvable";
+
   if (/^https:\/\/.*$/.test(url))
     return "secureUrl";
 
