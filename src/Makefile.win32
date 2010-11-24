@@ -71,6 +71,6 @@ pymod: pacparser.h pacparser.dll
 	cd .. && tests\runtests.py
 
 clean:
-	del /F pacparser.dll pacparser.lib pacparser.def pacparser.exp pacparser.o pactester.exe pactester.lib libpacparser.a fdlibm.lib js.lib
+	del /F pacparser.dll *.lib pacparser.def pacparser.exp pacparser.o pactester.exe libpacparser.a
 	$(MAKE) -C spidermonkey -f Makefile.win32 clean
 	cd pymod && setup.py clean
