@@ -70,7 +70,7 @@ all: js.lib fdlibm.lib
 js\src\jsautokw.h: js\src\jskwgen.c
 	$(CC) -o jskwgen js\src\jskwgen.c
 	jskwgen > js\src\jsautokw.h
-	del jskwgen
+	del jskwgen.exe
 	
 fdlibm.lib: js $(FDLIBM_OBJECTS)
 	ar r fdlibm.lib $(FDLIBM_OBJECTS)
