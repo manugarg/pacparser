@@ -74,3 +74,4 @@ clean:
 	del /F pacparser.dll *.lib pacparser.def pacparser.exp pacparser.o pactester.exe libpacparser.a
 	$(MAKE) -C spidermonkey -f Makefile.win32 clean
 	cd pymod && setup.py clean
+	if exist dist rmdir /s /q dist
