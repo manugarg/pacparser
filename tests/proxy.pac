@@ -29,9 +29,6 @@ function FindProxyForURL(url, host) {
   if (/^https:\/\/.*$/.test(url))
     return "secureUrl";
 
-  if (isInNet(myIpAddress(), '192.0.0.0', '255.0.0.0'))
-    return '192.0.0.0';
-
   if (isInNet(myIpAddress(), '10.10.0.0', '255.255.0.0'))
     return '10.10.0.0';
 
