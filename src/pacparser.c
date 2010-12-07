@@ -118,7 +118,7 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results)
     if (ipaddr_list[0] == '\0') sprintf(ipaddr_list, "%s", ipaddr);
     else sprintf(ipaddr_list, "%s;%s", ipaddr_list, ipaddr);
   }
-  freeaddrinfo(ai);
+  freeaddrinfo(result);
 #ifdef _WIN32
   WSACleanup();
 #endif
