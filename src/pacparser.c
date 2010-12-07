@@ -98,6 +98,9 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results)
   char ipaddr[INET6_ADDRSTRLEN];
   int error;
 
+  // Truncate ipaddr_list to an empty string.
+  ipaddr_list[0] = '\0';
+
 #ifdef _WIN32
   // On windows, we need to initialize the winsock dll first.
   WSADATA WsaData;
