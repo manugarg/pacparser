@@ -65,5 +65,5 @@ dist: build
 	copy ..\..\INSTALL dist\INSTALL.txt
 
 clean:
-	if exist pacparser_py.o del pacparser_py.o
-	if exist _pacparser.pyd del _pacparser.pyd
+	del /F pacparser_py.o _pacparser.pyd
+	if exist dist rmdir /s /q dist
