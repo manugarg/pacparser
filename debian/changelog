@@ -1,3 +1,16 @@
+pacparser (1.2.6) lucid; urgency=low
+
+  * Feature: Add a feature to record current version in the compiled
+    pacparser library and make it available through -v option in pactester.
+  * Build: Support for PowerPC. Use va_copy for Linux on all architectures.
+    This fixes build for Linux on PowerPC.
+  * Build: Fix a major bug because of which pacparser was broken on ARM
+    architecture. (http://goo.gl/4ZZ34)
+  * Development: Simplify build on windows. Compile spidermonkey from the
+    included source (hg logs -r 153:155)
+
+ -- manu garg <manugarg@gmail.com>  Mon, 13 Dec 2010 11:48:33 +0530
+
 pacparser (1.2.1) unstable; urgency=low
 
   * Implement a subset of Microsoft PAC extensions for IPv6. This adds
