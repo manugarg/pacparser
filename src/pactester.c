@@ -183,9 +183,11 @@ int main(int argc, char* argv[])
     if(!pacparser_parse_pac_string(script)) {
       fprintf(stderr, "pactester.c: Could not parse the pac script: %s\n",
               script);
+      free(script);
       pacparser_cleanup();
       return 1;
     }
+    free(script);
   }
   else {
     if(!pacparser_parse_pac_file(pacfile)) {
