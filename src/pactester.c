@@ -158,7 +158,6 @@ int main(int argc, char* argv[])
       if (strlen(buffer) == 0) break;
       char *old = script;
       script_size += strlen(buffer);
-      printf ("%d", script_size);
       if (script_size > maxsize) {
         fprintf(stderr, "Input file is too big. Maximum allowed size is: %d",
                 maxsize);
