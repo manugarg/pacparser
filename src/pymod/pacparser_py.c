@@ -50,30 +50,29 @@ py_pacparser_init(PyObject *self, PyObject *args)
   }
 }
 
-// Parses PAC file
+// Parses the PAC script string.
 //
-// parses and evaulates PAC file in the JavaScript context created by
+// Evaulates the PAC script string in the JavaScript context created by
 // pacparser_init.
 static PyObject *                          // 0 (=Failure) or 1 (=Success)
-py_pacparser_parse_pac(PyObject *self, PyObject *args)
+py_pacparser_parse_pac_string(PyObject *self, PyObject *args)
 {
-  const char *pacfile;
-  if (!PyArg_ParseTuple(args, "s", &pacfile))
+  const char *pac_script;
+  if (!PyArg_ParseTuple(args, "s", &pac_script))
     return NULL;
-  if (pacparser_parse_pac(pacfile))
+  if (pacparser_parse_pac_string(pac_script))
     Py_RETURN_NONE;
   else
   {
-    PyErr_SetString(PacparserError, "Could not parse pac file");
+    PyErr_SetString(PacparserError, "Could not parse pac script string");
     return NULL;
   }
 }
 
-// Finds proxy for a given URL and Host.
+// Finds proxy for the given URL and Host.
 //
-// If JavaScript engine is intialized and FindProxyForURL function is defined,
-// it evaluates code FindProxyForURL(url,host) in JavaScript context and
-// returns the result.
+// Evaluates FindProxyForURL(url,host) in the JavaScript context and returns
+// the result.
 static PyObject *                            // Proxy string or NULL if failed.
 py_pacparser_find_proxy(PyObject *self, PyObject *args)
 {
@@ -106,7 +105,7 @@ py_pacparser_cleanup(PyObject *self, PyObject *args)
   Py_RETURN_NONE;
 }
 
-// Sets local ip to the argument.
+// Sets local ip to the given argument.
 static PyObject *
 py_pacparser_setmyip(PyObject *self, PyObject *args)
 {
@@ -127,7 +126,8 @@ py_pacparser_enable_microsoft_extensions(PyObject *self, PyObject *args)
 
 static PyMethodDef  PpMethods[] = {
   {"init", py_pacparser_init, METH_VARARGS, "initialize pacparser"},
-  {"parse_pac", py_pacparser_parse_pac, METH_VARARGS, "parse pacfile"},
+  {"parse_pac_string", py_pacparser_parse_pac_string, METH_VARARGS,
+    "parses pac script string"},
   {"find_proxy", py_pacparser_find_proxy, METH_VARARGS, "returns proxy string"},
   {"version", py_pacparser_version, METH_VARARGS, "returns pacparser version"},
   {"cleanup", py_pacparser_cleanup, METH_VARARGS, "destroy pacparser engine"},

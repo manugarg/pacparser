@@ -12,7 +12,7 @@
 pacparser_find_proxy - Finds proxy for a given URL and Host. 
 <h2><a name='sect1' href='#toc1'>Synopsis</a></h2>
 <b>#include
-&lt;../pacparser.h&gt; <p>
+&lt;pacparser.h&gt; <p>
 char *pacparser_find_proxy <br>
 ( <br>
 <tt> </tt>&nbsp;<tt> </tt>&nbsp;const char *url,<br>
@@ -33,15 +33,19 @@ part of the URL. </dd>
 </dl>
 
 <h2><a name='sect3' href='#toc3'>Description</a></h2>
-This function should be called only after pacparser
-engine has been initialized (using pacparser_init) and pac file has been
-parsed (using pacparser_parse_pac). It determines "right" proxy (based on
-pac file) for url and host. 
+Finds proxy for a given URL and Host. This function
+should be called only after pacparser engine has been initialized (using
+pacparser_init) and pac script has been parsed (using pacparser_parse_pac_file
+or pacparser_parse_pac_string). 
 <h2><a name='sect4' href='#toc4'>Returns</a></h2>
-Proxy string on sucess and NULL on error.
-
+Proxy string on sucess and NULL on
+error. 
 <h2><a name='sect5' href='#toc5'>See Also</a></h2>
-<a href='pacparser_init.3.html'>pacparser_init(3)</a>
+<a href='pacparser_version.3.html'>pacparser_version(3)</a>
+, <a href='pacparser_init.3.html'>pacparser_init(3)</a>
+, <a href='pacparser_parse_pac_file.3.html'>pacparser_parse_pac_file(3)</a>
+,
+<a href='pacparser_parse_pac_string.3.html'>pacparser_parse_pac_string(3)</a>
 , <a href='pacparser_parse_pac.3.html'>pacparser_parse_pac(3)</a>
 , <a href='pacparser_just_find_proxy.3.html'>pacparser_just_find_proxy(3)</a>
 ,

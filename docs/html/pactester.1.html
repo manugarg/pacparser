@@ -24,63 +24,59 @@ string for the specified URL.
 <dl>
 
 <dt><b>-p pacfile</b> </dt>
-<dd>PAC file to test. </dd>
+<dd>PAC file to test. Specify
+"-" to read from standard input. </dd>
 
 <dt><b>-u url</b> </dt>
-<dd>URL
-to test PAC file for. </dd>
+<dd>URL to test PAC file for. </dd>
 
 <dt><b>-h host</b> </dt>
-<dd>Host part of the URL. If not specified, it&rsquo;s
-determined from the URL. </dd>
+<dd>Host
+part of the URL. If not specified, it&rsquo;s determined from the URL. </dd>
 
-<dt><b>-c client_ip</b> </dt>
-<dd>Client&rsquo;s IP address (as returned by
-the function myIpAddress() in PAC files). If not specified, it defaults
-to the IP address of the machine on which it is running. </dd>
+<dt><b>-c client_ip</b>
+</dt>
+<dd>Client&rsquo;s IP address (as returned by the function myIpAddress() in PAC files).
+If not specified, it defaults to the IP address of the machine on which
+it is running. </dd>
 
 <dt><b>-e</b> </dt>
-<dd>Enable Microsoft
-PAC extensions (dnsResolveEx, myIpAddressEx, isResolvableEx). </dd>
+<dd>Enable Microsoft PAC extensions (dnsResolveEx, myIpAddressEx,
+isResolvableEx). </dd>
 
-<dt><b>-f urlslist</b>
-</dt>
-<dd>A file containing list of URLs to be tested. This is good for testing a
-PAC file against a set of URLs. </dd>
+<dt><b>-f urlslist</b> </dt>
+<dd>A file containing list of URLs to be tested.
+This is good for testing a PAC file against a set of URLs. </dd>
 </dl>
 
 <h2><a name='sect4' href='#toc4'>Examples</a></h2>
 <p>
-To find out proxy string as returned
-by pac file wpad.dat for the URL <a href='http://www.google.com:'>http://www.google.com:</a>
- <p>
-$ pactester -p wpad.dat
+To find
+out proxy string as returned by pac file wpad.dat for the URL <a href='http://www.google.com:'>http://www.google.com:</a>
 
-<p>-
-<p>u <a href='http://www.google.com'>http://www.google.com</a>
+<p>
+$ pactester -p wpad.dat -u <a href='http://www.google.com'>http://www.google.com</a>
  
-<p> For a client with IP address 10.0.12.123: <p>
+<p> For a client with IP address
+10.0.12.123: <p>
+$ pactester -p wpad.dat -c 10.0.12.123 -u <a href='http://www.google.com'>http://www.google.com</a>
+ 
+<p> To find
+out proxy string for a list of urls specified in /tmp/urls: <p>
 $ pactester
-
-<p>-
-<p>p wpad.dat -c 10.0.12.123 -u <a href='http://www.google.com'>http://www.google.com</a>
- 
-<p> To find out proxy string for
-a list of urls specified in /tmp/urls: <p>
-$ pactester -p wpad.dat -f /tmp/urls
-
+-p wpad.dat -f /tmp/urls 
 <h2><a name='sect5' href='#toc5'>Bugs</a></h2>
-If you have come across a bug in pactester, please submit a bug report
-at <a href='http://code.google.com/p/pacparser/issues/list.'>http://code.google.com/p/pacparser/issues/list.</a>
+If you have come across a bug in pactester, please
+submit a bug report at <a href='http://code.google.com/p/pacparser/issues/list.'>http://code.google.com/p/pacparser/issues/list.</a>
  
 <h2><a name='sect6' href='#toc6'>Author</a></h2>
-Written by Manu Garg
-(http://www.manugarg.com). 
+Written
+by Manu Garg (http://www.manugarg.com). 
 <h2><a name='sect7' href='#toc7'>See Also</a></h2>
-More information about this version of
-pactester and pacparser library can be found at pacparser homepage: <a href='http://code.google.com/p/pacparser.'>http://code.google.com/p/pacparser.</a>
-
-
+More information about this
+version of pactester and pacparser library can be found at pacparser homepage:
+<a href='http://code.google.com/p/pacparser.'>http://code.google.com/p/pacparser.</a>
+ 
 <p> <p>
 
 <hr><p>

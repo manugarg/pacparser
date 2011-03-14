@@ -12,7 +12,7 @@
 pacparser_just_find_proxy - Finds proxy for a given PAC file, url
 and host. 
 <h2><a name='sect1' href='#toc1'>Synopsis</a></h2>
-<b>#include &lt;../pacparser.h&gt; <p>
+<b>#include &lt;pacparser.h&gt; <p>
 char *pacparser_just_find_proxy <br>
 ( <br>
 <tt> </tt>&nbsp;<tt> </tt>&nbsp;const char *pacfile,<br>
@@ -39,7 +39,7 @@ for. </dd>
 
 <h2><a name='sect3' href='#toc3'>Description</a></h2>
 This function is a
-wrapper around functions pacparser_init, pacparser_parse_pac, pacparser_find_proxy
+wrapper around functions pacparser_init, pacparser_parse_pac_file, pacparser_find_proxy
 and pacparser_cleanup. If you just want to find out proxy a given set of
 pac file, url and host, this is the function to call. This function takes
 care of all the initialization and cleanup. 
@@ -47,7 +47,11 @@ care of all the initialization and cleanup.
 Proxy string on success
 and NULL on error. 
 <h2><a name='sect5' href='#toc5'>See Also</a></h2>
-<a href='pacparser_init.3.html'>pacparser_init(3)</a>
+<a href='pacparser_version.3.html'>pacparser_version(3)</a>
+, <a href='pacparser_init.3.html'>pacparser_init(3)</a>
+, <a href='pacparser_parse_pac_file.3.html'>pacparser_parse_pac_file(3)</a>
+,
+<a href='pacparser_parse_pac_string.3.html'>pacparser_parse_pac_string(3)</a>
 , <a href='pacparser_parse_pac.3.html'>pacparser_parse_pac(3)</a>
 , <a href='pacparser_find_proxy.3.html'>pacparser_find_proxy(3)</a>
 ,

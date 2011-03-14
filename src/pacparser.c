@@ -19,6 +19,7 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
+#include <errno.h>
 #include <jsapi.h>
 #include <stdio.h>
 #include <string.h>
@@ -307,49 +308,76 @@ pacparser_init()
             " pacUtils defined in pac_utils.h.");
     return 0;
   }
-  if (_debug()) fprintf(stderr, "Pacparser Initalized.\n");
+  if (_debug()) fprintf(stderr, "DEBUG: Pacparser Initalized.\n");
   return 1;
 }
 
-// Parses PAC file
+// Parses the given PAC script string.
 //
-// parses and evaulates PAC file in the JavaScript context created by
-// pacparser_init.
+// Evaulates the given PAC script string in the JavaScript context created
+// by pacparser_init.
 int                                     // 0 (=Failure) or 1 (=Success)
-pacparser_parse_pac(const char *pacfile)
+pacparser_parse_pac_string(const char *script)
 {
   jsval rval;
-  char *script = NULL;
-  if ((script = read_file_into_str(pacfile)) == NULL) {
-    fprintf(stderr, "pacparser.c: pacparser_parse_pac: %s %s\n", "Could not"
-            " read pacfile", pacfile);
-    return 0;
-  }
   if (cx == NULL || global == NULL) {
-    fprintf(stderr, "pacparser.c: pacparser_parse_pac: %s\n", "Pac parser"
-            " is not initialized.");
+    fprintf(stderr, "pacparser.c: pacparser_parse_pac_string: %s\n", "Pac "
+            "parser is not initialized.");
     return 0;
   }
   if (!JS_EvaluateScript(cx,
                          global,
                          script,       // Script read from pacfile
                          strlen(script),
-                         pacfile,
+                         "PAC script",
                          1,
                          &rval)) {     // If script evaluation failed
-    fprintf(stderr, "pacparser.c: pacparser_parse_pac: %s %s\n", "Failed to"
-            "evaluate the pacfile", pacfile);
-    if(_debug()) fprintf(stderr, "Could not evaluate the pac script: %s\n",
-                         script);
-    if (script != NULL) free(script);
+    fprintf(stderr, "pacparser.c: pacparser_parse_pac_string: %s\n",
+            "Failed to evaluate the pac script.");
+    if (_debug()) fprintf(stderr, "DEBUG: Failed to parse the PAC "
+                          "script:\n%s\n", script);
     return 0;
   }
-  if (script != NULL) free(script);
-  if (_debug()) fprintf(stderr, "Parsed PAC file.\n");
+  if (_debug()) fprintf(stderr, "DEBUG: Parsed the PAC script.\n");
   return 1;
 }
 
-// Finds proxy for a given URL and Host.
+// Parses the given PAC file.
+//
+// reads the given PAC file and evaluates it in the JavaScript context created
+// by pacparser_init.
+int                                     // 0 (=Failure) or 1 (=Success)
+pacparser_parse_pac_file(const char *pacfile)
+{
+  char *script = NULL;
+
+  if ((script = read_file_into_str(pacfile)) == NULL) {
+    fprintf(stderr, "pacparser.c: pacparser_parse_pac: %s: %s: %s\n",
+            "Could not read the pacfile: ", pacfile, strerror(errno));
+    return 0;
+  }
+
+  int result = pacparser_parse_pac_string(script);
+  if (script != NULL) free(script);
+
+  if (_debug()) {
+    if(result) fprintf(stderr, "DEBUG: Parsed the PAC file: %s\n", pacfile);
+    else fprintf(stderr, "DEBUG: Could not parse the PAC file: %s\n", pacfile);
+  }
+
+  return result;
+}
+
+// Parses PAC file (same as pacparser_parse_pac_file)
+//
+// (Deprecated) Use pacparser_parse_pac_file instead.
+int                                     // 0 (=Failure) or 1 (=Success)
+pacparser_parse_pac(const char *pacfile)
+{
+  return pacparser_parse_pac_file(pacfile);
+}
+
+// Finds proxy for the given URL and Host.
 //
 // If JavaScript engine is intialized and FindProxyForURL function is defined,
 // it evaluates code FindProxyForURL(url,host) in JavaScript context and
@@ -357,8 +385,8 @@ pacparser_parse_pac(const char *pacfile)
 char *                                  // Proxy string or NULL if failed.
 pacparser_find_proxy(const char *url, const char *host)
 {
-  if (_debug()) fprintf(stderr, "Finding proxy for URL: %s and Host: %s\n",
-                        url, host);
+  if (_debug()) fprintf(stderr, "DEBUG: Finding proxy for URL: %s and Host:"
+                        " %s\n", url, host);
   jsval rval;
   char *script;
   if (url == NULL || (strcmp(url, "") == 0)) {
@@ -378,7 +406,7 @@ pacparser_find_proxy(const char *url, const char *host)
   }
   // Test if FindProxyForURL is defined.
   script = "typeof(FindProxyForURL);";
-  if (_debug()) fprintf(stderr, "Executing JavaScript: %s\n", script);
+  if (_debug()) fprintf(stderr, "DEBUG: Executing JavaScript: %s\n", script);
   JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
   if (strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0) {
     fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n", "Javascript"
@@ -393,7 +421,7 @@ pacparser_find_proxy(const char *url, const char *host)
   strcat(script, "', '");
   strcat(script, host);
   strcat(script, "')");
-  if (_debug()) fprintf(stderr, "Executing JavaScript: %s\n", script);
+  if (_debug()) fprintf(stderr, "DEBUG: Executing JavaScript: %s\n", script);
   JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
   return JS_GetStringBytes(JS_ValueToString(cx, rval));
 }
@@ -415,10 +443,10 @@ pacparser_cleanup()
   }
   if (!cx && !rt) JS_ShutDown();
   global = NULL;
-  if (_debug()) fprintf(stderr, "Pacparser destroyed.\n");
+  if (_debug()) fprintf(stderr, "DEBUG: Pacparser destroyed.\n");
 }
 
-// Finds proxy for a given PAC file, url and host.
+// Finds proxy for the given PAC file, url and host.
 //
 // This function is a wrapper around functions pacparser_init,
 // pacparser_parse_pac, pacparser_find_proxy and pacparser_cleanup. If you just

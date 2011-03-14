@@ -36,20 +36,40 @@ url_regex = re.compile('.*\:\/\/([^\/]+).*')
 
 def init():
   """
-  Initialize pacparser engine.
+  Initializes pacparser engine.
   """
   _pacparser.init()
 
 def parse_pac(pacfile):
   """
-  Parse pacfile in the Javascript engine created by init().
+  (Deprecated) Same as parse_pac_file.
   """
-  _pacparser.parse_pac(pacfile)
+  parse_pac_file(pacfile)
+
+def parse_pac_file(pacfile):
+  """
+  Reads the pacfile and evaluates it in the Javascript engine created by
+  init().
+  """
+  try:
+    f = open(pacfile)
+    pac_script = f.read()
+  except IOError as e:
+    print('Could not read the pacfile: %s\n%s' % (pacfile, e))
+    return
+  f.close()
+  _pacparser.parse_pac_string(pac_script)
+
+def parse_pac_string(pac_script):
+  """
+  Evaluates pac_script in the Javascript engine created by init().
+  """
+  _pacparser.parse_pac_string(pac_script)
 
 def find_proxy(url, host=None):
   """
   Finds proxy string for the given url and host. If host is not
-  defined, it's extracted from url.
+  defined, it's extracted from the url.
   """
   if host is None:
     m = url_regex.match(url)

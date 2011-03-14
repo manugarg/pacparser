@@ -35,7 +35,8 @@ void usage(const char *progname)
   fprintf(stderr, "\n        %s <-p pacfile> <-f urlslist> "
           "[-c client_ip] [-e]\n", progname);
   fprintf(stderr, "\nOptions:\n");
-  fprintf(stderr, "  -p pacfile   : PAC file to test\n");
+  fprintf(stderr, "  -p pacfile   : PAC file to test (specify '-' to read "
+                  "from standard input)\n");
   fprintf(stderr, "  -u url       : URL to test for\n");
   fprintf(stderr, "  -h host      : Host part of the URL\n");
   fprintf(stderr, "  -c client_ip : client IP address (as returned by "
@@ -59,14 +60,14 @@ char *get_host_from_url(const char *url)
   if (p[0] == '\0'||                    // We reached end without hitting :
       p[1] != '/' || p[2] != '/'        // Next two characters are not //
       ) {
-    fprintf(stderr, "Not a proper URL\n");
+    fprintf(stderr, "pactester.c: Not a proper URL\n");
     return NULL;
   }
   p = p + 3;                            // Get past '://'
   // Host part starts from here.
   char *host = p;
   if (*p == '\0' || *p == '/' || *p == ':') {   // If host part is null.
-    fprintf(stderr, "Not a proper URL\n");
+    fprintf(stderr, "pactester.c: Not a proper URL\n");
     return NULL;
   }
   // Seek until next /, : or end of string.
@@ -119,12 +120,12 @@ int main(int argc, char* argv[])
     }
 
   if (!pacfile) {
-    fprintf(stderr, "You didn't specify the PAC file\n");
+    fprintf(stderr, "pactester.c: You didn't specify the PAC file\n");
     usage(argv[0]);
     return 1;
   }
   if (!url && !urlslist) {
-    fprintf(stderr, "You didn't specify the URL\n");
+    fprintf(stderr, "pactester.c: You didn't specify the URL\n");
     usage(argv[0]);
     return 1;
   }
@@ -134,14 +135,65 @@ int main(int argc, char* argv[])
 
   // initialize pacparser
   if (!pacparser_init()) {
-      fprintf(stderr, "Could not initialize pacparser\n");
+      fprintf(stderr, "pactester.c: Could not initialize pacparser\n");
       return 1;
   }
 
-  if(!pacparser_parse_pac(pacfile)) {
-    fprintf(stderr, "Could not parse pac file: %s\n", pacfile);
-    pacparser_cleanup();
-    return 1;
+  // Read pacfile from stdin
+  if (strcmp("-", pacfile) == 0) {
+    char *script;
+    int buffsize = 4096;
+    int maxsize = 1024 * 1024;          // Limit the max script size to 1 MB
+    size_t script_size = 1;             // For the null terminator
+    char buffer[buffsize];
+
+    script = (char*) malloc(sizeof(char) * buffsize);
+    if (script == NULL) {
+      perror("pactetser.c: Failed to allocate the memory for the script");
+      return(1);
+    }
+    script[0] = '\0';                   // Null terminate to prepare for strcat
+
+    while(fgets(buffer, buffsize, stdin)) {
+      if (strlen(buffer) == 0) break;
+      char *old = script;
+      script_size += strlen(buffer);
+      printf ("%d", script_size);
+      if (script_size > maxsize) {
+        fprintf(stderr, "Input file is too big. Maximum allowed size is: %d",
+                maxsize);
+        free(script);
+        return 1;
+      }
+      script = realloc(script, script_size);
+      if (script == NULL) {
+        perror("pactester.c: Failed to allocate the memory for the script");
+        free(old);
+        return 1;
+      }
+      strcat(script, buffer);
+    }
+
+    if (ferror(stdin)) {
+      free(script);
+      perror("pactester.c: Error reading from stdin");
+      return 1;
+    }
+
+    if(!pacparser_parse_pac_string(script)) {
+      fprintf(stderr, "pactester.c: Could not parse the pac script: %s\n",
+              script);
+      pacparser_cleanup();
+      return 1;
+    }
+  }
+  else {
+    if(!pacparser_parse_pac_file(pacfile)) {
+      fprintf(stderr, "pactester.c: Could not parse the pac file: %s\n",
+              pacfile);
+      pacparser_cleanup();
+      return 1;
+    }
   }
 
   if(client_ip)
@@ -158,11 +210,12 @@ int main(int argc, char* argv[])
       if(proxy) printf("%s\n", proxy);
     }
   }
+
   else if (urlslist) {
     char line[1000];                    // this limits line length to 1000.
     FILE *fp;
     if (!(fp = fopen(urlslist, "r"))) {
-      fprintf(stderr, "Could not open urlslist: %s", urlslist);
+      fprintf(stderr, "pactester.c: Could not open urlslist: %s", urlslist);
       pacparser_cleanup();
       return 1;
     }
@@ -190,6 +243,7 @@ int main(int argc, char* argv[])
     }
     fclose(fp);
   }
+
   pacparser_cleanup();
   return 0;
 }

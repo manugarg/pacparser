@@ -35,29 +35,42 @@ char* pacparser_version(void);
 // returns 0 on failure and 1 on success.
 int pacparser_init(void);
 
-// Parse pac file
-// parses and evaulates PAC file in JavaScript context created by
-// pacparser_init.
+// Parses the given PAC file.
+// Reads the given PAC file and evaluates it in the JavaScript context created
+// by pacparser_init.
 // returns 0 on failure and 1 on success.
-int pacparser_parse_pac(const char *pacfile           // PAC file to parse
+int pacparser_parse_pac_file(const char *pacfile       // PAC file to parse
+                             );
+
+// Parses the given PAC script string.
+// Evaulates the given PAC script string in the JavaScript context created
+// by pacparser_init.
+// returns 0 on failure and 1 on success.
+int pacparser_parse_pac_string(const char *string      // PAC string to parse
+                               );
+
+// Parses pac file (deprecated, use pacparser_parse_pac_file instead)
+// Same as pacparser_parse_pac_file. Included only for backward compatibility.
+// returns 0 on failure and 1 on success.
+int pacparser_parse_pac(const char *file               // PAC file to parse
                         );
 
-// Finds proxy for a given URL and Host.
-// This function should be called only after pacparser engine has been
-// initialized (using pacparser_init) and pac file has been parsed (using
-// pacparser_parse_pac). It determines "right" proxy (based on pac file) for
-// url and host.
+// Finds proxy for the given URL and Host.
+// Finds proxy for the given URL and Host. This function should be called only
+// after pacparser engine has been initialized (using pacparser_init) and pac
+// script has been parsed (using pacparser_parse_pac_file or
+// pacparser_parse_pac_string).
 // returns proxy string on sucess and NULL on error.
 char *pacparser_find_proxy(const char *url,           // URL to find proxy for
                            const char *host           // Host part of the URL
                            );
 
-// Finds proxy for a given PAC file, url and host.
+// Finds proxy for the given PAC file, URL and Host.
 // This function is a wrapper around functions pacparser_init,
-// pacparser_parse_pac, pacparser_find_proxy and pacparser_cleanup. If you just
-// want to find out proxy a given set of pac file, url and host, this is the
-// function to call. This function takes care of all the initialization and
-// cleanup.
+// pacparser_parse_pac_file, pacparser_find_proxy and pacparser_cleanup. If
+// you just want to find out proxy a given set of pac file, url and host, this
+// is the function to call. This function takes care of all the initialization
+// and cleanup.
 // returns proxy string on success and NULL on error.
 char *pacparser_just_find_proxy(const char *pacfile,  // PAC file
                            const char *url,           // URL to find proxy for

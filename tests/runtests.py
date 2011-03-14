@@ -62,7 +62,7 @@ def runtests(pacfile, testdata, tests_dir):
     if '-c' in args:
       pacparser.setmyip(args['-c'])
     pacparser.init()
-    pacparser.parse_pac(pacfile)
+    pacparser.parse_pac_file(pacfile)
     result = pacparser.find_proxy(args['-u'])
     pacparser.cleanup()
     if result != expected_result:
