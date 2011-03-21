@@ -48,7 +48,8 @@
 static char *myip = NULL;
 static int define_microsoft_extensions = 0; //0: False, 1: True
 
-int _debug(void) {
+static int
+_debug(void) {
   if(getenv("DEBUG")) return 1;
   return 0;
 }
@@ -90,7 +91,7 @@ print_error(JSContext *cx, const char *message, JSErrorReport *report)
 // DNS Resolve function; used by other routines.
 // This function is used by dnsResolve, dnsResolveEx, myIpAddress,
 // myIpAddressEx.
-int
+static int
 resolve_host(const char *hostname, char *ipaddr_list, int max_results)
 {
   struct addrinfo hints;
