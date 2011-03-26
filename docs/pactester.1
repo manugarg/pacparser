@@ -6,15 +6,16 @@ pactester \- Tool to test proxy auto\-config (pac) files.
 .PP 
 .B pactester <\-p pacfile> <\-f urlslist> [\-c client_ip] [\-e]
 .SH "DESCRIPTION"
-pactester is a tool to test proxy auto\-config (pac) files. It uses pacparser
-library to parse pac files and return proxy string for the specified URL.
+pactester is a tool to test proxy auto\-config (pac) files. It returns the
+proxy config string for the given URL and the pac file. pactester uses
+pacparser C library for most of its functionality.
 .SH "OPTIONS"
 .TP 
 .B \-p pacfile
-PAC file to test. Specify "-" to read from standard input.
+PAC file to test. Specify "-" to read from the standard input.
 .TP 
 .B \-u url
-URL to test PAC file for.
+URL to test the PAC file for.
 .TP 
 .B \-h host
 Host part of the URL. If not specified, it's determined from the URL.
@@ -22,18 +23,17 @@ Host part of the URL. If not specified, it's determined from the URL.
 .B \-c client_ip
 Client's IP address (as returned by the function myIpAddress() in PAC files).
 If not specified, it defaults to the IP address of the machine on which
-it is running.
+this tool is running.
 .TP 
 .B \-e
 Enable Microsoft PAC extensions (dnsResolveEx, myIpAddressEx, isResolvableEx).
 .TP 
 .B \-f urlslist
-A file containing list of URLs to be tested. This is good for testing a PAC
-file against a set of URLs.
+A file containing the list of URLs to be tested. This is good for testing a PAC file against a set of URLs.
 .SH "EXAMPLES"
 .PP 
-To find out proxy string as returned by pac file wpad.dat for the URL
-http://www.google.com:
+To find out the proxy config string for the pac file "wpad.dat" and the URL
+"http://www.google.com":
 .PP 
 $ pactester \-p wpad.dat \-u http://www.google.com
 
@@ -41,15 +41,14 @@ For a client with IP address 10.0.12.123:
 .PP 
 $ pactester \-p wpad.dat \-c 10.0.12.123 \-u http://www.google.com
 
-To find out proxy string for a list of urls specified in /tmp/urls:
+For a pac file hosted at http://wpad/wpad.dat:
 .PP 
-$ pactester \-p wpad.dat \-f /tmp/urls
+$ curl \-s http://wpad/wpad.dat | pactester \-p \- \-u http://google.com
 .SH "BUGS"
 If you have come across a bug in pactester, please submit a bug report at
 http://code.google.com/p/pacparser/issues/list.
 .SH "AUTHOR"
 Written by Manu Garg (http://www.manugarg.com).
-.SH "SEE ALSO"
-More information about this version of pactester and pacparser library can be
-found at pacparser homepage: http://code.google.com/p/pacparser.
+.SH "RESOURCES"
+Homepage: http://code.google.com/p/pacparser.
 
