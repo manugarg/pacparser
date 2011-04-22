@@ -17,43 +17,44 @@ pactester - Tool to test proxy auto-config (pac) files.
 [-c client_ip] [-e]</b> 
 <h2><a name='sect2' href='#toc2'>Description</a></h2>
 pactester is a tool to test proxy auto-config
-(pac) files. It uses pacparser library to parse pac files and return proxy
-string for the specified URL. 
+(pac) files. It returns the proxy config string for the given URL and the
+pac file. pactester uses pacparser C library for most of its functionality.
+
 <h2><a name='sect3' href='#toc3'>Options</a></h2>
 
 <dl>
 
 <dt><b>-p pacfile</b> </dt>
-<dd>PAC file to test. Specify
-"-" to read from standard input. </dd>
+<dd>PAC file to test. Specify "-" to read from the standard
+input. </dd>
 
 <dt><b>-u url</b> </dt>
-<dd>URL to test PAC file for. </dd>
+<dd>URL to test the PAC file for. </dd>
 
 <dt><b>-h host</b> </dt>
-<dd>Host
-part of the URL. If not specified, it&rsquo;s determined from the URL. </dd>
+<dd>Host part of the URL. If
+not specified, it&rsquo;s determined from the URL. </dd>
 
-<dt><b>-c client_ip</b>
-</dt>
-<dd>Client&rsquo;s IP address (as returned by the function myIpAddress() in PAC files).
-If not specified, it defaults to the IP address of the machine on which
-it is running. </dd>
+<dt><b>-c client_ip</b> </dt>
+<dd>Client&rsquo;s IP address
+(as returned by the function myIpAddress() in PAC files). If not specified,
+it defaults to the IP address of the machine on which this tool is running.
+</dd>
 
 <dt><b>-e</b> </dt>
-<dd>Enable Microsoft PAC extensions (dnsResolveEx, myIpAddressEx,
-isResolvableEx). </dd>
+<dd>Enable Microsoft PAC extensions (dnsResolveEx, myIpAddressEx, isResolvableEx).
+</dd>
 
 <dt><b>-f urlslist</b> </dt>
-<dd>A file containing list of URLs to be tested.
-This is good for testing a PAC file against a set of URLs. </dd>
+<dd>A file containing the list of URLs to be tested. This is good
+for testing a PAC file against a set of URLs. </dd>
 </dl>
 
 <h2><a name='sect4' href='#toc4'>Examples</a></h2>
 <p>
-To find
-out proxy string as returned by pac file wpad.dat for the URL <a href='http://www.google.com:'>http://www.google.com:</a>
-
+To find out the proxy
+config string for the pac file "wpad.dat" and the URL "<a href='http://www.google.com'>http://www.google.com</a>
+":
 <p>
 $ pactester -p wpad.dat -u <a href='http://www.google.com'>http://www.google.com</a>
  
@@ -61,10 +62,13 @@ $ pactester -p wpad.dat -u <a href='http://www.google.com'>http://www.google.com
 10.0.12.123: <p>
 $ pactester -p wpad.dat -c 10.0.12.123 -u <a href='http://www.google.com'>http://www.google.com</a>
  
-<p> To find
-out proxy string for a list of urls specified in /tmp/urls: <p>
-$ pactester
--p wpad.dat -f /tmp/urls 
+<p> For a
+pac file hosted at <a href='http://wpad/wpad.dat:'>http://wpad/wpad.dat:</a>
+ <p>
+$ curl -s <a href='http://wpad/wpad.dat'>http://wpad/wpad.dat</a>
+ | pactester
+-p - -u <a href='http://google.com'>http://google.com</a>
+ 
 <h2><a name='sect5' href='#toc5'>Bugs</a></h2>
 If you have come across a bug in pactester, please
 submit a bug report at <a href='http://code.google.com/p/pacparser/issues/list.'>http://code.google.com/p/pacparser/issues/list.</a>
@@ -72,11 +76,10 @@ submit a bug report at <a href='http://code.google.com/p/pacparser/issues/list.'
 <h2><a name='sect6' href='#toc6'>Author</a></h2>
 Written
 by Manu Garg (http://www.manugarg.com). 
-<h2><a name='sect7' href='#toc7'>See Also</a></h2>
-More information about this
-version of pactester and pacparser library can be found at pacparser homepage:
-<a href='http://code.google.com/p/pacparser.'>http://code.google.com/p/pacparser.</a>
- 
+<h2><a name='sect7' href='#toc7'>Resources</a></h2>
+Homepage: <a href='http://code.google.com/p/pacparser.'>http://code.google.com/p/pacparser.</a>
+
+
 <p> <p>
 
 <hr><p>
@@ -89,7 +92,7 @@ version of pactester and pacparser library can be found at pacparser homepage:
 <li><a name='toc4' href='#sect4'>Examples</a></li>
 <li><a name='toc5' href='#sect5'>Bugs</a></li>
 <li><a name='toc6' href='#sect6'>Author</a></li>
-<li><a name='toc7' href='#sect7'>See Also</a></li>
+<li><a name='toc7' href='#sect7'>Resources</a></li>
 </ul>
 </body>
 </html>
