@@ -208,7 +208,13 @@ int main(int argc, char* argv[])
     if (host) {
       proxy = NULL;
       proxy = pacparser_find_proxy(url, host);
-      if(proxy) printf("%s\n", proxy);
+      if (proxy == NULL) {
+        fprintf(stderr, "pactester.c: %s %s.\n",
+                "Problem in finding proxy for", url);
+        pacparser_cleanup();
+        return 1;
+      }
+      if (proxy) printf("%s\n", proxy);
     }
   }
 
@@ -240,6 +246,12 @@ int main(int argc, char* argv[])
         continue;
       proxy = NULL;
       proxy = pacparser_find_proxy(url, host);
+      if (proxy == NULL) {
+        fprintf(stderr, "pactester.c: %s %s.\n",
+                "Problem in finding proxy for", url);
+        pacparser_cleanup();
+        return 1;
+      }
       if(proxy) printf("%s : %s\n", url, proxy);
     }
     fclose(fp);

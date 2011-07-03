@@ -423,7 +423,11 @@ pacparser_find_proxy(const char *url, const char *host)
   strcat(script, host);
   strcat(script, "')");
   if (_debug()) fprintf(stderr, "DEBUG: Executing JavaScript: %s\n", script);
-  JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
+  if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval)) {
+    fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n",
+            "Problem in executing FindProxyForURL.");
+    return NULL;
+  }
   return JS_GetStringBytes(JS_ValueToString(cx, rval));
 }
 
