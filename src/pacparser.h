@@ -22,6 +22,9 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 // Returns pacparser version
 // Version string is determined at the time of build. If built from a released
 // package, version corresponds to the latest release (hg) tag. If built from the
@@ -92,3 +95,7 @@ void pacparser_setmyip(const char *ip                 // Custom IP address.
 // isResolvableEx. These functions are used by Google Chrome and IE to work
 // with IPv6. More info: http://code.google.com/p/pacparser/issues/detail?id=4
 void pacparser_enable_microsoft_extensions(void);
+
+#ifdef __cplusplus
+}
+#endif
