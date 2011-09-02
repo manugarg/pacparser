@@ -31,6 +31,7 @@ __license__ = 'LGPL'
 from pacparser import _pacparser
 import os
 import re
+import sys
 
 url_regex = re.compile('.*\:\/\/([^\/]+).*')
 
@@ -54,8 +55,8 @@ def parse_pac_file(pacfile):
   try:
     f = open(pacfile)
     pac_script = f.read()
-  except IOError as e:
-    print('Could not read the pacfile: %s\n%s' % (pacfile, e))
+  except IOError:
+    print('Could not read the pacfile: %s\n%s' % (pacfile, sys.exc_info()[1]))
     return
   f.close()
   _pacparser.parse_pac_string(pac_script)
