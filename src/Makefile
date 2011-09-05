@@ -99,6 +99,10 @@ testpactester: pactester
 	echo "Running tests for pactester."
 	../tests/runtests.sh
 
+testpactester_no_internet: pactester
+	echo "Running tests for pactester."
+	NO_INTERNET=yes ../tests/runtests.sh
+
 install: all
 	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
 	install -m 644 $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY)
