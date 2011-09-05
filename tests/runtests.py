@@ -52,7 +52,14 @@ def runtests(pacfile, testdata, tests_dir):
 
   f = open(testdata)
   for line in f:
-    if line.startswith('#'):
+    comment = ''
+    if '#' in line:
+      comment = line.split('#', 1)[1]
+      line = line.split('#', 1)[0].strip()
+    if not line:
+      continue
+    if ('NO_INTERNET' in os.environ and os.environ['NO_INTERNET'] and
+        'INTERNET_REQUIRED' in comment):
       continue
     if 'DEBUG' in os.environ: print(line)
     (params, expected_result) = line.strip().split('|')
