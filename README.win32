@@ -14,27 +14,37 @@ Set up tools:
 1.  Install MinGW. Download the automated installer from here:
     http://sourceforge.net/projects/mingw/files/
     Running this installer lets you select what component you want to install.
-    Apart from minimal MinGW, we'll need MinGW make. This will install all the
-    necessary files in C:\MinGW.
+    Default options (C-compiler and MinGW Development Toolkit) should work
+    fine.
 
-2.  Add your MinGW directory's bin (C:\MinGW\bin) to your system path variable.
+2.  Rename mingw32-make.exe to make.exe.
+      rename C:\MinGW\bin\mingw32-make.exe C:\MinGW\bin\make.exe
+
+3.  Add your MinGW directory's bin (C:\MinGW\bin) to your system path variable.
+
+4.  Install 7-zip to extract .tar.gz files, if you don't have an equivalent
+    program already.
+    http://www.7-zip.org/download.html
+
+5.  Install latest python. You'll need it to build python module.
+    http://www.python.org/getit/
 
 ======== Done setting up tools ==========
 
-3.  Now download pacparser source code tarball from
+6.  Now download pacparser source code tarball from
     http://code.google.com/p/pacparser/downloads/list and extract it somewhere,
     say C:\workspace.
 
-4.  Now extract the spidermonekey source tarball, js-*.tar.gz, located at
+7.  Now extract the spidermonekey source tarball, js-*.tar.gz, located at
     src\spidermonkey\js-*.tar.gz inside the pacparser source directory.
 
-5.  Compile pacparser and create ditribution.
-      make -f Makefile.win32 dist
+8.  Compile pacparser and create ditribution.
+      cd C:\workspace\pacparser-*
+      make -C src -f Makefile.win32 dist
 
-6. Compile pacparser python module and copy required files to a directory
+9. Compile pacparser python module and copy required files to a directory
     (dist).
-      make -f Makefile.win32 pymod
-      make -f Makefile.win32 dist-pymod
+      make -C src -f Makefile.win32 pymod
 
 Using pacparser on Windows:
 --------------------------
