@@ -45,6 +45,7 @@ python programs.
 
 Using it in python:
 ---------------------------------------------------------------------
+```
 >>> import pacparser
 >>> pacparser.init()
 >>> pacparser.parse_pac('examples/wpad.dat')
@@ -57,10 +58,12 @@ Using it in python:
 'DIRECT'
 >>> pacparser.cleanup()
 >>>
+```
 ---------------------------------------------------------------------
 
 Using it in C:
 ---------------------------------------------------------------------
+```
 manugarg@hobbiton:~$ cat pactest.c
 #include <stdio.h>
 
@@ -82,6 +85,7 @@ int main(int argc, char* argv[])
 manugarg@hobbiton:~$ gcc -o pactest pactest.c -lpacparser
 manugarg@hobbiton:~$ ./pactest wpad.dat http://www.google.com www.google.com
 PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
+```
 ---------------------------------------------------------------------
 
 * Platforms
