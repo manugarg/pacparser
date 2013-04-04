@@ -48,9 +48,36 @@
 static char *myip = NULL;
 static int define_microsoft_extensions = 0; //0: False, 1: True
 
+// Default error printer function.
+static int		// Number of characters printed, negative value in case of output error.
+_default_error_printer(const char *fmt, va_list argp)
+{
+  return vfprintf(stderr, fmt, argp);
+}
+
+// File level variable to hold error printer function pointer.
+static pacparser_error_printer error_printer_func = &_default_error_printer;
+
+// Set error printer to a user defined function.
+void
+pacparser_set_error_printer(pacparser_error_printer func)
+{
+  error_printer_func = func;
+}
+
+static int print_error(const char *fmt, ...)
+{
+  int ret;
+  va_list args;
+  va_start(args, fmt);
+  ret = (*error_printer_func)(fmt, args);
+  va_end(args);
+  return ret;
+}
+
 static int
 _debug(void) {
-  if(getenv("DEBUG")) return 1;
+  if(getenv("PACPARSER_DEBUG")) return 1;
   return 0;
 }
 
@@ -81,11 +108,11 @@ error1:
 }
 
 static void
-print_error(JSContext *cx, const char *message, JSErrorReport *report)
+print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 {
-    fprintf(stderr, "JSERROR: %s:%d:\n    %s\n",
-            (report->filename ? report->filename : "NULL"), report->lineno,
-            message);
+  print_error("JSERROR: %s:%d:\n    %s\n",
+	      (report->filename ? report->filename : "NULL"), report->lineno,
+	      message);
 }
 
 // DNS Resolve function; used by other routines.
@@ -245,7 +272,7 @@ void
 pacparser_enable_microsoft_extensions()
 {
   if(cx) {
-    fprintf(stderr, "pacparser.c: pacparser_enable_microsoft_extensions: "
+    print_error("pacparser.c: pacparser_enable_microsoft_extensions: "
             "Can not enable microsoft extensions now. This function should be "
             "called before pacparser_init.\n");
     return;
@@ -257,42 +284,43 @@ pacparser_enable_microsoft_extensions()
 //
 // - Initializes JavaScript engine,
 // - Exports dns_functions (defined above) to JavaScript context.
-// - Sets error reporting function to print_error,
+// - Sets error reporting function to print_jserror,
 // - Evaluates JavaScript code in pacUtils variable defined in pac_utils.h.
 int                                     // 0 (=Failure) or 1 (=Success)
 pacparser_init()
 {
   jsval rval;
+  char *error_prefix = "pacparser.c: pacparser_init:";
   // Initialize JS engine
   if (!(rt = JS_NewRuntime(8L * 1024L * 1024L)) ||
       !(cx = JS_NewContext(rt, 8192)) ||
       !(global = JS_NewObject(cx, &global_class, NULL, NULL)) ||
       !JS_InitStandardClasses(cx, global)) {
-    fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not initialize"
-            " JavaScript runtime.");
+    print_error("%s %s\n", error_prefix, "Could not initialize  JavaScript "
+		  "runtime.");
     return 0;
   }
-  JS_SetErrorReporter(cx, print_error);
+  JS_SetErrorReporter(cx, print_jserror);
   // Export our functions to Javascript engine
   if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve, 1, 0)) {
-    fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not define"
-            " dnsResolve in JS context.");
+    print_error("%s %s\n", error_prefix,
+		  "Could not define dnsResolve in JS context.");
     return 0;
   }
   if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0)) {
-    fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not define"
-            " myIpAddress in JS context.");
+    print_error("%s %s\n", error_prefix,
+		  "Could not define myIpAddress in JS context.");
     return 0;
   }
   if (define_microsoft_extensions) {
     if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0)) {
-      fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not define"
-              " dnsResolveEx in JS context.");
+      print_error("%s %s\n", error_prefix,
+		    "Could not define dnsResolveEx in JS context.");
       return 0;
     }
     if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0)) {
-      fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not define"
-              " myIpAddressEx in JS context.");
+      print_error("%s %s\n", error_prefix,
+		    "Could not define myIpAddressEx in JS context.");
 
       return 0;
     }
@@ -305,11 +333,11 @@ pacparser_init()
                          NULL,         // filename (NULL in this case)
                          1,            // line number, used for reporting.
                          &rval)) {
-    fprintf(stderr, "pacparser.c: pacparser_init: %s\n", "Could not evaluate"
-            " pacUtils defined in pac_utils.h.");
+    print_error("%s %s\n", error_prefix,
+		  "Could not evaluate pacUtils defined in pac_utils.h.");
     return 0;
   }
-  if (_debug()) fprintf(stderr, "DEBUG: Pacparser Initalized.\n");
+  if (_debug()) print_error("DEBUG: Pacparser Initalized.\n");
   return 1;
 }
 
@@ -321,9 +349,9 @@ int                                     // 0 (=Failure) or 1 (=Success)
 pacparser_parse_pac_string(const char *script)
 {
   jsval rval;
+  char *error_prefix = "pacparser.c: pacparser_parse_pac_string:";
   if (cx == NULL || global == NULL) {
-    fprintf(stderr, "pacparser.c: pacparser_parse_pac_string: %s\n", "Pac "
-            "parser is not initialized.");
+    print_error("%s %s\n", error_prefix, "Pac parser is not initialized.");
     return 0;
   }
   if (!JS_EvaluateScript(cx,
@@ -333,13 +361,12 @@ pacparser_parse_pac_string(const char *script)
                          "PAC script",
                          1,
                          &rval)) {     // If script evaluation failed
-    fprintf(stderr, "pacparser.c: pacparser_parse_pac_string: %s\n",
-            "Failed to evaluate the pac script.");
-    if (_debug()) fprintf(stderr, "DEBUG: Failed to parse the PAC "
-                          "script:\n%s\n", script);
+    print_error("%s %s\n", error_prefix, "Failed to evaluate the pac script.");
+    if (_debug()) print_error("DEBUG: Failed to parse the PAC script:\n%s\n",
+				script);
     return 0;
   }
-  if (_debug()) fprintf(stderr, "DEBUG: Parsed the PAC script.\n");
+  if (_debug()) print_error("DEBUG: Parsed the PAC script.\n");
   return 1;
 }
 
@@ -353,7 +380,7 @@ pacparser_parse_pac_file(const char *pacfile)
   char *script = NULL;
 
   if ((script = read_file_into_str(pacfile)) == NULL) {
-    fprintf(stderr, "pacparser.c: pacparser_parse_pac: %s: %s: %s\n",
+    print_error("pacparser.c: pacparser_parse_pac: %s: %s: %s\n",
             "Could not read the pacfile: ", pacfile, strerror(errno));
     return 0;
   }
@@ -362,8 +389,8 @@ pacparser_parse_pac_file(const char *pacfile)
   if (script != NULL) free(script);
 
   if (_debug()) {
-    if(result) fprintf(stderr, "DEBUG: Parsed the PAC file: %s\n", pacfile);
-    else fprintf(stderr, "DEBUG: Could not parse the PAC file: %s\n", pacfile);
+    if(result) print_error("DEBUG: Parsed the PAC file: %s\n", pacfile);
+    else print_error("DEBUG: Could not parse the PAC file: %s\n", pacfile);
   }
 
   return result;
@@ -386,32 +413,30 @@ pacparser_parse_pac(const char *pacfile)
 char *                                  // Proxy string or NULL if failed.
 pacparser_find_proxy(const char *url, const char *host)
 {
-  if (_debug()) fprintf(stderr, "DEBUG: Finding proxy for URL: %s and Host:"
+  char *error_prefix = "pacparser.c: pacparser_find_proxy:";
+  if (_debug()) print_error("DEBUG: Finding proxy for URL: %s and Host:"
                         " %s\n", url, host);
   jsval rval;
   char *script;
   if (url == NULL || (strcmp(url, "") == 0)) {
-    fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n", "URL not "
-            "defined");
+    print_error("%s %s\n", error_prefix, "URL not defined");
     return NULL;
   }
   if (host == NULL || (strcmp(host,"") == 0)) {
-    fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n", "Host not "
-            "defined");
+    print_error("%s %s\n", error_prefix, "Host not defined");
     return NULL;
   }
   if (cx == NULL || global == NULL) {
-    fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n",
-            "Pac parser is not initialized.");
+    print_error("%s %s\n", error_prefix, "Pac parser is not initialized.");
     return NULL;
   }
   // Test if FindProxyForURL is defined.
   script = "typeof(FindProxyForURL);";
-  if (_debug()) fprintf(stderr, "DEBUG: Executing JavaScript: %s\n", script);
+  if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
   JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
   if (strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0) {
-    fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n", "Javascript"
-            " function FindProxyForURL not defined.");
+    print_error("%s %s\n", error_prefix,
+		  "Javascript function FindProxyForURL not defined.");
     return NULL;
   }
 
@@ -422,12 +447,13 @@ pacparser_find_proxy(const char *url, const char *host)
   strcat(script, "', '");
   strcat(script, host);
   strcat(script, "')");
-  if (_debug()) fprintf(stderr, "DEBUG: Executing JavaScript: %s\n", script);
+  if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
   if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval)) {
-    fprintf(stderr, "pacparser.c: pacparser_find_proxy: %s\n",
-            "Problem in executing FindProxyForURL.");
+    print_error("%s %s\n", error_prefix, "Problem in executing FindProxyForURL.");
+    free(script);
     return NULL;
   }
+  free(script);
   return JS_GetStringBytes(JS_ValueToString(cx, rval));
 }
 
@@ -448,7 +474,7 @@ pacparser_cleanup()
   }
   if (!cx && !rt) JS_ShutDown();
   global = NULL;
-  if (_debug()) fprintf(stderr, "DEBUG: Pacparser destroyed.\n");
+  if (_debug()) print_error("DEBUG: Pacparser destroyed.\n");
 }
 
 // Finds proxy for the given PAC file, url and host.
@@ -465,23 +491,23 @@ pacparser_just_find_proxy(const char *pacfile,
   char *proxy;
   char *out;
   int initialized_here = 0;
+  char *error_prefix = "pacparser.c: pacparser_just_find_proxy:";
   if (!global) {
     if (!pacparser_init()) {
-      fprintf(stderr, "pacparser.c: pacparser_just_find_proxy: %s\n",
-              "Could not initialize pacparser");
+      print_error("%s %s\n", error_prefix, "Could not initialize pacparser");
       return NULL;
     }
     initialized_here = 1;
   }
   if (!pacparser_parse_pac(pacfile)) {
-    fprintf(stderr, "pacparser.c: pacparser_just_find_proxy: %s %s\n",
-            "Could not parse pacfile", pacfile);
+    print_error("%s %s %s\n", error_prefix, "Could not parse pacfile",
+		  pacfile);
     if (initialized_here) pacparser_cleanup();
     return NULL;
   }
   if (!(out = pacparser_find_proxy(url, host))) {
-    fprintf(stderr, "pacparser.c: pacparser_just_find_proxy: %s %s\n",
-            "Could not determine proxy for url", url);
+    print_error("%s %s %s\n", error_prefix,
+		  "Could not determine proxy for url", url);
     if (initialized_here) pacparser_cleanup();
     return NULL;
   }
@@ -496,7 +522,7 @@ pacparser_just_find_proxy(const char *pacfile,
 
 char* pacparser_version(void) {
 #ifndef VERSION
-  fprintf(stderr, "WARNING: VERSION not defined.");
+  print_error("WARNING: VERSION not defined.");
   return "";
 #endif
   return QUOTEME(VERSION);

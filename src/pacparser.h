@@ -21,6 +21,7 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
+#include <stdarg.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -89,6 +90,16 @@ void pacparser_cleanup(void);
 // myIpAddress() javascript function.
 void pacparser_setmyip(const char *ip                 // Custom IP address.
                        );
+
+// Sets error variadic-argument printing function.  If not set the messages
+//   are printed to stderr.  If messages begin with DEBUG: or WARNING:,
+//   they are not fatal error messages, otherwise they are.
+//   May be called before pacparser_init().
+typedef int (*pacparser_error_printer)(const char *fmt,	// printf format
+				       va_list argp	// Variadic arg list
+				      );
+void pacparser_set_error_printer(pacparser_error_printer func	// Printing function
+				);
 
 // Enable Microsoft PAC extensions.
 // Enables a subset of Microsoft PAC extensions - dnsResolveEx, myIpAddressEx,
