@@ -26,87 +26,121 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-// Returns pacparser version
-// Version string is determined at the time of build. If built from a released
-// package, version corresponds to the latest release (hg) tag. If built from the
-// repository, it corresponds to the head revision of the repo.
-// returns version string if version defined, "" otherwise.
-char* pacparser_version(void);
 
-// Initializes pac parser
-// It initializes JavaScript engine and does few basic initializations specific
-// to pacparser.
-// returns 0 on failure and 1 on success.
+/// @defgroup pacparser pacparser
+/// @{
+/// @brief API for pacparser library. A library to make web software PAC
+///	   (proxy autoconfig) files intelligent. See
+///	   http://code.google.com/p/pacparser for more information.
+/// @author Manu Garg <manugarg@gmail.com>
+
+/// @brief Initializes pac parser.
+/// @returns 0 on failure and 1 on success.
+///
+/// Initializes JavaScript engine and does few basic initializations specific
+/// to pacparser.
 int pacparser_init(void);
 
-// Parses the given PAC file.
-// Reads the given PAC file and evaluates it in the JavaScript context created
-// by pacparser_init.
-// returns 0 on failure and 1 on success.
+/// @brief Parses the given PAC file.
+/// @param pacfile PAC file to parse.
+/// @returns 0 on failure and 1 on success.
+///
+/// Reads the given PAC file and evaluates it in the JavaScript context created
+/// by pacparser_init.
 int pacparser_parse_pac_file(const char *pacfile       // PAC file to parse
                              );
 
-// Parses the given PAC script string.
-// Evaulates the given PAC script string in the JavaScript context created
-// by pacparser_init.
-// returns 0 on failure and 1 on success.
-int pacparser_parse_pac_string(const char *string      // PAC string to parse
+/// @brief Parses the given PAC script string.
+/// @param pacstring PAC string to parse.
+/// @returns 0 on failure and 1 on success.
+///
+/// Evaulates the given PAC script string in the JavaScript context created
+/// by pacparser_init.
+int pacparser_parse_pac_string(const char *pacstring      // PAC string to parse
                                );
 
-// Parses pac file (deprecated, use pacparser_parse_pac_file instead)
-// Same as pacparser_parse_pac_file. Included only for backward compatibility.
-// returns 0 on failure and 1 on success.
-int pacparser_parse_pac(const char *file               // PAC file to parse
+/// @brief Parses the gievn pac file.
+/// \deprecated Use pacparser_parse_pac_file instead.
+/// @param pacfile PAC file to parse.
+/// @returns 0 on failure and 1 on success.
+///
+/// Same as pacparser_parse_pac_file. Included only for backward compatibility.
+int pacparser_parse_pac(const char *pacfile               // PAC file to parse
                         );
 
-// Finds proxy for the given URL and Host.
-// Finds proxy for the given URL and Host. This function should be called only
-// after pacparser engine has been initialized (using pacparser_init) and pac
-// script has been parsed (using pacparser_parse_pac_file or
-// pacparser_parse_pac_string).
-// returns proxy string on sucess and NULL on error.
+/// @brief Finds proxy for the given URL and Host.
+/// @param url URL to find proxy for.
+/// @param host Host part of the URL.
+/// @returns proxy string on sucess and NULL on error.
+///
+/// Finds proxy for the given URL and Host. This function should be called only
+/// after pacparser engine has been initialized (using pacparser_init) and pac
+/// script has been parsed (using pacparser_parse_pac_file or
+/// pacparser_parse_pac_string).
 char *pacparser_find_proxy(const char *url,           // URL to find proxy for
                            const char *host           // Host part of the URL
                            );
 
-// Finds proxy for the given PAC file, URL and Host.
-// This function is a wrapper around functions pacparser_init,
-// pacparser_parse_pac_file, pacparser_find_proxy and pacparser_cleanup. If
-// you just want to find out proxy a given set of pac file, url and host, this
-// is the function to call. This function takes care of all the initialization
-// and cleanup.
-// returns proxy string on success and NULL on error.
-char *pacparser_just_find_proxy(const char *pacfile,  // PAC file
-                           const char *url,           // URL to find proxy for
-                           const char *host           // Host part of the URL
-                           );
+/// @brief Finds proxy for the given PAC file, URL and Host.
+/// @param pacfile PAC file to parse.
+/// @param url URL to find proxy for.
+/// @param host Host part of the URL.
+/// @returns proxy string on success and NULL on error.
+///
+/// This function is a wrapper around functions pacparser_init,
+/// pacparser_parse_pac_file, pacparser_find_proxy and pacparser_cleanup. If
+/// you just want to find out proxy for a given set of pac file, url and host, this
+/// is the function to call. This function takes care of all the initialization
+/// and cleanup.
+char *pacparser_just_find_proxy(const char *pacfile,       // PAC file
+				const char *url,           // URL to find proxy for
+				const char *host           // Host part of the URL
+			       );
 
-// Destroys JavaSctipt context.
-// This function should be called once you're done with using pacparser engine.
+/// @brief Destroys JavaSctipt context.
+///
+/// This function should be called once you're done with using pacparser engine.
 void pacparser_cleanup(void);
 
-// Sets my IP address.
-// Sets my IP address to a custom value. This is the IP address returned by
-// myIpAddress() javascript function.
+/// @brief Sets my IP address.
+/// @param ip Custom IP address.
+///
+/// Sets my IP address to a custom value. This is the IP address returned by
+/// myIpAddress() javascript function.
 void pacparser_setmyip(const char *ip                 // Custom IP address.
                        );
 
-// Sets error variadic-argument printing function.  If not set the messages
-//   are printed to stderr.  If messages begin with DEBUG: or WARNING:,
-//   they are not fatal error messages, otherwise they are.
-//   May be called before pacparser_init().
+/// @brief Type definition for pacparser_error_printer.
 typedef int (*pacparser_error_printer)(const char *fmt,	// printf format
 				       va_list argp	// Variadic arg list
 				      );
+/// @brief Sets error printing function.
+/// @param func Printing function.
+///
+/// Sets error variadic-argument printing function.  If not set the messages
+/// are printed to stderr.  If messages begin with DEBUG: or WARNING:,
+/// they are not fatal error messages, otherwise they are.
+/// May be called before pacparser_init().
 void pacparser_set_error_printer(pacparser_error_printer func	// Printing function
 				);
 
-// Enable Microsoft PAC extensions.
-// Enables a subset of Microsoft PAC extensions - dnsResolveEx, myIpAddressEx,
-// isResolvableEx. These functions are used by Google Chrome and IE to work
-// with IPv6. More info: http://code.google.com/p/pacparser/issues/detail?id=4
+/// @brief Enable Microsoft PAC extensions.
+///
+/// Enables a subset of Microsoft PAC extensions - dnsResolveEx, myIpAddressEx,
+/// isResolvableEx. These functions are used by Google Chrome and IE to work
+/// with IPv6. More info: http://code.google.com/p/pacparser/issues/detail?id=4
 void pacparser_enable_microsoft_extensions(void);
+
+/// @brief Returns pacparser version.
+/// @returns version string if version defined, "" otherwise.
+///
+/// Version string is determined at the time of build. If built from a released
+/// package, version corresponds to the latest release (git) tag. If built from the
+/// repository, it corresponds to the head revision of the repo.
+char* pacparser_version(void);
 
 #ifdef __cplusplus
 }
 #endif
+
+/// @}
