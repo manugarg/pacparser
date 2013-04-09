@@ -22,7 +22,7 @@
 # packaging script.
 -include version.mk
 
-VERSION ?= $(shell hg parents | awk 'NR==1 {print $$2}')
+VERSION ?= $(shell git describe --always --tags --candidate=100)
 
 PREFIX ?= /usr
 OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))

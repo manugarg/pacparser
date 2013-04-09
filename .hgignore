@@ -1,8 +1,0 @@
-syntax: regexp
-
-.*\.(a|o|so|so\.[0-9]+|dylib|pyc|pkg|dmg)
-src/spidermonkey/js/*
-.*buildstamp
-pactester
-pymod/build
-tools/packages

@@ -32,36 +32,35 @@ if [ "$newrelease" = "yes" ]; then
       echo "You said no. Not moving ahead."
       exit 0
     fi
-    hg tag $ver
+    git tag $ver
   fi
 fi
 
 if [ -z "$ver" ]; then
-  ver=$(hg tags | awk 'NR==2 {print $1}')
+  ver=$(git describe --always --tags --candidate=100 |\
+	  awk -F- 'NR == 1 {print $1 "-" $2}')
 fi
 
 cd $(dirname $0); tools_dir=$PWD; cd - > /dev/null
 
-pkgdir=$tools_dir/packages/pacparser-$ver; rm -rf $pkgdir*
+pkgdir=$tools_dir/packages/pacparser-$ver; rm -rf $pkgdir*; mkdir -p $pkgdir
 pkg=pacparser-${ver}.tar.gz
 
 mkdir -p $tools_dir/packages
 pushd $tools_dir/.. > /dev/null
-hg archive -t files -X tools -X debian -X .hgtags $pkgdir
+git archive --format=tar HEAD | (cd $pkgdir && tar xf - --exclude debian)
 
 # Create a version string. This is used at the time of build.
-latesttag=$(awk '/latesttag:/{print $2}' $pkgdir/.hg_archival.txt)
-latesttagdistance=$(awk '/latesttagdistance:/{print $2}' $pkgdir/.hg_archival.txt)
-echo "VERSION=$latesttag-$latesttagdistance" > $pkgdir/src/version.mk
+echo "VERSION=$ver" > $pkgdir/src/version.mk
 
 # Create the tarball.
 pushd $tools_dir/packages > /dev/null
 tar czf $(basename $pkg) $(basename $pkgdir)
-rm -rf $pkgdir
+rm -rf $pkgdir; mkdir -p $pkgdir
 popd > /dev/null
 
 # Create the directory to be used for debian package.
-hg archive -t files -X tools -X .hgtags $pkgdir
-echo "VERSION=$latesttag-$latesttagdistance" > $pkgdir/src/version.mk
+git archive --format=tar HEAD | (cd $pkgdir && tar xf -)
+echo "VERSION=$ver" > $pkgdir/src/version.mk
 
 popd > /dev/null
