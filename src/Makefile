@@ -73,7 +73,7 @@ BIN_PREFIX = $(PREFIX)/bin
 MAN_PREFIX = $(PREFIX)/share/man
 
 .PHONY: clean pymod install-pymod
-all: testpactester docs
+all: testpactester
 
 spidermonkey/js/src: spidermonkey/js-?.?.?.tar.gz
 	tar xzvf spidermonkey/js-?.?.?.tar.gz -C spidermonkey
