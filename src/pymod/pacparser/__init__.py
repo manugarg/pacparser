@@ -33,7 +33,7 @@ import os
 import re
 import sys
 
-url_regex = re.compile('.*\:\/\/([^\/]+).*')
+_url_regex = re.compile('.*\:\/\/([^\/]+).*')
 
 def init():
   """
@@ -73,7 +73,7 @@ def find_proxy(url, host=None):
   defined, it's extracted from the url.
   """
   if host is None:
-    m = url_regex.match(url)
+    m = _url_regex.match(url)
     if not m:
       print('URL: %s is not a valid URL' % url)
       return None
@@ -108,7 +108,7 @@ def just_find_proxy(pacfile, url, host=None):
     print('PAC file: %s doesn\'t exist' % pacfile)
     return None
   if host is None:
-    m = url_regex.match(url)
+    m = _url_regex.match(url)
     if not m:
       print('URL: %s is not a valid URL' % url)
       return None
