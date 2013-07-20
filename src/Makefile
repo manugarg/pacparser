@@ -73,7 +73,7 @@ BIN_PREFIX = $(PREFIX)/bin
 MAN_PREFIX = $(PREFIX)/share/man
 
 .PHONY: clean pymod install-pymod
-all: testpactester
+all: testpactester libpacparser.a
 
 spidermonkey/js/src: spidermonkey/js-?.?.?.tar.gz
 	tar xzvf spidermonkey/js-?.?.?.tar.gz -C spidermonkey
@@ -89,6 +89,9 @@ libjs.a: spidermonkey/js/src
 pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
+
+libpacparser.a: pacparser.o libjs.a
+	libtool -static -o libpacparser.a pacparser.o libjs.a
 
 $(LIBRARY): pacparser.o libjs.a
 	$(MKSHLIB) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a $(LDFLAGS)
@@ -134,6 +137,6 @@ install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
 clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
+	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a libpacparser.a pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
 	cd pymod && python setup.py clean --all
 	cd spidermonkey && $(MAKE) clean
