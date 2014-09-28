@@ -78,9 +78,8 @@ manugarg@hobbiton:~$ gcc -o pactest pactest.c -lpacparser
 manugarg@hobbiton:~$ ./pactest wpad.dat http://www.google.com www.google.com
 PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
 ```
----------------------------------------------------------------------
-Platforms
----------
+
+#### Platforms
 pacparser has been tested to work on Linux (all architectures supported by Debian), Mac OS X and Win32 systems.
 
 Author: Manu Garg <manugarg@gmail.com>  
