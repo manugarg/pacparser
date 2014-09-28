@@ -1,4 +1,4 @@
-# pacparser
+## pacparser
 
 pacparser is a library to parse proxy auto-config (PAC) files. Proxy
 auto-config files are a vastly used proxy configuration method these days. Web
@@ -19,7 +19,7 @@ a python module which can be used to make any C or python program PAC scripts
 intelligent. Some very useful targets could be popular web software like wget,
 curl and python-urllib.
 
-## Implementation
+### Implementation
 pacparser makes use of Mozilla's JavaScript interpreter SpiderMonkey to parse
 PAC files (which are nothing but javascripts). Apart from that, proxy
 auto-config standard assumes availability of some functions which are not
@@ -27,21 +27,19 @@ part of standard JavaScript. pacparser uses Mozilla's PAC implementation to
 define all these functions except couple of dns functions which are defined by
 pacparser itself. As a result, pacparser is as close to standard as it gets :)
 
-## Install
+### Install
 Please see 'INSTALL' in the root directory of the package.
 
-## How to use it?
+### How to use it?
 Pacparser comes as a shared library (libpacparser.so on Unix-like systems
 and pacparser.dll on windows) as well as a python module. Using it is as easy
 compiling your C programs against it or importing pacparser module in your
 python programs.
 
-## Usage Examples
+### Usage Examples
 
-
-### Using it in python:
----------------------------------------------------------------------
-```
+#### Python:
+```python
 >>> import pacparser
 >>> pacparser.init()
 >>> pacparser.parse_pac('examples/wpad.dat')
@@ -55,12 +53,9 @@ python programs.
 >>> pacparser.cleanup()
 >>>
 ```
----------------------------------------------------------------------
 
-### Using it in C
----------------------------------------------------------------------
-```
-manugarg@hobbiton:~$ cat pactest.c
+#### C
+```C
 #include <stdio.h>
 
 int pacparser_init();
@@ -77,7 +72,8 @@ int main(int argc, char* argv[])
   printf("%s\n", proxy);
   pacparser_cleanup();
 }
-
+```
+```
 manugarg@hobbiton:~$ gcc -o pactest pactest.c -lpacparser
 manugarg@hobbiton:~$ ./pactest wpad.dat http://www.google.com www.google.com
 PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
@@ -85,7 +81,7 @@ PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
 ---------------------------------------------------------------------
 Platforms
 ---------
-pacparser has been tested to work on Linux and Win32 systems.
+pacparser has been tested to work on Linux (all architectures supported by Debian), Mac OS X and Win32 systems.
 
 Author: Manu Garg <manugarg@gmail.com>  
 Copyright (C) 2007 Manu Garg.
