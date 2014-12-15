@@ -284,6 +284,123 @@ pacparser_setmyip(const char *ip)
   return 1;
 }
 
+// Sets my (client's) IP address to address that will communicate with host.
+int
+pacparser_setmyip_from_host(const char *host, int ipversion)
+{
+  char *error_prefix = "pacparser.c: pacparser_setmyip_from_host:";
+  int err, fd=0;
+  struct addrinfo addrinfo, *res=0, *r;
+  struct sockaddr_in sinbuf;
+  struct sockaddr_in6 sin6buf;
+  struct sockaddr *saddr;
+  socklen_t namelen;
+  char errbuf[4096];
+  char ipbuf[256];
+
+#ifdef _WIN32
+  // On windows, we need to initialize the winsock dll first.
+  WSADATA WsaData;
+  WSAStartup(MAKEWORD(2,0), &WsaData);
+#endif
+
+  memset(&addrinfo, 0, sizeof(addrinfo));
+  switch(ipversion)
+  {
+    case 4:
+      addrinfo.ai_family = AF_INET;
+      break;
+    case 6:
+      addrinfo.ai_family = AF_INET6;
+      break;
+    default:
+      addrinfo.ai_family = AF_UNSPEC;
+      break;
+  }
+  addrinfo.ai_socktype = SOCK_DGRAM;
+  addrinfo.ai_protocol = IPPROTO_UDP;
+
+  if ((err = getaddrinfo(host, 0, &addrinfo, &res)) != 0) {
+    print_error("%s: error from getaddrinfo on %s: %s\n", 
+    		error_prefix, host, gai_strerror(err));
+    goto errexit;
+  }
+  errbuf[0] = '\0';
+  ipbuf[0] = '\0';
+  for (r = res; r; r = r->ai_next) {
+    if (_debug() && (errbuf[0] != '\0'))
+      print_error("DEBUG: trying next addr after %s\n", errbuf);
+    if ((fd = socket(r->ai_family, r->ai_socktype, r->ai_protocol)) < 0) {
+      print_error("%s: error creating socket for %s: %s\n",
+		  error_prefix, host, strerror(errno));
+      goto errexit;
+    }
+    if (connect(fd, r->ai_addr, r->ai_addrlen) < 0) {
+      snprintf(errbuf, sizeof(errbuf),
+		  "error connecting UDP socket(s) to %s, last error: %s",
+		      host, strerror(errno));
+      close(fd);
+      fd = 0;
+      continue;
+    }
+    if (r->ai_family == AF_INET) {
+      saddr = (struct sockaddr *)&sinbuf;
+      namelen = sizeof(sinbuf);
+    }
+    else if (r->ai_family == AF_INET6) {
+      saddr = (struct sockaddr *)&sin6buf;
+      namelen = sizeof(sin6buf);
+    }
+    else {
+      print_error("%s: unknown address family %d\n", 
+	error_prefix, r->ai_family);
+      goto errexit;
+    }
+    if (getsockname(fd, saddr, &namelen) < 0) {
+      print_error("%s: error on getsockname from socket to %s: %s\n",
+		error_prefix, host, strerror(errno));
+      goto errexit;
+    }
+    if ((err = getnameinfo(saddr, namelen, ipbuf, sizeof(ipbuf), 
+		NULL, 0, NI_NUMERICHOST)) != 0) {
+      print_error("%s: error on getnameinfo from getsockname to %s: %s\n",
+		error_prefix, host, gai_strerror(err));
+      goto errexit;
+    }
+    break;
+  }
+  freeaddrinfo(res);
+  res = 0;
+  close(fd);
+  fd = 0;
+
+#ifdef _WIN32
+  WSACleanup();
+#endif
+
+  if (ipbuf[0] == '\0') {
+    if (errbuf[0] == '\0')
+      print_error("%s: could not determine IP for %s, error unknown\n",
+      	error_prefix, host);
+    else
+      print_error("%s: %s\n", error_prefix, errbuf);
+    goto errexit;
+  }
+  if (_debug()) print_error("DEBUG: Setting myip to %s\n", ipbuf);
+  pacparser_setmyip(ipbuf);
+  return 1;
+
+errexit:
+  if (res) freeaddrinfo(res);
+  if (fd) close(fd);
+
+#ifdef _WIN32
+  WSACleanup();
+#endif
+
+  return 0;
+}
+
 // Decprecated: This function doesn't do anything.
 //
 // This function doesn't do anything. Microsoft exntensions are now enabled by

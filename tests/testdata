@@ -9,3 +9,4 @@
 -u http://www.notresolvabledomainXXX.com|isNotResolvable
 -u https://www.somehost.com|secureUrl
 -c 10.10.100.112 -u http://www.somehost.com|10.10.0.0
+-u http://www.google.com -U http://www.google.com|isResolvable	 # INTERNET_REQUIRED

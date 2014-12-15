@@ -111,6 +111,20 @@ void pacparser_cleanup(void);
 int pacparser_setmyip(const char *ip                 // Custom IP address.
                        );
 
+/// @brief Sets my IP address to address that will communicate with host.
+/// @param host Name of host to connect to.
+/// @param ipversion IP version to limit address to.
+/// @returns 0 on failure and 1 on success.
+///
+/// Set my (client's) IP address by connecting with a UDP socket to the
+/// given host name and finding out what IP address would be used to
+/// communicate with it.  If ipversion is 4 or 6 then only allow that
+/// version of IP address, otherwise allow any version.
+int
+pacparser_setmyip_from_host(const char *host,  // Name of host to connect to
+			    int ipversion      // IP version to limit address to
+			    );
+
 /// @brief Type definition for pacparser_error_printer.
 typedef int (*pacparser_error_printer)(const char *fmt,	// printf format
 				       va_list argp	// Variadic arg list

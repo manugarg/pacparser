@@ -2,9 +2,9 @@
 .SH "NAME"
 pactester \- Tool to test proxy auto\-config (pac) files.
 .SH "SYNOPSIS"
-.B pactester <\-p pacfile> <\-u url> [\-h host] [\-c client_ip] [\-e]
+.B pactester \-p pacfile \-u url [\-h host] [\-c client_ip] [\-U pacurl] [\-e]
 .PP 
-.B pactester <\-p pacfile> <\-f urlslist> [\-c client_ip] [\-e]
+.B pactester \-p pacfile \-f urlslist [\-c client_ip] [\-U pacurl] [\-e]
 .SH "DESCRIPTION"
 pactester is a tool to test proxy auto\-config (pac) files. It returns the
 proxy config string for the given URL and the pac file. pactester uses
@@ -24,6 +24,13 @@ Host part of the URL. If not specified, it's determined from the URL.
 Client's IP address (as returned by the function myIpAddress() in PAC files).
 If not specified, it defaults to the IP address of the machine on which
 this tool is running.
+.TP
+.B \-U pacurl
+URL that the pacfile came from.  Used to set the client's IP address
+(see -c) by opening a UDP socket to the host part of the URL and
+finding out which local IP address would be used to reach it.  More
+reliable than the default method of finding the client IP address on
+clients with multiple IP addresses.
 .TP 
 .B \-e
 Enable Microsoft PAC extensions (dnsResolveEx, myIpAddressEx, isResolvableEx).
@@ -43,7 +50,8 @@ $ pactester \-p wpad.dat \-c 10.0.12.123 \-u http://www.google.com
 
 For a pac file hosted at http://wpad/wpad.dat:
 .PP 
-$ curl \-s http://wpad/wpad.dat | pactester \-p \- \-u http://google.com
+$ curl \-s http://wpad/wpad.dat | \\
+    pactester \-p \- \-u http://google.com -U http://wpad/wpad.dat
 .SH "BUGS"
 If you have come across a bug in pactester, please submit a bug report at
 http://github.com/pacparser/pacparser/issues.
