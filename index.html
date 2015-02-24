@@ -1,0 +1,136 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Pacparser by pacparser</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>Pacparser</h1>
+        <p>A library to parse proxy auto-config (PAC) files</p>
+
+        <p class="view"><a href="https://github.com/pacparser/pacparser">View the Project on GitHub <small>pacparser/pacparser</small></a></p>
+
+
+        <ul>
+          <li><a href="https://github.com/pacparser/pacparser/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/pacparser/pacparser/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/pacparser/pacparser">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h2>
+<a id="pacparser" class="anchor" href="#pacparser" aria-hidden="true"><span class="octicon octicon-link"></span></a>pacparser</h2>
+
+<p>pacparser is a library to parse proxy auto-config (PAC) files. Proxy
+auto-config files are a vastly used proxy configuration method these days. Web
+browsers can use a PAC file to determine which proxy server to use or whether
+to go direct for a given URL. PAC files are written in JavaScript and can be
+programmed to return different proxy methods (e.g. "PROXY proxy1:port; DIRECT")
+depending upon URL, source IP address, protocol, time of the day etc. PAC files
+introduce a lot of possibilities. Please look at the wikipedia entry for Proxy
+auto-config (<a href="http://en.wikipedia.org/wiki/Proxy_auto-config">http://en.wikipedia.org/wiki/Proxy_auto-config</a>) for more
+information.</p>
+
+<p>Needless to say, PAC files are now a widely accepted method for proxy
+configuration management and companies all over are using them in corporate
+environment. Almost all popular web browsers support PAC files. The idea behind
+pacparser is to make it easy to add this PAC file parsing capability to any
+program (C and python supported right now). It comes as a shared C library and
+a python module which can be used to make any C or python program PAC scripts
+intelligent. Some very useful targets could be popular web software like wget,
+curl and python-urllib.</p>
+
+<h3>
+<a id="implementation" class="anchor" href="#implementation" aria-hidden="true"><span class="octicon octicon-link"></span></a>Implementation</h3>
+
+<p>pacparser makes use of Mozilla's JavaScript interpreter SpiderMonkey to parse
+PAC files (which are nothing but javascripts). Apart from that, proxy
+auto-config standard assumes availability of some functions which are not
+part of standard JavaScript. pacparser uses Mozilla's PAC implementation to
+define all these functions except couple of dns functions which are defined by
+pacparser itself. As a result, pacparser is as close to standard as it gets :)</p>
+
+<h3>
+<a id="install" class="anchor" href="#install" aria-hidden="true"><span class="octicon octicon-link"></span></a>Install</h3>
+
+<p>Please see 'INSTALL' in the root directory of the package.</p>
+
+<h3>
+<a id="how-to-use-it" class="anchor" href="#how-to-use-it" aria-hidden="true"><span class="octicon octicon-link"></span></a>How to use it?</h3>
+
+<p>Pacparser comes as a shared library (libpacparser.so on Unix-like systems
+and pacparser.dll on windows) as well as a python module. Using it is as easy
+compiling your C programs against it or importing pacparser module in your
+python programs.</p>
+
+<h3>
+<a id="usage-examples" class="anchor" href="#usage-examples" aria-hidden="true"><span class="octicon octicon-link"></span></a>Usage Examples</h3>
+
+<h4>
+<a id="python" class="anchor" href="#python" aria-hidden="true"><span class="octicon octicon-link"></span></a>Python:</h4>
+
+<div class="highlight highlight-python"><pre><span class="pl-k">&gt;&gt;&gt;</span> <span class="pl-k">import</span> pacparser
+<span class="pl-k">&gt;&gt;&gt;</span> pacparser.init()
+<span class="pl-k">&gt;&gt;&gt;</span> pacparser.parse_pac(<span class="pl-s1"><span class="pl-pds">'</span>examples/wpad.dat<span class="pl-pds">'</span></span>)
+<span class="pl-k">&gt;&gt;&gt;</span> pacparser.find_proxy(<span class="pl-s1"><span class="pl-pds">'</span>http://www.google.com<span class="pl-pds">'</span></span>, <span class="pl-s1"><span class="pl-pds">'</span>www.google.com<span class="pl-pds">'</span></span>)
+<span class="pl-s1"><span class="pl-pds">'</span>DIRECT<span class="pl-pds">'</span></span>
+<span class="pl-k">&gt;&gt;&gt;</span> pacparser.setmyip(<span class="pl-s1"><span class="pl-pds">"</span>192.168.1.134<span class="pl-pds">"</span></span>)
+<span class="pl-k">&gt;&gt;&gt;</span> pacparser.find_proxy(<span class="pl-s1"><span class="pl-pds">'</span>http://www.google.com<span class="pl-pds">'</span></span>, <span class="pl-s1"><span class="pl-pds">'</span>www.google.com<span class="pl-pds">'</span></span>)
+<span class="pl-s1"><span class="pl-pds">'</span>PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT<span class="pl-pds">'</span></span>
+<span class="pl-k">&gt;&gt;&gt;</span> pacparser.find_proxy(<span class="pl-s1"><span class="pl-pds">'</span>http://www2.manugarg.com<span class="pl-pds">'</span></span>, <span class="pl-s1"><span class="pl-pds">'</span>www2.manugarg.com<span class="pl-pds">'</span></span>)
+<span class="pl-s1"><span class="pl-pds">'</span>DIRECT<span class="pl-pds">'</span></span>
+<span class="pl-k">&gt;&gt;&gt;</span> pacparser.cleanup()
+<span class="pl-k">&gt;&gt;&gt;</span></pre></div>
+
+<h4>
+<a id="c" class="anchor" href="#c" aria-hidden="true"><span class="octicon octicon-link"></span></a>C</h4>
+
+<div class="highlight highlight-C"><pre>#<span class="pl-k">include</span> <span class="pl-s1"><span class="pl-pds">&lt;</span>stdio.h<span class="pl-pds">&gt;</span></span>
+
+<span class="pl-st">int</span> <span class="pl-en">pacparser_init</span>();
+<span class="pl-st">int</span> <span class="pl-en">pacparser_parse_pac</span>(<span class="pl-st">char</span>* pacfile);
+<span class="pl-st">char</span> *<span class="pl-en">pacparser_find_proxy</span>(<span class="pl-st">char</span> *url, <span class="pl-st">char</span> *host);
+<span class="pl-st">void</span> <span class="pl-en">pacparser_cleanup</span>();
+
+<span class="pl-st">int</span> <span class="pl-en">main</span>(<span class="pl-st">int</span> argc, <span class="pl-st">char</span>* argv[])
+{
+  <span class="pl-st">char</span> *proxy;
+  <span class="pl-s3">pacparser_init</span>();
+  <span class="pl-s3">pacparser_parse_pac</span>(argv[<span class="pl-c1">1</span>]);
+  proxy = <span class="pl-s3">pacparser_find_proxy</span>(argv[<span class="pl-c1">2</span>], argv[<span class="pl-c1">3</span>]);
+  <span class="pl-s3">printf</span>(<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-c1">%s</span><span class="pl-cce">\n</span><span class="pl-pds">"</span></span>, proxy);
+  <span class="pl-s3">pacparser_cleanup</span>();
+}</pre></div>
+
+<pre><code>manugarg@hobbiton:~$ gcc -o pactest pactest.c -lpacparser
+manugarg@hobbiton:~$ ./pactest wpad.dat http://www.google.com www.google.com
+PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
+</code></pre>
+
+<h4>
+<a id="platforms" class="anchor" href="#platforms" aria-hidden="true"><span class="octicon octicon-link"></span></a>Platforms</h4>
+
+<p>pacparser has been tested to work on Linux (all architectures supported by Debian), Mac OS X and Win32 systems.</p>
+
+<p>Author: Manu Garg <a href="mailto:manugarg@gmail.com">manugarg@gmail.com</a><br>
+Copyright (C) 2007 Manu Garg.</p>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/pacparser">pacparser</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
