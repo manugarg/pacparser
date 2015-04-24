@@ -46,7 +46,6 @@
 #define MAX_IP_RESULTS 10
 
 static char *myip = NULL;
-static int define_microsoft_extensions = 0; //0: False, 1: True
 
 // Default error printer function.
 static int		// Number of characters printed, negative value in case of output error.
@@ -268,16 +267,14 @@ pacparser_setmyip(const char *ip)
   strcpy(myip, ip);
 }
 
+// Decprecated: This function doesn't do anything.
+//
+// This function doesn't do anything. Microsoft exntensions are now enabled by
+// default.
 void
 pacparser_enable_microsoft_extensions()
 {
-  if(cx) {
-    print_error("pacparser.c: pacparser_enable_microsoft_extensions: "
-            "Can not enable microsoft extensions now. This function should be "
-            "called before pacparser_init.\n");
-    return;
-  }
-  define_microsoft_extensions = 1;
+  return;
 }
 
 // Initialize PAC parser.
@@ -312,18 +309,15 @@ pacparser_init()
 		  "Could not define myIpAddress in JS context.");
     return 0;
   }
-  if (define_microsoft_extensions) {
-    if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0)) {
-      print_error("%s %s\n", error_prefix,
-		    "Could not define dnsResolveEx in JS context.");
-      return 0;
-    }
-    if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0)) {
-      print_error("%s %s\n", error_prefix,
-		    "Could not define myIpAddressEx in JS context.");
-
-      return 0;
-    }
+  if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0)) {
+    print_error("%s %s\n", error_prefix,
+      "Could not define dnsResolveEx in JS context.");
+    return 0;
+  }
+  if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0)) {
+    print_error("%s %s\n", error_prefix,
+		  "Could not define myIpAddressEx in JS context.");
+    return 0;
   }
   // Evaluate pacUtils. Utility functions required to parse pac files.
   if (!JS_EvaluateScript(cx,           // JS engine context
@@ -463,7 +457,6 @@ pacparser_cleanup()
 {
   // Reinitliaze config variables.
   myip = NULL;
-  define_microsoft_extensions = 0;
   if (cx) {
     JS_DestroyContext(cx);
     cx = NULL;

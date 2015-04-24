@@ -44,8 +44,8 @@ void usage(const char *progname)
                   "myIpAddres() function\n");
   fprintf(stderr, "                 in PAC files), defaults to IP address "
                   "on which it is running.\n");
-  fprintf(stderr, "  -e           : enable microsoft extensions "
-                  "(Ex functions)\n");
+  fprintf(stderr, "  -e           : Deprecated: IPv6 extensions are enabled"
+                  "by default now.\n");
   fprintf(stderr, "  -f urlslist  : a file containing list of URLs to be "
           "tested.\n");
   fprintf(stderr, "  -v           : print version and exit\n");
@@ -81,7 +81,6 @@ char *get_host_from_url(const char *url)
 int main(int argc, char* argv[])
 {
   char *pacfile=NULL, *url=NULL, *host=NULL, *urlslist=NULL, *client_ip=NULL;
-  int enable_microsoft_extensions=0;
   signed char c;
   while ((c = getopt(argc, argv, "evp:u:h:f:c:")) != -1)
     switch (c)
@@ -105,7 +104,6 @@ int main(int argc, char* argv[])
         client_ip = optarg;
         break;
       case 'e':
-        enable_microsoft_extensions = 1;
         break;
       case '?':
         if (optopt == 'p' || optopt == 'u' || optopt == 'h' ||
@@ -130,9 +128,6 @@ int main(int argc, char* argv[])
     usage(argv[0]);
     return 1;
   }
-
-  if(enable_microsoft_extensions)
-    pacparser_enable_microsoft_extensions();
 
   // initialize pacparser
   if (!pacparser_init()) {
