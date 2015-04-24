@@ -15,3 +15,11 @@
 *.exe
 *.out
 *.app
+
+# Other build files
+*buildstamp
+src/spidermonkey/js
+src/pactester
+
+# OS specific files
+.DS_Store

@@ -1,6 +1,6 @@
 # Command Line Parameters|Expected Result
+-e -c 3ffe:8311:ffff:1:0:0:0:0 -u http://www.somehost.com|3ffe:8311:ffff
 -c 0.0.0.0 -u http://www.google.co.in|END-OF-SCRIPT
--e -u http://www.google.com|dnsResolveEx defined
 -u http://host1|plainhost/.manugarg.com
 -u http://www1.manugarg.com|plainhost/.manugarg.com
 -u http://manugarg.externaldomain.com|externaldomain

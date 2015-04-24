@@ -4,9 +4,6 @@
 
 function FindProxyForURL(url, host) {
 
-  if (typeof(dnsResolveEx) == "function")
-    return "dnsResolveEx defined";
-
   if ((isPlainHostName(host) ||
       dnsDomainIs(host, ".manugarg.com")) &&
       !localHostOrDomainIs(host, "www.manugarg.com"))
@@ -31,6 +28,10 @@ function FindProxyForURL(url, host) {
 
   if (isInNet(myIpAddress(), '10.10.0.0', '255.255.0.0'))
     return '10.10.0.0';
+
+  if ((typeof(myIpAddressEx) == "function") &&
+      isInNetEx(myIpAddressEx(), '3ffe:8311:ffff/48'))
+    return '3ffe:8311:ffff';
 
   else
     return "END-OF-SCRIPT";
