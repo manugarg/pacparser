@@ -323,4 +323,12 @@ static const char *pacUtils =
 "        date.setSeconds(date.getUTCSeconds());\n"
 "    }\n"
 "    return ((date1 <= date) && (date <= date2));\n"
+"}\n"
+
+"function findProxyForURL(url, host) {\n"
+"    if (typeof FindProxyForURLEx == 'function') {\n"
+"        return FindProxyForURLEx(url, host);\n"
+"    } else {\n"
+"        return FindProxyForURL(url, host);\n"
+"    }\n"
 "}\n";

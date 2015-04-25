@@ -436,7 +436,7 @@ pacparser_find_proxy(const char *url, const char *host)
 
   script = (char*) malloc(32 + strlen(url) + strlen(host));
   script[0] = '\0';
-  strcat(script, "FindProxyForURL('");
+  strcat(script, "findProxyForURL('");
   strcat(script, url);
   strcat(script, "', '");
   strcat(script, host);
