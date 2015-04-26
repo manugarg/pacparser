@@ -1,5 +1,6 @@
-## pacparser
+## [pacparser](http://pacparser.github.io)
 
+####[Homepage](http://pacparser.github.io): [http://pacparser.github.io](http://pacparser.github.io)
 pacparser is a library to parse proxy auto-config (PAC) files. Proxy
 auto-config files are a vastly used proxy configuration method these days. Web
 browsers can use a PAC file to determine which proxy server to use or whether
