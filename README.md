@@ -1,6 +1,6 @@
-## [pacparser](http://pacparser.github.io)
+##[pacparser](http://pacparser.github.io)
+***[pacparser.github.io](http://pacparser.github.io)***
 
-####[Homepage](http://pacparser.github.io): [http://pacparser.github.io](http://pacparser.github.io)
 pacparser is a library to parse proxy auto-config (PAC) files. Proxy
 auto-config files are a vastly used proxy configuration method these days. Web
 browsers can use a PAC file to determine which proxy server to use or whether
@@ -82,6 +82,9 @@ PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
 
 #### Platforms
 pacparser has been tested to work on Linux (all architectures supported by Debian), Mac OS X and Win32 systems.
+
+####Homepage
+[http://pacparser.github.io](http://pacparser.github.io)
 
 Author: Manu Garg <manugarg@gmail.com>  
 Copyright (C) 2007 Manu Garg.
