@@ -124,11 +124,9 @@ typedef int (*pacparser_error_printer)(const char *fmt,	// printf format
 void pacparser_set_error_printer(pacparser_error_printer func	// Printing function
 				);
 
-/// @brief Enable Microsoft PAC extensions.
+/// @brief (Deprecated) Enable Microsoft IPv6 PAC extensions.
 ///
-/// Enables a subset of Microsoft PAC extensions - dnsResolveEx, myIpAddressEx,
-/// isResolvableEx. These functions are used by Google Chrome and IE to work
-/// with IPv6. More info: http://code.google.com/p/pacparser/issues/detail?id=4
+/// Deprecated. IPv6 extension (*Ex functions) are enabled by default now.
 void pacparser_enable_microsoft_extensions(void);
 
 /// @brief Returns pacparser version.
