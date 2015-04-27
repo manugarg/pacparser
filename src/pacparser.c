@@ -118,7 +118,8 @@ print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 // This function is used by dnsResolve, dnsResolveEx, myIpAddress,
 // myIpAddressEx.
 static int
-resolve_host(const char *hostname, char *ipaddr_list, int max_results)
+resolve_host(const char *hostname, char *ipaddr_list, int max_results,
+             int req_ai_family)
 {
   struct addrinfo hints;
   struct addrinfo *result;
@@ -137,7 +138,7 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results)
 
   memset(&hints, 0, sizeof(struct addrinfo));
 
-  hints.ai_family = AF_UNSPEC;
+  hints.ai_family = req_ai_family;
   hints.ai_socktype = SOCK_STREAM;
 
   error = getaddrinfo(hostname, NULL, &hints, &result);
@@ -165,7 +166,8 @@ dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   char* out;
   char ipaddr[INET6_ADDRSTRLEN] = "";
 
-  if(resolve_host(name, ipaddr, 1)) {
+  // Return null on failure.
+  if(resolve_host(name, ipaddr, 1, AF_INET)) {
     *rval = JSVAL_NULL;
     return JS_TRUE;
   }
@@ -187,12 +189,11 @@ dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
   char* out;
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS] = "";
 
-  if(resolve_host(name, ipaddr, MAX_IP_RESULTS)) {
-    *rval = JSVAL_NULL;
-    return JS_TRUE;
-  }
-
   out = JS_malloc(cx, strlen(ipaddr) + 1);
+  // Return "" on failure.
+  if(resolve_host(name, ipaddr, MAX_IP_RESULTS, AF_UNSPEC)) {
+    strcpy(out, "");
+  }
   strcpy(out, ipaddr);
   JSString *str = JS_NewString(cx, out, strlen(out));
   *rval = STRING_TO_JSVAL(str);
@@ -212,7 +213,7 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   else {
     char name[256];
     gethostname(name, sizeof(name));
-    if (resolve_host(name, ipaddr, 1)) {
+    if (resolve_host(name, ipaddr, 1, AF_INET)) {
       strcpy(ipaddr, "127.0.0.1");
     }
   }
@@ -237,8 +238,8 @@ my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   else {
     char name[256];
     gethostname(name, sizeof(name));
-    if (resolve_host(name, ipaddr, MAX_IP_RESULTS)) {
-      strcpy(ipaddr, "127.0.0.1");
+    if (resolve_host(name, ipaddr, MAX_IP_RESULTS, AF_UNSPEC)) {
+      strcpy(ipaddr, "");
     }
   }
 
