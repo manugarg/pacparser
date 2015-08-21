@@ -1,6 +1,7 @@
 import shutil
 import sys
 from distutils import sysconfig
+from __future__ import print_function
 
 def main():
   if sys.platform == 'win32':
@@ -8,7 +9,7 @@ def main():
                   ignore_errors=True)
     shutil.copytree('pacparser', '%s\\pacparser' % sysconfig.get_python_lib())
   else:
-    print 'This script should be used only on Win32 systems.'
+    print('This script should be used only on Win32 systems.')
 
 
 if __name__ == '__main__':
