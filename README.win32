@@ -32,7 +32,7 @@ Set up tools:
 ======== Done setting up tools ==========
 
 6.  Now download pacparser source code tarball from
-    http://code.google.com/p/pacparser/downloads/list and extract it somewhere,
+    https://github.com/pacparser/pacparser/releases and extract it somewhere,
     say C:\workspace.
 
 7.  Now extract the spidermonekey source tarball, js-*.tar.gz, located at
