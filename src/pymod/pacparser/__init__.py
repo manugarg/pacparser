@@ -35,6 +35,11 @@ import sys
 
 _url_regex = re.compile('.*\:\/\/([^\/]+).*')
 
+class URLError(Exception):
+  def __init__(self, url):
+    super(URLError, self).__init__('URL: {} is not valid'.format(url))
+    self.url = url
+
 def init():
   """
   Initializes pacparser engine.
@@ -53,13 +58,11 @@ def parse_pac_file(pacfile):
   init().
   """
   try:
-    f = open(pacfile)
-    pac_script = f.read()
+    with open(pacfile) as f:
+      pac_script = f.read()
+      _pacparser.parse_pac_string(pac_script)
   except IOError:
-    print('Could not read the pacfile: %s\n%s' % (pacfile, sys.exc_info()[1]))
-    return
-  f.close()
-  _pacparser.parse_pac_string(pac_script)
+    raise IOError('Could not read the pacfile.')
 
 def parse_pac_string(pac_script):
   """
@@ -75,13 +78,12 @@ def find_proxy(url, host=None):
   if host is None:
     m = _url_regex.match(url)
     if not m:
-      print('URL: %s is not a valid URL' % url)
-      return None
+      raise URLError(url)
     if len(m.groups()) is 1:
       host = m.groups()[0]
     else:
-      print('URL: %s is not a valid URL' % url)
-      return None
+      raise URLError(url)
+
   return _pacparser.find_proxy(url, host)
 
 def version():
@@ -102,21 +104,9 @@ def just_find_proxy(pacfile, url, host=None):
   and cleanup. This is the function to call if you want to find
   proxy just for one url.
   """
-  if os.path.isfile(pacfile):
-    pass
-  else:
-    print('PAC file: %s doesn\'t exist' % pacfile)
-    return None
-  if host is None:
-    m = _url_regex.match(url)
-    if not m:
-      print('URL: %s is not a valid URL' % url)
-      return None
-    if len(m.groups()) is 1:
-      host = m.groups()[0]
-    else:
-      print('URL: %s is not a valid URL' % url)
-      return None
+  if not os.path.isfile(pacfile):
+    raise IOError('Pac file does not exist : {}'.format(pacfile))
+
   init()
   parse_pac(pacfile)
   proxy = find_proxy(url,host)
