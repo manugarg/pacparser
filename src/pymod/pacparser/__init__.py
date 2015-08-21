@@ -107,15 +107,6 @@ def just_find_proxy(pacfile, url, host=None):
   if not os.path.isfile(pacfile):
     raise IOError('Pac file does not exist : {}'.format(pacfile))
 
-  if host is None:
-    m = _url_regex.match(url)
-    if not m:
-      raise URLError(url)
-    if len(m.groups()) is 1:
-      host = m.groups()[0]
-    else:
-      raise URLError(url)
-
   init()
   parse_pac(pacfile)
   proxy = find_proxy(url,host)
