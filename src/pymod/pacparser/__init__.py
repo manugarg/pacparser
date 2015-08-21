@@ -53,13 +53,11 @@ def parse_pac_file(pacfile):
   init().
   """
   try:
-    f = open(pacfile)
-    pac_script = f.read()
+    with open(pacfile) as f:
+      pac_script = f.read()
+      _pacparser.parse_pac_string(pac_script)
   except IOError:
-    print('Could not read the pacfile: %s\n%s' % (pacfile, sys.exc_info()[1]))
-    return
-  f.close()
-  _pacparser.parse_pac_string(pac_script)
+    raise IOError('Could not read the pacfile.')
 
 def parse_pac_string(pac_script):
   """
