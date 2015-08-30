@@ -58,7 +58,7 @@ dist: pacparser.dll pactester
 	copy pacparser.h dist
 	copy pactester.exe dist
 	if exist pacparser.lib copy pacparser.lib dist
-	copy ..\README dist\README.txt
+	copy ..\README.md dist\README.txt
 	copy ..\COPYING dist\COPYING.txt
 	copy ..\INSTALL dist\INSTALL.txt
 	mkdir dist\docs
@@ -73,5 +73,5 @@ pymod: pacparser.h pacparser.dll
 clean:
 	del /F pacparser.dll *.lib pacparser.def pacparser.exp pacparser.o pactester.exe libpacparser.a
 	$(MAKE) -C spidermonkey -f Makefile.win32 clean
-	cd pymod && setup.py clean
+#	cd pymod && setup.py clean
 	if exist dist rmdir /s /q dist

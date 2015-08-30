@@ -60,7 +60,7 @@ dist: build
 	copy ..\pacparser.dll dist\pacparser
 	copy install_win32.py dist\install.py
 	copy ..\..\COPYING dist\COPYING.txt
-	copy ..\..\README dist\README.txt
+	copy ..\..\README.md dist\README.txt
 	copy ..\..\README.win32 dist\README.win32.txt
 	copy ..\..\INSTALL dist\INSTALL.txt
 
