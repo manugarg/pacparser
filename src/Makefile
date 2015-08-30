@@ -37,6 +37,7 @@ LIB_VER = 1
 # Set variables according to Linux.
 SO_SUFFIX = so
 LIBRARY = $(LIBRARY_NAME).$(SO_SUFFIX).$(LIB_VER)
+LIBTOOL = libtool --mode=link cc -static
 MKSHLIB = $(CC) -shared
 LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
 SHFLAGS = -fPIC
@@ -47,6 +48,7 @@ ifeq ($(OS_ARCH),Darwin)
   MAC_GT_5 := $(shell [ $(MAC_MINOR_VERSION) -le 5 ] && echo false)
   SO_SUFFIX = dylib
   LIBRARY = $(LIBRARY_NAME).$(LIB_VER).$(SO_SUFFIX)
+  LIBTOOL = libtool -static
   MKSHLIB = $(CC) -dynamiclib -framework System
   LIB_OPTS = -install_name $(PREFIX)/lib/$(notdir $@)
   SHFLAGS =
@@ -91,7 +93,7 @@ pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	touch pymod/pacparser_o_buildstamp
 
 libpacparser.a: pacparser.o libjs.a
-	libtool -static -o libpacparser.a pacparser.o libjs.a
+	$(LIBTOOL) -o libpacparser.a pacparser.o libjs.a
 
 $(LIBRARY): pacparser.o libjs.a
 	$(MKSHLIB) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a $(LDFLAGS)
