@@ -50,7 +50,7 @@ def main():
          description = 'Pacparser package',
          author = 'Manu Garg',
          author_email = 'manugarg@gmail.com',
-         url = 'http://code.google.com/p/pacparser',
+         url = 'http://github.com/pacparser/pacparser',
          long_description = 'python library to parse proxy auto-config (PAC) '
                            'files.',
          license = 'LGPL',
