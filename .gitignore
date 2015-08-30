@@ -16,6 +16,11 @@
 *.out
 *.app
 
+# Packages
+tools/packages
+*.dmg
+*.pkg
+
 # Other build files
 *buildstamp
 src/spidermonkey/js

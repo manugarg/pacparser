@@ -25,8 +25,7 @@ DESTDIR=$stage_dir make -C src install-pymod
 
 sudo chown -R root:wheel ${stage_dir}
 
-/Applications/PackageMaker.app/Contents/MacOS/PackageMaker \
- -v -i com.manugarg -r ${stage_dir} -n ${ver} -t pacparser -m -o pacparser.pkg
+pkgbuild --root ${stage_dir} --identifier pacparser --version ${ver} pacparser.pkg
 
 sudo rm -rf $stage_dir
 
