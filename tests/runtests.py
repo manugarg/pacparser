@@ -24,12 +24,15 @@ import getopt
 import glob
 import os
 import sys
+from distutils import sysconfig
 
 
 def runtests(pacfile, testdata, tests_dir):
   py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
   if sys.platform == 'win32':
-    pacparser_module_path = os.path.join(tests_dir, '..', 'src', 'pymod', 'dist')
+    pacparser_module_path = os.path.join(
+      tests_dir, '..', 'src', 'pymod',
+      'pacparser-python%s' % sysconfig.get_config_vars('VERSION')[0])
     if os.path.exists(os.path.join(pacparser_module_path, '_pacparser.pyd')):
       raise Exception('Tests failed. Could not determine pacparser path.')
   else:
