@@ -67,7 +67,10 @@ all: js.lib fdlibm.lib
 
 .c.o: $(CC) -c $(CFLAGS) -o $@ $(JS_SRCDIR)/$*.c
 
-js\src\jsautokw.h: js\src\jskwgen.c
+js\src\jsautokw.h:
+ifeq ($(wildcard js),)
+	$(error JS source directory not found. Extract $(wildcard js-*.tar.gz) tarball using tool of your choice. Possible options are 7z, WinRAR, WinZip.)
+endif
 	$(CC) -o jskwgen js\src\jskwgen.c
 	jskwgen > js\src\jsautokw.h
 	del jskwgen.exe
@@ -76,13 +79,10 @@ fdlibm.lib: js $(FDLIBM_OBJECTS)
 	ar r fdlibm.lib $(FDLIBM_OBJECTS)
 	ranlib fdlibm.lib
 	
-js.lib: js js\src\jsautokw.h $(JS_OBJECTS)
+js.lib: js\src\jsautokw.h $(JS_OBJECTS)
 	ar r js.lib $(JS_OBJECTS)
 	ranlib js.lib
-	
-js: $(wildcard js*.tar.gz)
-	$(error JS source directory not found. Extract $(wildcard js-*.tar.gz) tarball using tool of your choice. Possible options are 7z, WinRAR, WinZip.)
-	
+
 clean:
 	del js\src\*.o
 	del js\src\jsautokw.h
