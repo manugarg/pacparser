@@ -6,8 +6,8 @@ pactester=$script_dir/../src/pactester
 pacfile=$script_dir/proxy.pac
 testdata=$script_dir/testdata
 library_path=$script_dir/../src
-export DYLD_LIBRARY_PATH=$library_path
-export LD_LIBRARY_PATH=$library_path
+export DYLD_LIBRARY_PATH=$library_path:$DYLD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$library_path:$LD_LIBRARY_PATH
 
 lib=$library_path/libpacparser.so.1
 
