@@ -37,7 +37,6 @@ LIB_VER = 1
 # Set variables according to Linux.
 SO_SUFFIX = so
 LIBRARY = $(LIBRARY_NAME).$(SO_SUFFIX).$(LIB_VER)
-LIBTOOL = libtool --mode=link cc -static
 MKSHLIB = $(CC) -shared
 LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
 SHFLAGS = -fPIC
@@ -48,7 +47,6 @@ ifeq ($(OS_ARCH),Darwin)
   MAC_GT_5 := $(shell [ $(MAC_MINOR_VERSION) -le 5 ] && echo false)
   SO_SUFFIX = dylib
   LIBRARY = $(LIBRARY_NAME).$(LIB_VER).$(SO_SUFFIX)
-  LIBTOOL = libtool -static
   MKSHLIB = $(CC) -dynamiclib -framework System
   LIB_OPTS = -install_name $(PREFIX)/lib/$(notdir $@)
   SHFLAGS =
@@ -75,7 +73,7 @@ BIN_PREFIX = $(PREFIX)/bin
 MAN_PREFIX = $(PREFIX)/share/man
 
 .PHONY: clean pymod install-pymod
-all: testpactester libpacparser.a
+all: testpactester
 
 spidermonkey/js/src: spidermonkey/js-?.?.?.tar.gz
 	tar xzvf spidermonkey/js-?.?.?.tar.gz -C spidermonkey
@@ -91,9 +89,6 @@ libjs.a: spidermonkey/js/src
 pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
-
-libpacparser.a: pacparser.o libjs.a
-	$(LIBTOOL) -o libpacparser.a pacparser.o libjs.a
 
 $(LIBRARY): pacparser.o libjs.a
 	$(MKSHLIB) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a $(LDFLAGS)
@@ -139,6 +134,6 @@ install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
 clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a libpacparser.a pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
+	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
 	cd pymod && python setup.py clean --all
 	cd spidermonkey && $(MAKE) clean
