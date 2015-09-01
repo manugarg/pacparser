@@ -336,7 +336,7 @@ static const char *pacUtils =
 
 // You must free the result if result is non-NULL.
 char *str_replace(const char *orig, char *rep, char *with) {
-    char *tmporig = (char*) malloc(strlen(orig)); // Copy of orig that we work with
+    char *tmporig = malloc(strlen(orig) + 1); // Copy of orig that we work with
     tmporig = strcpy(tmporig, orig);
 
     char *result;  // the return string
