@@ -31,6 +31,8 @@ sed -i '' -e '/doxygen\.png/s/^.*$/Doxygen/g' $docs_dir/html/pacparser.html
 
 mkdir -p $docs_dir/man/man3
 mv man/man3/* $docs_dir/man/man3/
+# Remove unnecessary and bad file deprecated.3
+rm -f $docs_dir/man/man3/deprecated.3
 # Fix man page.
 sed -i '' -e 's/pacparser \\\-/pacparser/g' $docs_dir/man/man3/*.3
 cd -
