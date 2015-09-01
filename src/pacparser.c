@@ -435,19 +435,30 @@ pacparser_find_proxy(const char *url, const char *host)
     return NULL;
   }
 
+  // URL-encode "'" as we use single quotes to stick the URL into a temporary script.
+  char *sanitized_url = str_replace(url, "'", "%27");
+  // Hostname shouldn't have single quotes in them
+  if (strchr(host, '\'')) {
+    print_error("%s %s\n", error_prefix,
+		"Invalid hostname: hostname can't have single quotes.");
+    return NULL;
+  }
+
   script = (char*) malloc(32 + strlen(url) + strlen(host));
   script[0] = '\0';
-  strcat(script, "findProxyForURL('");
-  strcat(script, url);
+  strcat(script, "FindProxyForURL('");
+  strcat(script, sanitized_url);
   strcat(script, "', '");
   strcat(script, host);
   strcat(script, "')");
   if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
   if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval)) {
     print_error("%s %s\n", error_prefix, "Problem in executing FindProxyForURL.");
+    free(sanitized_url);
     free(script);
     return NULL;
   }
+  free(sanitized_url);
   free(script);
   return JS_GetStringBytes(JS_ValueToString(cx, rval));
 }
