@@ -63,7 +63,6 @@ endif
 
 # Spidermonkey library.
 CFLAGS += -Ispidermonkey/js/src
-LDFLAGS += -lm
 
 LIBRARY_LINK = $(LIBRARY_NAME).$(SO_SUFFIX)
 PREFIX := $(DESTDIR)$(PREFIX)
@@ -91,13 +90,13 @@ pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	touch pymod/pacparser_o_buildstamp
 
 $(LIBRARY): pacparser.o libjs.a
-	$(MKSHLIB) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a $(LDFLAGS)
+	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a -lm
 
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
 pactester: pactester.c pacparser.h $(LIBRARY_LINK)
-	$(CC) pactester.c -o pactester -lpacparser -L. -I.
+	$(CC) $(CFLAGS) $(LDFLAGS) pactester.c -o pactester -lpacparser -L. -I.
 
 testpactester: pactester
 	echo "Running tests for pactester."
