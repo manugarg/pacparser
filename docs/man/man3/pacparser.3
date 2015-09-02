@@ -1,16 +1,16 @@
-.TH "pacparser" 3 "Sat Apr 25 2015" "Pacparser" \" -*- nroff -*-
+.TH "pacparser" 3 "Tue Sep 1 2015" "Pacparser" \" -*- nroff -*-
 .ad l
 .nh
 .SH NAME
-pacparser pacparser
+pacparser - Library to parse proxy auto-confg (PAC) files. 
 .PP
-API for pacparser library\&. A library to make web software PAC (proxy autoconfig) files intelligent\&. See http://code.google.com/p/pacparser for more information\&.  
+API for pacparser library, a library to use proxy auto-config (PAC) files\&. See project homepage: http://github.com/pacparser/pacparser for more information\&.  
 
 .SS "Typedefs"
 
 .in +1c
 .ti -1c
-.RI "typedef int(* \fBpacparser_error_printer\fP) (const char *fmt, va_list argp)"
+.RI "typedef int(* \fBpacparser_error_printer\fP )(const char *fmt, va_list argp)"
 .br
 .RI "\fIType definition for pacparser_error_printer\&. \fP"
 .in -1c
@@ -64,7 +64,7 @@ API for pacparser library\&. A library to make web software PAC (proxy autoconfi
 .in -1c
 .SH "Detailed Description"
 .PP 
-API for pacparser library\&. A library to make web software PAC (proxy autoconfig) files intelligent\&. See http://code.google.com/p/pacparser for more information\&. 
+API for pacparser library, a library to use proxy auto-config (PAC) files\&. See project homepage: http://github.com/pacparser/pacparser for more information\&. 
 
 
 .PP
@@ -87,7 +87,7 @@ Initializes pac parser\&.
 .RE
 .PP
 Initializes JavaScript engine and does few basic initializations specific to pacparser\&. 
-.SS "int pacparser_parse_pac_file (const char * pacfile)"
+.SS "int pacparser_parse_pac_file (const char *pacfile)"
 
 .PP
 Parses the given PAC file\&. 
@@ -103,7 +103,7 @@ Parses the given PAC file\&.
 .RE
 .PP
 Reads the given PAC file and evaluates it in the JavaScript context created by pacparser_init\&. 
-.SS "int pacparser_parse_pac_string (const char * pacstring)"
+.SS "int pacparser_parse_pac_string (const char *pacstring)"
 
 .PP
 Parses the given PAC script string\&. 
@@ -119,7 +119,7 @@ Parses the given PAC script string\&.
 .RE
 .PP
 Evaulates the given PAC script string in the JavaScript context created by pacparser_init\&. 
-.SS "int pacparser_parse_pac (const char * pacfile)"
+.SS "int pacparser_parse_pac (const char *pacfile)"
 
 .PP
 Parses the gievn pac file\&. 
@@ -142,7 +142,7 @@ Use pacparser_parse_pac_file instead\&.
 .PP
 .PP
 Same as pacparser_parse_pac_file\&. Included only for backward compatibility\&. 
-.SS "char* pacparser_find_proxy (const char * url, const char * host)"
+.SS "char* pacparser_find_proxy (const char *url, const char *host)"
 
 .PP
 Finds proxy for the given URL and Host\&. 
@@ -160,7 +160,7 @@ proxy string on sucess and NULL on error\&.
 .RE
 .PP
 Finds proxy for the given URL and Host\&. This function should be called only after pacparser engine has been initialized (using pacparser_init) and pac script has been parsed (using pacparser_parse_pac_file or pacparser_parse_pac_string)\&. 
-.SS "char* pacparser_just_find_proxy (const char * pacfile, const char * url, const char * host)"
+.SS "char* pacparser_just_find_proxy (const char *pacfile, const char *url, const char *host)"
 
 .PP
 Finds proxy for the given PAC file, URL and Host\&. 
@@ -184,7 +184,7 @@ This function is a wrapper around functions pacparser_init, pacparser_parse_pac_
 
 .PP
 Destroys JavaSctipt context\&. This function should be called once you're done with using pacparser engine\&. 
-.SS "void pacparser_setmyip (const char * ip)"
+.SS "void pacparser_setmyip (const char *ip)"
 
 .PP
 Sets my IP address\&. 
@@ -195,7 +195,7 @@ Sets my IP address\&.
 .RE
 .PP
 Sets my IP address to a custom value\&. This is the IP address returned by myIpAddress() javascript function\&. 
-.SS "void pacparser_set_error_printer (\fBpacparser_error_printer\fP func)"
+.SS "void pacparser_set_error_printer (\fBpacparser_error_printer\fPfunc)"
 
 .PP
 Sets error printing function\&. 

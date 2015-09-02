@@ -29,9 +29,9 @@ extern "C" {
 
 /// @defgroup pacparser pacparser
 /// @{
-/// @brief API for pacparser library. A library to make web software PAC
-///	   (proxy autoconfig) files intelligent. See
-///	   http://code.google.com/p/pacparser for more information.
+/// @brief API for pacparser library, a library to use proxy auto-config (PAC)
+///       files. See project homepage: http://github.com/pacparser/pacparser
+///       for more information.
 /// @author Manu Garg <manugarg@gmail.com>
 
 /// @brief Initializes pac parser.
