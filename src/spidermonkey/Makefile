@@ -34,7 +34,7 @@ jslib: js-buildstamp
 
 js-buildstamp:
 	mkdir -p js/src/$(OBJDIR)
-	CFLAGS="$(SMCFLAGS)" $(MAKE) -C js/src -f Makefile.ref libjs.a
+	CFLAGS="$(SMCFLAGS)" "$(MAKE)" -C js/src -f Makefile.ref libjs.a
 	find js/src -name "jsautocfg.h" -exec cp {} js/src \;
 	touch js-buildstamp
 
