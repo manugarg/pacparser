@@ -90,7 +90,7 @@ DOC_PREFIX = $(PREFIX)/share/doc/pacparser
 MAN_PREFIX = $(PREFIX)/share/man
 
 .PHONY: clean pymod install-pymod
-all: testpactester
+all: testpactester pacparse
 
 jsapi_buildstamp: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jsapi
@@ -120,6 +120,9 @@ testpactester: pactester $(LIBRARY_LINK)
 	echo "Running tests for pactester."
 	NO_INTERNET=$(NO_INTERNET) ../tests/runtests.sh
 
+pacparse: pacparse.c pacparser.h $(LIBRARY_LINK)
+	$(CC) $(CFLAGS) $(LDFLAGS) pacparse.c -o pacparse -lpacparser -L. -I.
+
 docs:
 	../tools/generatedocs.sh
 
@@ -128,6 +131,8 @@ install: all
 	install -m 644 $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY)
 	ln -sf $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY_LINK)
 	install -m 755 pactester $(BIN_PREFIX)/pactester
+	install -m 755 pacparse $(BIN_PREFIX)/pacparse
+	install -m 755 pacwget $(BIN_PREFIX)/pacwget
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
 	# install pactester manpages
 	install -d $(MAN_PREFIX)/man1/

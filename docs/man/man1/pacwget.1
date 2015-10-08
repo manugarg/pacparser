@@ -1,0 +1,148 @@
+.TH "pacwget" "1" "" "" ""
+.SH "NAME"
+pacwget \- robustly get http URLs using multiple proxies and servers
+.SH "SYNOPSIS"
+.B pacwget [--only-proxies] [GNU_WGET_OPTIONS]
+.SH "DESCRIPTION"
+.B pacwget
+is a tool that uses GNU wget in such a way that target http URLs are
+retrieved even if some of multiple proxies and/or target servers are not
+functioning.  The "pac" part of the name comes from its support of
+Proxy Auto\-Config (PAC) files for configuring proxies.
+.P
+The configuration of proxies (including via PAC URLs) comes from the
+environment (see below), but multiple servers are recognized through
+round\-robin DNS names of the host part specified in the target http
+URLs.  With each proxy (unless the option
+.B --only-proxies
+is given),
+.B pacwget
+first tries the target URL and if that fails and the host part of the URL
+is a round\-robin DNS name, it tries replacing the host part of the URL
+with each IP address from the round\-robin while using the same proxy.
+.SH "ENVIRONMENT"
+.B pacwget
+uses the following environment variables:
+.TP
+.B HTTP_PROXIES
+A semicolon\-separated list of URLs to try as http proxies in order.
+The last one in the list may be "DIRECT" which means to use no proxy
+and connect directly to the host server in target http URLs being
+retrieved.
+.TP
+.B http_proxy
+If HTTP_PROXIES is not set, but http_proxy is, then it is used as a
+single http proxy URL.  Note that it may identify a round\-robin of
+more than one proxy, but direct connections to the target server is not
+an option.
+.TP
+.B PAC_URLS
+If neither HTTP_PROXIES nor http_proxy is set, then PAC_URLS is used
+as a semicolon\-separated list of URLs to try to read Proxy Auto\-Config
+files to parse for a list of http proxies.  The word "auto"
+is converted to "http://wpad/wpad.dat" as is commonly used for Web
+Proxy Auto Discovery.  The last one in the list may be "DIRECT" which
+means to directly connect to the target server if no PAC file can be
+read.  Otherwise the PAC URLs may begin with http:// or file://, although
+if file:// is used then the myIpAddress() function available inside the
+PAC file uses a less reliable method to determine the client's IP
+address (using a DNS lookup on the hostname instead of using the
+client IP from the socket connecting to the PAC file's http server).
+The url & host parameters to the FindProxyForURL function in the PAC
+file are derived from the first command line http:// parameter.  If a
+PAC file is successfully read, it must return a list of proxies or
+"DIRECT", otherwise it is a fatal error and no further PAC URLs are
+tried.  The default value of $PAC_URLS if it is not set is
+"auto; DIRECT".
+.SH "OPTIONS"
+First, note that unlike with wget, the ordering of options is significant with
+.BR pacwget :
+only the options that come before a URL apply to that URL.  In this
+way, different options can be specified with multiple URLs in the same
+invocation of 
+.BR pacwget .
+The same list of proxies are applied to each http:// URL, although wget is
+invoked separately for each URL on the 
+.B pacwget
+command line.
+.P
+There is one option added by
+.BR pacwget :
+.TP
+.B \-\-only\-proxies
+Print to stdout a $HTTP_PROXIES-like list of proxies (that is,
+semicolon separated and may end in "DIRECT") that would be used
+instead of downloading the given URL(s) with wget.  This is useful
+for downloading and parsing PAC files.  Requires one URL that starts
+with http://.
+.P
+All other options are passed to wget, but some cause additional action in 
+.BR pacwget
+and are described here:
+.TP 
+.B \-\-connect\-timeout=SECS
+Sets the connection timeout to SECS seconds for retrieving both PAC URLs
+and target URLs.  If a proxy or a target server does not respond in
+that amount of time, the next one is tried.  Default 5.
+.TP
+.B \-\-read\-timeout=SECS
+Sets the read timeout to SECS seconds for retrieving both PAC URLs and
+target URLs.  If no data is received from a proxy or a target server in that
+amount of time, the next one is tried.  Default 10.
+.TP
+.B "\-T SECS"
+Sets both the connect and read timeout to SECS seconds.
+.TP
+.B "\-\-tries=N"
+Try all wget connections for both PAC URLs and target URLs N times.
+Default 1.
+.TP
+.B "\-\-inet4\-only" or "\-4"
+Use only IPv4 addresses for both wget and for the myIpAddress() function
+in PAC files.
+.TP
+.B "\-\-inet6\-only" or "\-6"
+Use only IPv6 addresses for both wget and for the myIpAddress() function
+in PAC files.
+.TP
+.B "\-\-debug" or "\-d"
+In addition to adding debug messages to all uses of wget, also enable
+debugging in PAC file parsing.
+.TP
+.B "\-\-verbose" or "\-v"
+This is the default for wget for the target URL, but if this is
+explicitly set then it is also used for PAC URLs.  In addition, if
+neither debug nor verbose is set, PAC URLs are retrieved with the
+wget \-\-quiet option.
+.SH "EXAMPLES"
+.PP 
+To retrieve target URL "http://www.google.com" using proxies defined
+in "http://wpad/wpad.dat" and not allow direct connections:
+.PP 
+$ export PAC_URLS=auto
+.br
+$ pacwget http://www.google.com
+.P
+To try an additional WPAD server after the usual one and allow
+direct connections if that also doesn't work:
+.PP 
+$ export PAC_URLS="auto; http://wpad.shared.domain/wpad.dat; DIRECT"
+.br
+$ pacwget http://www.google.com
+.P
+To directly set a list of possible proxies, with debugging enabled:
+.PP
+$ export HTTP_PROXIES="http://squid:3128;http://squid.friend.dom:3128"
+.br
+$ pacwget -d http://www.google.com
+.SH "SEE ALSO"
+pacparse(1),
+pacparser_init(3)
+.SH "BUGS"
+If you have come across a bug in pacwget, please submit a bug report at
+https://github.com/pacwget/pacwget/issues
+.SH "AUTHOR"
+Written by Dave Dykstra.
+.SH "RESOURCES"
+Homepage: https://github.com/pacwget/pacwget
+
