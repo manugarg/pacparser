@@ -1,0 +1,75 @@
+.TH "pacparse" "1" "" "" ""
+.SH "NAME"
+pacparse \- tool to parse Proxy Auto\-Config (PAC) files
+.SH "SYNOPSIS"
+.B pacparse \-p pacfile \-u url [\-h host] [\-c clientip] [\-U pacurl] [\-46edv]
+.SH "DESCRIPTION"
+.B pacparse 
+is a tool to parse Proxy Auto\-Config (PAC) files. It returns the
+proxy config string for the given URL and PAC file. 
+.B pacparse 
+uses the pacparser C library for most of its functionality.
+.SH "OPTIONS"
+.TP 
+.B \-p pacfile
+PAC file to parse. Specify "-" to read from standard input.
+.TP 
+.B \-u url
+URL to pass as a parameter to the PAC file's FindProxyForURL function.
+.TP 
+.B \-h host
+Host part of the URL. If not specified, it is determined from the URL.
+.TP 
+.B \-c clientip
+Client's IP address, as returned by the function myIpAddress() in PAC files.
+If not specified, it defaults to the IP address associated with the hostname
+of the machine on which the tool is running, or 127.0.0.1 if that can't
+be found.
+.TP 
+.B \-U pacurl
+URL that the PAC file came from, used to identify the client IP address in
+a more reliable way.  The tool parses the host name from the URL,
+attempts to connect to each address associated with that host name
+with a UDP socket until one is successful, and then uses the IP address
+associated with the client side of that socket.
+.TP 
+.B \-4
+Use only IPv4 addresses for -U.
+.TP
+.B \-6
+Use only IPv6 addresses for -U.
+.TP 
+.B \-e
+Enable Microsoft PAC extensions (dnsResolveEx, myIpAddressEx, isResolvableEx).
+.TP 
+.B \-d
+Enable debugging messages.
+.TP 
+.B \-v
+Print version and exit.
+.SH "EXAMPLES"
+.PP 
+To find out the proxy config string for the PAC file "wpad.dat" and the URL
+"http://www.google.com":
+.PP 
+$ pacparse \-p wpad.dat \-u http://www.google.com
+
+For a client with IP address 10.0.12.123:
+.PP 
+$ pacparse \-p wpad.dat \-c 10.0.12.123 \-u http://www.google.com
+
+For a PAC file hosted at http://wpad/wpad.dat:
+.PP 
+$ curl \-s http://wpad/wpad.dat | \\
+    pacparse \-p \- \-u http://google.com \-U http://wpad/wpad.dat
+.SH "SEE ALSO"
+pacwget(1),
+pacparser_init(3)
+.SH "BUGS"
+If you have come across a bug in pacparse, please submit a bug report at
+https://github.com/pacwget/pacwget/issues.
+.SH "AUTHOR"
+Written by Manu Garg (http://www.manugarg.com) and Dave Dykstra.
+.SH "RESOURCES"
+Homepage: https://github.com/pacwget/pacwget.
+
