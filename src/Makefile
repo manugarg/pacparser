@@ -167,7 +167,7 @@ install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
 clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
+	rm -f $(LIBRARY_LINK) $(LIBRARY) pacparser.o pactester pacparse.o pacparse pymod/pacparser_o_buildstamp jsapi_buildstamp
 	rm -rf dist
 	cd pymod && $(PYTHON) setup.py clean --all
 	cd spidermonkey && $(MAKE) clean
