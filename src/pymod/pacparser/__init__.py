@@ -21,7 +21,7 @@
 
 """
 Python module to parse pac files. Look at project's homepage
-http://code.google.com/p/pacparser for more information.
+http://github.com/pacparser/pacparser for more information.
 """
 
 __author__ = 'manugarg@gmail.com (Manu Garg)'
