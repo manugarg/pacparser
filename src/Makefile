@@ -134,7 +134,7 @@ install: all
 	install -m 755 pacparse $(BIN_PREFIX)/pacparse
 	install -m 755 pacwget $(BIN_PREFIX)/pacwget
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
-	# install pactester manpages
+	# install pactester, pacparse, and pacwget manpages
 	install -d $(MAN_PREFIX)/man1/
 	(test -d ../docs && install -m 644 ../docs/man/man1/*.1 $(MAN_PREFIX)/man1/) || true
 	# install pacparser manpages
