@@ -1,8 +1,9 @@
-// This file implements a command called pacparse that comes with
-//  the pacwget command  (https://github.com/pacwget/pacwget)
+// This file implements a command called pacparse for downloading and
+//  parsing proxy-auto-config files.  Intended to be used from scripts
+//  including pacwget.
 // Author: Dave Dykstra
 //
-// This file is based on pactester.c which comes with the pacparser library
+// This file is based on pactester.c from the pacparser library
 // (https://github.com/pacparser/pacparser/blob/master/src/pactester.c)
 // Copyright (C) 2008 Manu Garg.
 // Author: Manu Garg <manugarg@gmail.com>
