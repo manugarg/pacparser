@@ -45,7 +45,7 @@ PYTHON ?= python
 
 .PHONY: clean pymod install-pymod
 
-all: pacparser.dll pactester
+all: pacparser.dll pactester pacparse
 
 pacparser.o: pacparser.c pac_utils.h js.lib
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
@@ -66,7 +66,10 @@ pacparser.lib: pacparser.dll pacparser.def
 pactester: pactester.c pacparser.h pacparser.o
 	$(CC) pactester.c pacparser.o -o pactester -ljs -Lspidermonkey -lws2_32
 
-dist: pacparser.dll pactester pacparser.def
+pacparse: pacparse.c pacparser.h pacparser.o
+	$(CC) pacparse.c pacparser.o -o pacparse -ljs -Lspidermonkey -lws2_32
+
+dist: pacparser.dll pactester pacparse pacparser.def
 	if exist dist rmdir /s /q dist
 	mkdir dist
 	$(CP) pacparser.dll dist
@@ -98,7 +101,7 @@ pymod-dist-%:
 	cd pymod && py -$* setup.py dist
 
 clean:
-	$(RM) pacparser.dll *.lib pacparser.def pacparser.exp pacparser.o pactester.exe libpacparser.a
+	$(RM) pacparser.dll *.lib pacparser.def pacparser.exp pacparser.o pactester.exe pacparse.exe libpacparser.a
 	$(MAKE) -C spidermonkey -f Makefile.win32 clean
 	cd pymod && $(PYTHON) setup.py clean --all
 	$(RM) dist
