@@ -75,6 +75,8 @@ dist: pacparser.dll pactester pacparse pacparser.def
 	$(CP) pacparser.dll dist
 	$(CP) pacparser.h dist
 	$(CP) pactester.exe dist
+	$(CP) pacparse.exe dist
+	$(CP) pacwget dist
 	$(CP) pacparser.def dist
 	if exist pacparser.lib $(CP) pacparser.lib dist
 	$(CP) ..\README.md dist\README.txt
