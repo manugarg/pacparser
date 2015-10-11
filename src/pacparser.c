@@ -402,8 +402,8 @@ pacparser_parse_pac(const char *pacfile)
 
 // Finds proxy for the given URL and Host.
 //
-// If JavaScript engine is intialized and FindProxyForURL function is defined,
-// it evaluates code FindProxyForURL(url,host) in JavaScript context and
+// If JavaScript engine is intialized and findProxyForURL function is defined,
+// it evaluates code findProxyForURL(url,host) in JavaScript context and
 // returns the result.
 char *                                  // Proxy string or NULL if failed.
 pacparser_find_proxy(const char *url, const char *host)
@@ -425,13 +425,13 @@ pacparser_find_proxy(const char *url, const char *host)
     print_error("%s %s\n", error_prefix, "Pac parser is not initialized.");
     return NULL;
   }
-  // Test if FindProxyForURL is defined.
-  script = "typeof(FindProxyForURL);";
+  // Test if findProxyForURL is defined.
+  script = "typeof(findProxyForURL);";
   if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
   JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
   if (strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0) {
     print_error("%s %s\n", error_prefix,
-		  "Javascript function FindProxyForURL not defined.");
+		  "Javascript function findProxyForURL not defined.");
     return NULL;
   }
 
@@ -446,14 +446,14 @@ pacparser_find_proxy(const char *url, const char *host)
 
   script = (char*) malloc(32 + strlen(url) + strlen(host));
   script[0] = '\0';
-  strcat(script, "FindProxyForURL('");
+  strcat(script, "findProxyForURL('");
   strcat(script, sanitized_url);
   strcat(script, "', '");
   strcat(script, host);
   strcat(script, "')");
   if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
   if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval)) {
-    print_error("%s %s\n", error_prefix, "Problem in executing FindProxyForURL.");
+    print_error("%s %s\n", error_prefix, "Problem in executing findProxyForURL.");
     free(sanitized_url);
     free(script);
     return NULL;
