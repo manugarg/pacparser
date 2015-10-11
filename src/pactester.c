@@ -1,8 +1,7 @@
 // Copyright (C) 2008 Manu Garg.
 // Author: Manu Garg <manugarg@gmail.com>
 //
-// This file implements pactester (http://code.google.com/p/pactester) using
-// pacparser.
+// This file implements pactester using pacparser.
 //
 // pacparser is a library that provides methods to parse proxy auto-config
 // (PAC) files. Please read README file included with this package for more
