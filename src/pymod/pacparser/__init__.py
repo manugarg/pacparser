@@ -33,7 +33,7 @@ import os
 import re
 import sys
 
-_url_regex = re.compile('.*\:\/\/([^\/]+).*')
+_URL_REGEX = re.compile('^[^:]*:\/\/([^\/]+)')
 
 class URLError(Exception):
   def __init__(self, url):
@@ -62,7 +62,7 @@ def parse_pac_file(pacfile):
       pac_script = f.read()
       _pacparser.parse_pac_string(pac_script)
   except IOError:
-    raise IOError('Could not read the pacfile.')
+    raise IOError('Could not read the pacfile: {}'.format(pacfile))
 
 def parse_pac_string(pac_script):
   """
@@ -76,14 +76,13 @@ def find_proxy(url, host=None):
   defined, it's extracted from the url.
   """
   if host is None:
-    m = _url_regex.match(url)
+    m = _URL_REGEX.match(url)
     if not m:
       raise URLError(url)
     if len(m.groups()) is 1:
       host = m.groups()[0]
     else:
       raise URLError(url)
-
   return _pacparser.find_proxy(url, host)
 
 def version():
@@ -105,8 +104,7 @@ def just_find_proxy(pacfile, url, host=None):
   proxy just for one url.
   """
   if not os.path.isfile(pacfile):
-    raise IOError('Pac file does not exist : {}'.format(pacfile))
-
+    raise IOError('Pac file does not exist: {}'.format(pacfile))
   init()
   parse_pac(pacfile)
   proxy = find_proxy(url,host)
