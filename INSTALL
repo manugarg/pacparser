@@ -21,6 +21,17 @@ following instructions at:
     => make -C src pymod
     => sudo make -C src install-pymod
 
+  If it failed with runtests.py when building on non interconnected hosts like this;
+  ```
+    File "../tests/runtests.py", line 79, in runtests
+    raise Exception('Tests failed. Got "%s", expected "%s"' % (result, expected_result))
+  Exception: Tests failed. Got "END-OF-SCRIPT", expected "isResolvable"
+  ```
+  Please set an environment variable NO_INTERNET. Then it won't require internet and pass the test.
+  ```
+  $ export NO_INTERNET=1 && make -C src install-pymod
+  ```
+  
 On Win-32 Systems:
 #################
 
