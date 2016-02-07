@@ -1,15 +1,14 @@
 ##[pacparser](http://pacparser.github.io)
 ***[pacparser.github.io](http://pacparser.github.io)***
 
-pacparser is a library to parse proxy auto-config (PAC) files. Proxy
-auto-config files are a vastly used proxy configuration method these days. Web
-browsers can use a PAC file to determine which proxy server to use or whether
-to go direct for a given URL. PAC files are written in JavaScript and can be
-programmed to return different proxy methods (e.g. "PROXY proxy1:port; DIRECT")
-depending upon URL, source IP address, protocol, time of the day etc. PAC files
-introduce a lot of possibilities. Please look at the wikipedia entry for Proxy
-auto-config (http://en.wikipedia.org/wiki/Proxy_auto-config) for more
-information.
+pacparser is a library to parse proxy auto-config (PAC) files. Proxy auto-config
+files are a vastly used proxy configuration method these days. Web browsers can
+use a PAC file to determine which proxy server to use or whether to go direct
+for a given URL. PAC files are written in JavaScript and can be programmed to
+return different proxy methods (e.g., `"PROXY proxy1:port; DIRECT"`) depending
+upon URL, source IP address, protocol, time of the day etc. PAC files introduce
+a lot of possibilities. Please look at the wikipedia entry for Proxy auto-config
+(<http://en.wikipedia.org/wiki/Proxy_auto-config>) for more information.
 
 Needless to say, PAC files are now a widely accepted method for proxy
 configuration management and companies all over are using them in corporate
@@ -81,10 +80,12 @@ PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
 ```
 
 #### Platforms
-pacparser has been tested to work on Linux (all architectures supported by Debian), Mac OS X and Win32 systems.
+pacparser has been tested to work on Linux (all architectures supported by
+Debian), Mac OS X and Win32 systems.
 
-####Homepage
-[http://pacparser.github.io](http://pacparser.github.io)
+#### Homepage
+<http://pacparser.github.io>
 
 Author: Manu Garg <manugarg@gmail.com>  
 Copyright (C) 2007 Manu Garg.
+Copyright (C) 2015 Google, Inc.
