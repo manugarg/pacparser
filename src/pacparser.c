@@ -197,11 +197,13 @@ dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
   char* out;
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS] = "";
 
-  out = JS_malloc(cx, strlen(ipaddr) + 1);
-  // Return "" on failure.
+  // Return null on failure.
   if(resolve_host(name, ipaddr, ALL_IPS)) {
-    strcpy(out, "");
+    *rval = JSVAL_NULL;
+    return JS_TRUE;
   }
+
+  out = JS_malloc(cx, strlen(ipaddr) + 1);
   strcpy(out, ipaddr);
   JSString *str = JS_NewString(cx, out, strlen(out));
   *rval = STRING_TO_JSVAL(str);
