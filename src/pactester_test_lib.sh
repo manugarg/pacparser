@@ -41,7 +41,7 @@ PACPARSER_COMMON_ARGS=(-u http://invalid)
 
 #=== Early sanity check ===#
 
-(set +e; $PACTESTER --help; test $? -eq 1) \
+(set +e; ${PACTESTER} --help; test $? -eq 1) \
   || die "couldn't run 'pactester --help' as expected"
 
 #=== Helper functions ===#
@@ -49,26 +49,26 @@ PACPARSER_COMMON_ARGS=(-u http://invalid)
 register_failure() {
   global_result=FAIL
   echo '!!! FAIL !!!'
-  (set -x && cat $PAC && cat $OUT && cat $ERR) || die "unexpected error"
+  (set -x && cat ${PAC} && cat ${OUT} && cat ${ERR}) || die "unexpected error"
 }
 
 do_test_status() {
   (($# > 0)) || die "do_test_status(): missing expected exit_status argument"
-  local expected_exit_status=$1; shift
+  local expected_exit_status=${1}; shift
 
   let ++test_count
-  echo === TEST $test_count ===
-  cat >"$PAC"
+  echo === TEST ${test_count} ===
+  cat >"${PAC}"
 
   local exit_status=0 test_ok=true
-  declare -a args=("${PACPARSER_COMMON_ARGS[@]}" "$@" -p "$PAC")
-  (set -x && $PACTESTER "${args[@]}" >$OUT 2>$ERR) \
+  declare -a args=("${PACPARSER_COMMON_ARGS[@]}" "$@" -p "${PAC}")
+  (set -x && ${PACTESTER} "${args[@]}" >${OUT} 2>${ERR}) \
     || exit_status=$?
-  [[ $exit_status -eq $expected_exit_status ]] || test_ok=false
-  if [[ $expected_exit_status -eq 0 ]]; then
-    [[ "$(<$OUT)" == OK ]] || test_ok=false
+  [[ ${exit_status} -eq ${expected_exit_status} ]] || test_ok=false
+  if [[ ${expected_exit_status} -eq 0 ]]; then
+    [[ "$(<${OUT})" == OK ]] || test_ok=false
   fi
-  $test_ok || register_failure
+  ${test_ok} || register_failure
 }
 
 do_test_status_from_body() {
@@ -86,28 +86,28 @@ ok() {
 }
 
 ko() {
-  local rx=$1; shift
+  local rx=${1}; shift
   do_test_status_from_body 1 "$@"
-  (set -x && grep -E -e "$rx" $ERR) || register_failure
+  (set -x && grep -E -e "${rx}" ${ERR}) || register_failure
 }
 
 do_test_truth() {
   (($# > 0)) || die "do_test_truth(): missing expected truth argument"
-  case $1 in
+  case ${1} in
      true) local flip='';;
     false) local flip='!';;
-        *) die "do_test_truth(): invalid truth argument '$1'"
+        *) die "do_test_truth(): invalid truth argument '${1}'"
   esac
   shift
   local body=$(</dev/stdin)
-  do_test_status_from_body 0 "$@" <<<"return $flip($body) ? 'OK' : 'KO'"
+  do_test_status_from_body 0 "$@" <<<"return ${flip}(${body}) ? 'OK' : 'KO'"
 }
 
 js_true() { do_test_truth true "$@"; }
 js_false () { do_test_truth false "$@"; }
 
 declare_test_results_and_exit() {
-  echo "$global_result"
+  echo "${global_result}"
   if [[ $global_result == PASS ]]; then
     exit 0
   else

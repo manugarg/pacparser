@@ -4,9 +4,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <unistd.h>
+#ifdef XP_UNIX
+#  include <unistd.h>
+#endif
 
 #define STREQ(s1, s2) (strcmp((s1), (s2)) == 0)
+#define QUOTEME_(x) #x
+#define QUOTEME(x) QUOTEME_(x)
 
 int string_list_len(const char **list);
 void deep_free_string_list(const char **list);

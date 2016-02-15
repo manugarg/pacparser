@@ -21,78 +21,103 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
+#include "util.h"
 #include "pacparser.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
-#define STREQ(s1, s2) (strcmp((s1), (s2)) == 0)
 
 #define LINEMAX 4096  // Max length of any line read from text files (4 KiB)
 #define PACMAX (1024 * 1024)  // Max size of the PAC script (1 MiB)
+#define DOMAINMAX 32  // Max number of domains passed via option '-d'
 
-void usage(const char *progname)
+#ifndef HAVE_C_ARES
+#  define pacparser_set_dns_server(x) ((void)0)
+#  define pacparser_set_dns_domains(x) ((void)0)
+#endif
+
+void
+usage(const char *progname)
 {
-  fprintf(stderr, "\nUsage:  %s <-p pacfile> <-u url> [-h host] "
-          "[-c client_ip] [-e]", progname);
-  fprintf(stderr, "\n        %s <-p pacfile> <-f urlslist> "
-          "[-c client_ip] [-e]\n", progname);
-  fprintf(stderr, "\nOptions:\n");
-  fprintf(stderr, "  -p pacfile   : PAC file to test (specify '-' to read "
-                  "from standard input)\n");
-  fprintf(stderr, "  -u url       : URL to test for\n");
-  fprintf(stderr, "  -h host      : Host part of the URL\n");
-  fprintf(stderr, "  -c client_ip : client IP address (as returned by "
-                  "myIpAddres() function\n");
-  fprintf(stderr, "                 in PAC files), defaults to IP address "
-                  "on which it is running.\n");
-  fprintf(stderr, "  -e           : Deprecated: IPv6 extensions are enabled"
-                  "by default now.\n");
-  fprintf(stderr, "  -f urlslist  : a file containing list of URLs to be "
-          "tested.\n");
-  fprintf(stderr, "  -v           : print version and exit\n");
+  fprintf(stderr, "\n"
+"Usage: %s -p PAC-FILE -u URL [-e|-E] [-h HOST] [-c MY_IP] "
+           "[-s DNS_SERVER_IP] [-d DNS_DOMAIN_LIST]\n"
+"       %s -p PAC-FILE -f URL-LIST [-e|-E] [-h HOST] [-c MY_IP] "
+           "[-s DNS_SERVER_IP] [-d DNS_DOMAIN_LIST]\n"
+"\n"
+"Global flags:\n"
+"  -p pacfile   : PAC file to test (specify '-' to read from standard input)\n"
+"  -u url       : URL to test for\n"
+"  -h host      : Host part of the URL\n"
+"  -d domains   : comma-separated list of domains to search instead of the\n"
+"                 domains specified in resolv.conf or the domain derived\n"
+"                 from the kernel hostname variable\n"
+"  -s server_ip : IP address of the DNS server to use for DNS lookups,\n"
+"                 instead of the ones specified in resolv.conf\n"
+"  -c client_ip : client IP address (as returned by myIpAddres() function in\n"
+"                 PAC files), defaults to IP address on which it is running\n"
+"  -E           : disable microsoft extensions (*Ex functions);\n"
+"                 this is the default (TODO(slattarini): change it)\n"
+"  -e           : enable microsoft extensions (*Ex functions)\n"
+"                 those extensions are enabled by default\n"
+"  -f urlsfile  : a file containing list of URLs to be tested\n"
+"  -v           : print version and exit\n",
+    progname, progname);
   exit(1);
 }
 
-char *get_host_from_url(const char *url)
+char *
+get_host_from_url(const char *url)
 {
-  // copy  url to a  pointer that we'll use to seek through the string.
+  // Copy url to a pointer that we'll use to seek through the string.
   char *p = strdup(url);
-  // Move to :
+
+  // Move to first ':'.
   while (*p != ':' && *p != '\0')
     p++;
-  if (p[0] == '\0'||                    // We reached end without hitting :
-      p[1] != '/' || p[2] != '/'        // Next two characters are not //
-      ) {
+  if (p[0] == '\0'||              // we reached end without hitting ':'
+      p[1] != '/' || p[2] != '/'  // next two characters are not '//'
+  ) {
     fprintf(stderr, "pactester.c: Not a proper URL\n");
     return NULL;
   }
-  p = p + 3;                            // Get past '://'
+  p += 3;  // get past '://'
   // Host part starts from here.
   char *host = p;
-  if (*p == '\0' || *p == '/' || *p == ':') {   // If host part is null.
+  if (*p == '\0' || *p == '/' || *p == ':') {  // if host part is null
     fprintf(stderr, "pactester.c: Not a proper URL\n");
     return NULL;
   }
-  // Seek until next /, : or end of string.
+  if (*p == '[') {
+    // Expect a bracketed IPv6 address, such as in the URL http://[::1]
+    while (*p != ']' && *p != '\0')
+      p++;
+    if (!*p) {
+      // Never saw the closing bracket.
+      fprintf(stderr, "pactester.c: Not a proper URL\n");
+      return NULL;
+    }
+  }
+  // Seek until next '/', ':' or end of string.
   while (*p != '/' && *p != ':' && *p != '\0')
     p++;
   *p = '\0';
   return host;
 }
 
-int main(int argc, char* argv[])
+int
+main(int argc, char* argv[])
 {
-  char *pacfile = NULL, *url = NULL, *host = NULL, *urlslist = NULL,
-       *client_ip = NULL;
+  const char *pacfile = NULL, *host = NULL, *url = NULL, *urlsfile = NULL,
+             *client_ip = NULL, *dns_server_ip = NULL, *dns_domains_list = NULL;
+
+  int disable_microsoft_extensions = 0;
+
+  int rc = 0;
 
   if (argv[1] && (STREQ(argv[1], "--help") || STREQ(argv[1], "--helpshort"))) {
     usage(argv[0]);
   }
 
   signed char c;
-  while ((c = getopt(argc, argv, "evp:u:h:f:c:")) != -1)
+  while ((c = getopt(argc, argv, "eEvp:u:h:f:c:s:d:")) != -1)
     switch (c)
     {
       case 'v':
@@ -108,12 +133,22 @@ int main(int argc, char* argv[])
         host = optarg;
         break;
       case 'f':
-        urlslist = optarg;
+        urlsfile = optarg;
         break;
       case 'c':
         client_ip = optarg;
         break;
-      case 'e':
+      case 's':
+        dns_server_ip = optarg;
+        break;
+      case 'd':
+        dns_domains_list = optarg;
+        break;
+     case 'e':
+        disable_microsoft_extensions = 0;
+        break;
+     case 'E':
+        disable_microsoft_extensions = 1;
         break;
       case '?':
         usage(argv[0]);
@@ -126,9 +161,31 @@ int main(int argc, char* argv[])
     fprintf(stderr, "pactester.c: You didn't specify the PAC file\n");
     usage(argv[0]);
   }
-  if (!url && !urlslist) {
+  if (!url && !urlsfile) {
     fprintf(stderr, "pactester.c: You didn't specify the URL\n");
     usage(argv[0]);
+  }
+
+  if (disable_microsoft_extensions)
+    pacparser_disable_microsoft_extensions();
+
+  if (dns_server_ip)
+    pacparser_set_dns_server(dns_server_ip);
+
+  if (dns_domains_list) {
+    int i = 0;
+    const char *dns_domains[DOMAINMAX + 1];
+    char *p = strtok((char *) dns_domains_list, ",");
+    while (p != NULL) {
+      dns_domains[i++] = strdup(p);
+      if (i > DOMAINMAX) {
+        fprintf(stderr, "Too many domains specified. Maximum allowed "
+                "number is: %d", DOMAINMAX);
+      }
+      p = strtok(NULL, ",");
+    }
+    dns_domains[i] = NULL;
+    pacparser_set_dns_domains(dns_domains);
   }
 
   // Initialize pacparser.
@@ -143,14 +200,13 @@ int main(int argc, char* argv[])
     size_t script_size = 1;  // for the null terminator
     char buffer[LINEMAX];
 
-    script = (char *) malloc(sizeof(char) * LINEMAX);
+    script = (char *) calloc(1, sizeof(char));
     if (script == NULL) {
       perror("pactetser.c: Failed to allocate the memory for the script");
       return 1;
     }
-    script[0] = '\0';                   // Null terminate to prepare for strcat
 
-    while (fgets(buffer, LINEMAX, stdin)) {
+    while (fgets(buffer, sizeof(buffer), stdin)) {
       if (strlen(buffer) == 0)
         break;
       char *old = script;
@@ -167,7 +223,7 @@ int main(int argc, char* argv[])
         free(old);
         return 1;
       }
-      strcat(script, buffer);
+      strncat(script, buffer, strlen(buffer));
     }
 
     if (ferror(stdin)) {
@@ -203,10 +259,9 @@ int main(int argc, char* argv[])
     // If the host was not explicitly given, get it from the URL.
     // If that fails, return with error (the get_host_from_url()
     // function will print a proper error message in that case).
-    host = host ? host: get_host_from_url(url);
-    if (!host) {
+    host = host ? host : get_host_from_url(url);
+    if (!host)
       return 1;
-    }
     proxy = pacparser_find_proxy(url, host);
     if (proxy == NULL) {
       fprintf(stderr, "pactester.c: %s %s.\n",
@@ -217,11 +272,11 @@ int main(int argc, char* argv[])
     printf("%s\n", proxy);
   }
 
-  else if (urlslist) {
+  else if (urlsfile) {
     char line[LINEMAX];
     FILE *fp;
-    if (!(fp = fopen(urlslist, "r"))) {
-      fprintf(stderr, "pactester.c: Could not open urlslist: %s", urlslist);
+    if (!(fp = fopen(urlsfile, "r"))) {
+      fprintf(stderr, "pactester.c: Could not open urlsfile: %s", urlsfile);
       pacparser_cleanup();
       return 1;
     }
@@ -240,9 +295,10 @@ int main(int argc, char* argv[])
              *urlend != ' ' && *urlend != '\t')
         urlend++;  // keep moving till you hit space or end of string
       *urlend = '\0';
-      if (!(host = get_host_from_url(url)) )
+      if (!(host = get_host_from_url(url))) {
+        rc = 1;  // will exit with error.
         continue;
-      proxy = NULL;
+      }
       proxy = pacparser_find_proxy(url, host);
       if (proxy == NULL) {
         fprintf(stderr, "pactester.c: %s %s.\n",
@@ -250,12 +306,11 @@ int main(int argc, char* argv[])
         pacparser_cleanup();
         return 1;
       }
-      if (proxy)
-        printf("%s : %s\n", url, proxy);
+      printf("%s : %s\n", url, proxy);
     }
     fclose(fp);
   }
 
   pacparser_cleanup();
-  return 0;
+  return rc;
 }

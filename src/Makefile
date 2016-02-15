@@ -30,6 +30,22 @@ OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 LIBRARY_NAME = libpacparser
 LIB_VER = 1
 
+PYTHON ?= python
+
+LDFLAGS =
+CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
+
+# TODO(slattarini): add actual support/integration for c-ares
+HAVE_C_ARES ?= auto
+ifeq "$(HAVE_C_ARES)" "yes"
+  C_ARES_CFLAGS += -DHAVE_C_ARES
+else
+  $(warning c-ares (http://c-ares.haxx.se) library not found or disabled)
+  $(warning Some DNS-related features will be unavilable)
+endif
+CFLAGS += $(C_ARES_CFLAGS)
+LDFLAGS += $(C_ARES_LDFLAGS)
+
 # This Makefile should at least work on Linux and Mac OS X. It should work on
 # most other types of Unix systems too, but I have not put any conscious effort
 # for that.
@@ -53,12 +69,6 @@ ifeq ($(OS_ARCH),Darwin)
   ifeq ($(MAC_GT_5),false)
     SMCFLAGS =
   endif
-endif
-
-CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
-
-ifndef PYTHON
-  PYTHON = python
 endif
 
 # Spidermonkey library.

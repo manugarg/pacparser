@@ -10,6 +10,8 @@ set -u -e
 # an invalid IP as the address of the DNS server.
 # And some systems run (likely for caching reasons) a local DNS server
 # listening on 127.0.0.1; so we use a somewhat more creative address.
+# TODO(slattarini): add a pacparser option to really disable DNS resolution!
+# And then get rid of this hack.
 PACPARSER_COMMON_ARGS+=(-s 127.1.2.3)
 
 #=== Option parsing ===#
@@ -18,11 +20,12 @@ PACPARSER_COMMON_ARGS+=(-s 127.1.2.3)
 
 #=== Tests ===#
 
-## Sanity check: DNS queries actually fail.
-ok <<'EOT'
-  var r = dnsResolve('www.google.com');
-  return (r == null) ? 'OK': 'KO -> ' + r;
-EOT
+# TODO(slattarini): add a pacparser option to really disable DNS resolution!
+### Sanity check: DNS queries actually fail.
+#ok <<'EOT'
+#  var r = dnsResolve('www.google.com');
+#  return (r == null) ? 'OK': 'KO -> ' + r;
+#EOT
 
 ## Basics.
 
@@ -73,17 +76,17 @@ js_false <<< 'dnsDomainIs("google.com", "www.google.com")'
 js_false <<< 'dnsDomainIs("google.com", ".edu")'
 
 # localHostOrDomainIs
-js_true   <<< 'localHostOrDomainIs("www", "www.google.com")'
-js_true   <<< 'localHostOrDomainIs("www.google", "www.google.com")'
-js_true   <<< 'localHostOrDomainIs("www.google.com", "www.google.com")'
-js_true   <<< 'localHostOrDomainIs("www", "www")'
-js_true   <<< 'localHostOrDomainIs("www.edu", "www.edu")'
-js_true   <<< 'localHostOrDomainIs("www", "www.edu")'
-js_false  <<< 'localHostOrDomainIs("www.google.com.", "www.google.com")'
-js_false  <<< 'localHostOrDomainIs("www.corp.google.com", "www.google.com")'
-js_false  <<< 'localHostOrDomainIs("www.google.com", "www")'
-js_false  <<< 'localHostOrDomainIs("www.edu", "www")'
-js_false  <<< 'localHostOrDomainIs("www.edu", "www.ed")'
+js_true  <<< 'localHostOrDomainIs("www", "www.google.com")'
+js_true  <<< 'localHostOrDomainIs("www.google", "www.google.com")'
+js_true  <<< 'localHostOrDomainIs("www.google.com", "www.google.com")'
+js_true  <<< 'localHostOrDomainIs("www", "www")'
+js_true  <<< 'localHostOrDomainIs("www.edu", "www.edu")'
+js_true  <<< 'localHostOrDomainIs("www", "www.edu")'
+js_false <<< 'localHostOrDomainIs("www.google.com.", "www.google.com")'
+js_false <<< 'localHostOrDomainIs("www.corp.google.com", "www.google.com")'
+js_false <<< 'localHostOrDomainIs("www.google.com", "www")'
+js_false <<< 'localHostOrDomainIs("www.edu", "www")'
+js_false <<< 'localHostOrDomainIs("www.edu", "www.ed")'
 
 # isInNet (notice: this could use more extensive tests...)
 js_true  <<< 'isInNet("1.2.3.4", "1.0.0.0", "255.0.0.0")'
@@ -105,9 +108,10 @@ ok <<'EOF'
   return r == 4 ? "OK" : "KO -> " + r
 EOF
 
-## Syntax errors are diagnosed.
+## Runtime/syntax errors are diagnosed.
 
-ko 'SyntaxError: unterminated string literal' <<< 'return "OK;'
+ko 'Failed to evaluate the pac script' <<< 'return "OK;'
+ko 'Failed to evaluate the pac script' <<< 'if(0'
 ko 'ReferenceError: none is not defined' <<< 'return none.foo;'
 
 ## Valid URLs.
@@ -119,48 +123,50 @@ unset url
 
 ## Invalid URLs.
 
-for url in '' 'http' 'http:' 'http:/' 'http://' 'http://[::1'; do
-  ko "pactester.c: Not a proper URL" -u "${url}" <<< 'return "OK"'
+for opt in '-e' '-E'; do
+  for url in '' 'http' 'http:' 'http:/' 'http://' 'http://[::1'; do
+    ko "pactester.c: Not a proper URL" -u "${url}" ${opt} <<< 'return "OK"'
+  done
 done
-unset url
+unset url opt
 
 ## "Microsoft extensions" functions.
 
-for f in isResolvableEx dnsResolveEx myIpAddressEx isInNetEx; do
+for func in isResolvableEx dnsResolveEx myIpAddressEx isInNetEx; do
 
-  case $f in
-    myIpAddressEx) x='';;
-    isInNetEx) x='"1.2.3.4", "1.0.0.0/8"';;
-    *) x='"1.2.3.4"';;
+  case ${func} in
+    myIpAddressEx) arg='';;
+    isInNetEx) arg='"1.2.3.4", "1.0.0.0/8"';;
+    *) arg='"1.2.3.4"';;
   esac
 
-  ok <<EOT
-    var t = typeof($f);
+  ok -E <<EOT
+    var t = typeof(${func});
     if (t == 'undefined')
       return 'OK';
     return 'KO -> ' + t;
 EOT
 
   ok -e <<EOT
-    var t = typeof($f);
+    var t = typeof(${func});
     if (t == 'function')
       return 'OK';
     return 'KO -> ' + t;
 EOT
 
-  ko "ReferenceError: $f is not defined" <<< "$f($x)"
-  ok -e <<< "return $f($x) ? 'OK' : 'KO'"
+  ko "ReferenceError: ${func} is not defined" -E <<< "${func}(${arg})"
+  ok -e <<< "return ${func}(${arg}) ? 'OK' : 'KO'"
 
 done
-unset f x
+unset func arg
 
-do_test_status_from_body 1 -e <<'EOT'
+do_test_status 0 -e <<'EOT'
   function FindProxyForURLEx(host, url) {
     return 'OK'
   }
 EOT
 
-do_test_status_from_body 1 -E <<'EOT'
+do_test_status 1 -E <<'EOT'
   function FindProxyForURLEx(host, url) {
     return 'OK'
   }
@@ -200,7 +206,7 @@ declare -r -a IP_ADDRESSES=(
 )
 
 for ip4 in "${IP_V4_ADDRESSES[@]}"; do
-  js_true <<< "isResolvable('${ip4}')"
+  js_true -E <<< "isResolvable('${ip4}')"
 done
 unset ip4
 
@@ -210,7 +216,7 @@ done
 unset ip
 
 for ip4 in "${IP_V4_ADDRESSES[@]}"; do
-  ok <<EOT
+  ok -E <<EOT
     var ip = '${ip4}';
     var result = dnsResolve(ip)
     return result == ip ? 'OK' : 'KO -> ' + result;
