@@ -115,13 +115,14 @@ static void
 print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 {
   print_error("JSERROR: %s:%d:\n    %s\n",
-	      (report->filename ? report->filename : "NULL"), report->lineno,
-	      message);
+              (report->filename ? report->filename : "NULL"), report->lineno,
+              message);
 }
 
-// DNS Resolve function; used by other routines.
-// This function is used by dnsResolve, dnsResolveEx, myIpAddress,
-// myIpAddressEx.
+//------------------------------------------------------------------------------
+
+// DNS Resolve function; used by other routines which implement the PAC builtins
+// dnsResolve(), dnsResolveEx(), myIpAddress(), myIpAddressEx().
 static char *
 resolve_host(const char *hostname, int all_ips)
 {
@@ -166,102 +167,85 @@ resolve_host(const char *hostname, int all_ips)
   return ipaddr_list;
 }
 
-// dnsResolve in JS context; not available in core JavaScript.
-// returns javascript null if not able to resolve.
+//------------------------------------------------------------------------------
+
+// dnsResolve/dnsResolveEx in JS context; not available in core JavaScript.
+// Return javascript null if not able to resolve.
 static JSBool
-dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+dns_resolve_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
+                      jsval *rval, int all_ips)
 {
   char *name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
   char *ipaddr, *out;
 
-  if ((ipaddr = resolve_host(name, ONE_IP)) == NULL) {
-    // Return null on failure.
+  if ((ipaddr = resolve_host(name, all_ips)) == NULL) {
     *rval = JSVAL_NULL;
     return JS_TRUE;
   }
 
-  out = JS_malloc(cx, strlen(ipaddr) + 1);
-  strcpy(out, ipaddr);
+  out = JS_strdup(cx, ipaddr);
+  free(ipaddr);
   JSString *str = JS_NewString(cx, out, strlen(out));
   *rval = STRING_TO_JSVAL(str);
   return JS_TRUE;
 }
 
-// dnsResolveEx in JS context; not available in core JavaScript.
-// returns javascript null if not able to resolve.
+static JSBool
+dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+{
+  return dns_resolve_internals(cx, obj, argc, argv, rval, ONE_IP);
+}
+
 static JSBool
 dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
                jsval *rval)
 {
-  char *name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
+  return dns_resolve_internals(cx, obj, argc, argv, rval, ALL_IPS);
+}
+
+//------------------------------------------------------------------------------
+
+// myIpAddress/myIpAddressEx in JS context; not available in core JavaScript.
+// Return 127.0.0.1 if not able to determine local ip.
+static JSBool
+my_ip_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
+                jsval *rval, int all_ips)
+{
   char *ipaddr, *out;
 
-  // Return null on failure.
-  if ((ipaddr = resolve_host(name, ALL_IPS)) == NULL) {
-    *rval = JSVAL_NULL;
-    return JS_TRUE;
+  if (myip) {
+    // If "my" (client's) IP address is already set.
+    ipaddr = strdup(myip);
+  } else {
+    // According to the gethostname(2) manpage, SUSv2  guarantees that
+    // "Host names are limited to 255 bytes".
+    char name[256];
+    gethostname(name, sizeof(name));
+    if ((ipaddr = resolve_host(name, all_ips)) == NULL) {
+      ipaddr = strdup("127.0.0.1");
+    }
   }
 
-  out = JS_malloc(cx, strlen(ipaddr) + 1);
-  strcpy(out, ipaddr);
+  out = JS_strdup(cx, ipaddr);
+  free(ipaddr);
   JSString *str = JS_NewString(cx, out, strlen(out));
   *rval = STRING_TO_JSVAL(str);
   return JS_TRUE;
 }
 
-// myIpAddress in JS context; not available in core JavaScript.
-// returns 127.0.0.1 if not able to determine local ip.
 static JSBool
 my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
-  char *ipaddr, *out;
-
-  if (myip) {
-    // If my (client's) IP address is already set.
-    ipaddr = strdup(myip);
-  } else {
-    // According to the gethostname(2) manpage, SUSv2  guarantees that
-    // "Host names are limited to 255 bytes".
-    char name[256];
-    gethostname(name, sizeof(name));
-    if ((ipaddr = resolve_host(name,  ONE_IP)) == NULL) {
-      ipaddr = strdup("127.0.0.1");
-    }
-  }
-
-  out = JS_malloc(cx, strlen(ipaddr) + 1);
-  strcpy(out, ipaddr);
-  JSString *str = JS_NewString(cx, out, strlen(out));
-  *rval = STRING_TO_JSVAL(str);
-  return JS_TRUE;
+  return my_ip_internals(cx, obj, argc, argv, rval, ONE_IP);
 }
 
-// myIpAddressEx in JS context; not available in core JavaScript.
-// returns 127.0.0.1 if not able to determine local ip.
 static JSBool
 my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
-  char *out, *ipaddr;
-
-  if (myip) {
-    // If my (client's) IP address is already set.
-    ipaddr = strdup(myip);
-  } else {
-    // According to the gethostname(2) manpage, SUSv2  guarantees that
-    // "Host names are limited to 255 bytes".
-    char name[256];
-    gethostname(name, sizeof(name));
-    if ((ipaddr = resolve_host(name,  ALL_IPS)) == NULL) {
-      ipaddr = strdup("127.0.0.1");
-    }
-  }
-
-  out = JS_malloc(cx, strlen(ipaddr) + 1);
-  strcpy(out, ipaddr);
-  JSString *str = JS_NewString(cx, out, strlen(out));
-  *rval = STRING_TO_JSVAL(str);
-  return JS_TRUE;
+  return my_ip_internals(cx, obj, argc, argv, rval, ALL_IPS);
 }
+
+//------------------------------------------------------------------------------
 
 // Define some JS context related variables.
 static JSRuntime *rt = NULL;
@@ -277,8 +261,9 @@ static JSClass global_class = {
 void
 pacparser_setmyip(const char *ip)
 {
-  myip = malloc(strlen(ip) +1);         // Allocate space just to be sure.
-  strcpy(myip, ip);
+  if (myip)
+    free(myip);
+  myip = (const char *) strdup(ip);
 }
 
 // Decprecated: This function doesn't do anything.
