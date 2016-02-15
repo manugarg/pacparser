@@ -22,9 +22,9 @@
 # packaging script.
 -include version.mk
 
-VERSION ?= $(shell git describe --always --tags --candidate=100)
-
+BASH ?= bash
 PREFIX ?= /usr
+VERSION ?= $(shell git describe --always --tags --candidate=100)
 OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 
 LIBRARY_NAME = libpacparser
@@ -71,7 +71,7 @@ INC_PREFIX = $(PREFIX)/include
 BIN_PREFIX = $(PREFIX)/bin
 MAN_PREFIX = $(PREFIX)/share/man
 
-.PHONY: clean pymod install-pymod
+.PHONY: default all docs clean pymod install-pymod install testpactester
 all: testpactester
 
 spidermonkey/js/src: spidermonkey/js.tar.gz
@@ -102,6 +102,19 @@ testpactester: pactester
 	echo "Running tests for pactester."
 	NO_INTERNET=$(NO_INTERNET) ../tests/runtests.sh
 
+newtestpactester: pactester
+	@set -u -e; st=0; \
+	 export PACTESTER="$$(pwd)/$<"; \
+	 (set -x && $(BASH) pactester_nointernet_test.sh) || st=1; \
+	 tst=pactester_dns_test.sh; \
+	 if test -n '$(NO_INTERNET)'; then \
+	   echo "Skipping test $${tst}"; \
+	 else \
+	   args=$$(test -z '$(NO_IPV6)' && printf '%s\n' '--ipv6'); \
+	   (set -x && $(BASH) $${tst} $${args}) || st=1; \
+	 fi; \
+	 exit $${st}
+
 docs:
 	../tools/generatedocs.sh
 
@@ -122,7 +135,7 @@ install: all
 	(test -d ../docs/html && install -m 644 ../docs/html/* $(PREFIX)/share/doc/pacparser/html/) || true
 	# install examples
 	install -d $(PREFIX)/share/doc/pacparser/examples/
-	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc//pacparser/examples/) || true
+	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc/pacparser/examples/) || true
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h libjs.a
@@ -133,6 +146,8 @@ install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
 clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
+	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester
+	rm -f pac.js.tmp stdout.tmp stderr.tmp
+	rm -f pymod/pacparser_o_buildstamp jsapi_buildstamp
 	cd pymod && python setup.py clean --all
 	cd spidermonkey && "$(MAKE)" clean
