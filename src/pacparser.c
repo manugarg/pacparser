@@ -122,17 +122,17 @@ print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 // DNS Resolve function; used by other routines.
 // This function is used by dnsResolve, dnsResolveEx, myIpAddress,
 // myIpAddressEx.
-static int
-resolve_host(const char *hostname, char *ipaddr_list, int all_ips)
+static char *
+resolve_host(const char *hostname, int all_ips)
 {
   struct addrinfo hints;
   struct addrinfo *result;
   struct addrinfo *ai;
   char ipaddr[INET6_ADDRSTRLEN];
-  int error;
 
-  // Truncate ipaddr_list to an empty string.
-  ipaddr_list[0] = '\0';
+  int max_results = all_ips ? MAX_IP_RESULTS : 1;
+  char *ipaddr_list = malloc(INET6_ADDRSTRLEN * max_results + 1);
+  ipaddr_list[0] = '\0'; // Truncate ipaddr_list to an empty string.
 
 #ifdef _WIN32
   // On windows, we need to initialize the winsock dll first.
@@ -145,10 +145,11 @@ resolve_host(const char *hostname, char *ipaddr_list, int all_ips)
   hints.ai_family = all_ips ? AF_UNSPEC : AF_INET;
   hints.ai_socktype = SOCK_STREAM;
 
-  error = getaddrinfo(hostname, NULL, &hints, &result);
-  if (error) return error;
-  int i = 0;
-  for(ai = result; ai != NULL && i < MAX_IP_RESULTS; ai = ai->ai_next, i++) {
+  if (getaddrinfo(hostname, NULL, &hints, &result) != 0)
+    return NULL;
+
+  int i;
+  for(ai = result, i = 0; ai != NULL && i < MAX_IP_RESULTS; ai = ai->ai_next, i++) {
     getnameinfo(ai->ai_addr, ai->ai_addrlen, ipaddr, sizeof(ipaddr), NULL, 0,
                 NI_NUMERICHOST);
     if (ipaddr_list[0] == '\0')
@@ -162,7 +163,7 @@ resolve_host(const char *hostname, char *ipaddr_list, int all_ips)
   WSACleanup();
 #endif
 
-  return 0;
+  return ipaddr_list;
 }
 
 // dnsResolve in JS context; not available in core JavaScript.
@@ -170,12 +171,11 @@ resolve_host(const char *hostname, char *ipaddr_list, int all_ips)
 static JSBool
 dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
-  char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
-  char* out;
-  char ipaddr[INET6_ADDRSTRLEN] = "";
+  char *name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
+  char *ipaddr, *out;
 
-  // Return null on failure.
-  if(resolve_host(name, ipaddr, ONE_IP)) {
+  if ((ipaddr = resolve_host(name, ONE_IP)) == NULL) {
+    // Return null on failure.
     *rval = JSVAL_NULL;
     return JS_TRUE;
   }
@@ -193,12 +193,11 @@ static JSBool
 dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
                jsval *rval)
 {
-  char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
-  char* out;
-  char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS] = "";
+  char *name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
+  char *ipaddr, *out;
 
   // Return null on failure.
-  if(resolve_host(name, ipaddr, ALL_IPS)) {
+  if ((ipaddr = resolve_host(name, ALL_IPS)) == NULL) {
     *rval = JSVAL_NULL;
     return JS_TRUE;
   }
@@ -215,16 +214,18 @@ dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
 static JSBool
 my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
-  char ipaddr[INET6_ADDRSTRLEN];
-  char* out;
+  char *ipaddr, *out;
 
-  if (myip)                  // If my (client's) IP address is already set.
-    strcpy(ipaddr, myip);
-  else {
+  if (myip) {
+    // If my (client's) IP address is already set.
+    ipaddr = strdup(myip);
+  } else {
+    // According to the gethostname(2) manpage, SUSv2  guarantees that
+    // "Host names are limited to 255 bytes".
     char name[256];
     gethostname(name, sizeof(name));
-    if (resolve_host(name, ipaddr, ONE_IP)) {
-      strcpy(ipaddr, "127.0.0.1");
+    if ((ipaddr = resolve_host(name,  ONE_IP)) == NULL) {
+      ipaddr = strdup("127.0.0.1");
     }
   }
 
@@ -240,16 +241,18 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 static JSBool
 my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
-  char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS];
-  char* out;
+  char *out, *ipaddr;
 
-  if (myip)                  // If my (client's) IP address is already set.
-    strcpy(ipaddr, myip);
-  else {
+  if (myip) {
+    // If my (client's) IP address is already set.
+    ipaddr = strdup(myip);
+  } else {
+    // According to the gethostname(2) manpage, SUSv2  guarantees that
+    // "Host names are limited to 255 bytes".
     char name[256];
     gethostname(name, sizeof(name));
-    if (resolve_host(name, ipaddr, ALL_IPS)) {
-      strcpy(ipaddr, "127.0.0.1");
+    if ((ipaddr = resolve_host(name,  ALL_IPS)) == NULL) {
+      ipaddr = strdup("127.0.0.1");
     }
   }
 
