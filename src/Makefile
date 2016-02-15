@@ -74,8 +74,8 @@ MAN_PREFIX = $(PREFIX)/share/man
 .PHONY: clean pymod install-pymod
 all: testpactester
 
-spidermonkey/js/src: spidermonkey/js-?.?.?.tar.gz
-	tar xzvf spidermonkey/js-?.?.?.tar.gz -C spidermonkey
+spidermonkey/js/src: spidermonkey/js.tar.gz
+	tar xzvf $< -C spidermonkey
 	sed -i -e 's:\(shell uname -s | sed /\\ /s//_/\):\1 | sed s,GNU.*,Linux,:g' spidermonkey/js/src/config.mk
 
 jsapi_buildstamp: spidermonkey/js/src
