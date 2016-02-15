@@ -126,11 +126,12 @@ unset url
 
 ## "Microsoft extensions" functions.
 
-for f in isResolvableEx dnsResolveEx myIpAddressEx; do
+for f in isResolvableEx dnsResolveEx myIpAddressEx isInNetEx; do
 
   case $f in
     myIpAddressEx) x='';;
-    *) x='"0.0.0.0"';;
+    isInNetEx) x='"1.2.3.4", "1.0.0.0/8"';;
+    *) x='"1.2.3.4"';;
   esac
 
   ok <<EOT
@@ -148,10 +149,24 @@ EOT
 EOT
 
   ko "ReferenceError: $f is not defined" <<< "$f($x)"
-  ok -e <<< "$f($x); return 'OK'"
+  ok -e <<< "return $f($x) ? 'OK' : 'KO'"
 
 done
 unset f x
+
+do_test_status_from_body 1 -e <<'EOT'
+  function FindProxyForURLEx(host, url) {
+    return 'OK'
+  }
+EOT
+
+do_test_status_from_body 1 -E <<'EOT'
+  function FindProxyForURLEx(host, url) {
+    return 'OK'
+  }
+EOT
+(set -x && grep -E -e "ReferenceError: FindProxyForURL is not defined" $ERR) \
+  || register_failure
 
 ## Make sure we don't try to send actual DNS queries for hostnames that
 ## are actually IP addresses.

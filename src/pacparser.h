@@ -129,6 +129,9 @@ void pacparser_set_error_printer(pacparser_error_printer func	// Printing functi
 /// Deprecated. IPv6 extension (*Ex functions) are enabled by default now.
 void pacparser_enable_microsoft_extensions(void);
 
+/// @brief Disable Microsoft IPv6 PAC extensions.
+void pacparser_disable_microsoft_extensions(void);
+
 /// @brief Returns pacparser version.
 /// @returns version string if version defined, "" otherwise.
 ///

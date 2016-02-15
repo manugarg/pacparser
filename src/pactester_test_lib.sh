@@ -58,14 +58,8 @@ do_test_status() {
 
   let ++test_count
   echo === TEST $test_count ===
+  cat >"$PAC"
 
-  local body=$(</dev/stdin)
-  sed 's/^ *!//' > $PAC <<EOF
-    !function FindProxyForURL(host, url) {
-    !  $body
-    !  return "KO"
-    !}
-EOF
   local exit_status=0 test_ok=true
   declare -a args=("${PACPARSER_COMMON_ARGS[@]}" "$@" -p "$PAC")
   (set -x && $PACTESTER "${args[@]}" >$OUT 2>$ERR) \
@@ -77,13 +71,23 @@ EOF
   $test_ok || register_failure
 }
 
+do_test_status_from_body() {
+  local body=$(</dev/stdin)
+  do_test_status "$@" <<<"$(
+    printf '%s\n' 'function FindProxyForURL(host, url) {'
+    printf '%s\n' "  ${body}"
+    printf '%s\n' '  return "KO"'
+    printf '%s\n' '}'
+  )"
+}
+
 ok() {
-  do_test_status 0 "$@";
+  do_test_status_from_body 0 "$@";
 }
 
 ko() {
   local rx=$1; shift
-  do_test_status 1 "$@"
+  do_test_status_from_body 1 "$@"
   (set -x && grep -E -e "$rx" $ERR) || register_failure
 }
 
@@ -96,7 +100,7 @@ do_test_truth() {
   esac
   shift
   local body=$(</dev/stdin)
-  do_test_status 0 "$@" <<<"return $flip($body) ? 'OK' : 'KO'"
+  do_test_status_from_body 0 "$@" <<<"return $flip($body) ? 'OK' : 'KO'"
 }
 
 js_true() { do_test_truth true "$@"; }

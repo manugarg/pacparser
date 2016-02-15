@@ -46,11 +46,14 @@
 // To make some function calls more readable.
 #define ONE_IP 0
 #define ALL_IPS 1
+#define DISABLED 0
+#define ENABLED 1
 
 // TODO(slattarini): this should disappear.
 #define MAX_IP_RESULTS 10
 
 static char *myip = NULL;
+static int enable_microsoft_extensions = ENABLED;
 
 // Default error printer function.
 static int		// Number of characters printed, negative value in case of output error.
@@ -266,14 +269,29 @@ pacparser_setmyip(const char *ip)
   myip = (const char *) strdup(ip);
 }
 
-// Decprecated: This function doesn't do anything.
-//
-// This function doesn't do anything. Microsoft exntensions are now enabled by
-// default.
-void
-pacparser_enable_microsoft_extensions()
+static void
+pacparser_set_microsoft_extensions(int setting)
 {
-  return;
+  if (cx) {
+    print_error(
+        "pacparser.c: pacparser_set_microsoft_extensions: cannot enable or "
+        "disable microsoft extensions now. This function should be called "
+        "before pacparser_init.\n");
+    return;
+  }
+  enable_microsoft_extensions = setting;
+}
+
+void
+pacparser_enable_microsoft_extensions(void)
+{
+  pacparser_set_microsoft_extensions(ENABLED);
+}
+
+void
+pacparser_disable_microsoft_extensions(void)
+{
+  pacparser_set_microsoft_extensions(DISABLED);
 }
 
 // Initialize PAC parser.
@@ -301,43 +319,64 @@ pacparser_init()
     !JS_InitStandardClasses(cx, global)
   ) {
     print_error("%s %s\n", error_prefix,
-                "Could not initialize  JavaScript runtime.");
+                "Could not initialize JavaScript runtime.");
     return 0;
   }
   JS_SetErrorReporter(cx, print_jserror);
   // Export our functions to Javascript engine
   if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve, 1, 0)) {
     print_error("%s %s\n", error_prefix,
-		  "Could not define dnsResolve in JS context.");
+                "Could not define dnsResolve in JS context.");
     return 0;
   }
   if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0)) {
     print_error("%s %s\n", error_prefix,
-		  "Could not define myIpAddress in JS context.");
+                "Could not define myIpAddress in JS context.");
     return 0;
   }
-  if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0)) {
-    print_error("%s %s\n", error_prefix,
-      "Could not define dnsResolveEx in JS context.");
-    return 0;
+  if (enable_microsoft_extensions) {
+    if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0)) {
+      print_error("%s %s\n", error_prefix,
+                  "Could not define dnsResolveEx in JS context.");
+      return 0;
+    }
+    if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0)) {
+      print_error("%s %s\n", error_prefix,
+                  "Could not define myIpAddressEx in JS context.");
+      return 0;
+    }
   }
-  if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0)) {
-    print_error("%s %s\n", error_prefix,
-		  "Could not define myIpAddressEx in JS context.");
-    return 0;
-  }
-  // Evaluate pacUtils. Utility functions required to parse pac files.
+
+  // Evaluate pac_builtins -- code defining utility functions required to
+  // parse PAC files.
   if (!JS_EvaluateScript(cx,           // JS engine context
                          global,       // global object
-                         pacUtils,     // this is defined in pac_utils.h
-                         strlen(pacUtils),
+                         pac_builtins, // this is defined in pac_utils.h
+                         strlen(pac_builtins),
                          NULL,         // filename (NULL in this case)
-                         1,            // line number, used for reporting.
+                         1,            // line number, used for reporting
                          &rval)) {
     print_error("%s %s\n", error_prefix,
-		  "Could not evaluate pacUtils defined in pac_utils.h.");
+                "Could not evaluate pac_builtins defined in pac_utils.h");
     return 0;
   }
+
+  if (enable_microsoft_extensions) {
+    // Evaluate pac_builtins_ex -- code defining extensions to the utility
+    // functions defined above.
+    if (!JS_EvaluateScript(cx,              // JS engine context
+                           global,          // global object
+                           pac_builtins_ex, // this is defined in pac_utils.h
+                           strlen(pac_builtins_ex),
+                           NULL,            // filename (NULL in this case)
+                           1,               // line number, used for reporting
+                           &rval)) {
+      print_error("%s: %s\n", error_prefix,
+                  "Could not evaluate pac_builtins_ex defined in pac_utils.h");
+      return 0;
+    }
+  }
+
   if (_debug()) print_error("DEBUG: Pacparser Initalized.\n");
   return 1;
 }
