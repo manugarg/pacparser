@@ -247,7 +247,7 @@ my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
     char name[256];
     gethostname(name, sizeof(name));
     if (resolve_host(name, ipaddr, ALL_IPS)) {
-      strcpy(ipaddr, "");
+      strcpy(ipaddr, "127.0.0.1");
     }
   }
 
