@@ -43,6 +43,11 @@
 #include "pac_utils.h"
 #include "pacparser.h"
 
+// To make some function calls more readable.
+#define ONE_IP 0
+#define ALL_IPS 1
+
+// TODO(slattarini): this should disappear.
 #define MAX_IP_RESULTS 10
 
 static char *myip = NULL;
@@ -118,8 +123,7 @@ print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 // This function is used by dnsResolve, dnsResolveEx, myIpAddress,
 // myIpAddressEx.
 static int
-resolve_host(const char *hostname, char *ipaddr_list, int max_results,
-             int req_ai_family)
+resolve_host(const char *hostname, char *ipaddr_list, int all_ips)
 {
   struct addrinfo hints;
   struct addrinfo *result;
@@ -138,28 +142,32 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results,
 
   memset(&hints, 0, sizeof(struct addrinfo));
 
-  hints.ai_family = req_ai_family;
+  hints.ai_family = all_ips ? AF_UNSPEC : AF_INET;
   hints.ai_socktype = SOCK_STREAM;
 
   error = getaddrinfo(hostname, NULL, &hints, &result);
   if (error) return error;
   int i = 0;
-  for(ai = result; ai != NULL && i < max_results; ai = ai->ai_next, i++) {
+  for(ai = result; ai != NULL && i < MAX_IP_RESULTS; ai = ai->ai_next, i++) {
     getnameinfo(ai->ai_addr, ai->ai_addrlen, ipaddr, sizeof(ipaddr), NULL, 0,
                 NI_NUMERICHOST);
-    if (ipaddr_list[0] == '\0') sprintf(ipaddr_list, "%s", ipaddr);
-    else sprintf(ipaddr_list, "%s;%s", ipaddr_list, ipaddr);
+    if (ipaddr_list[0] == '\0')
+      sprintf(ipaddr_list, "%s", ipaddr);
+    else
+      sprintf(ipaddr_list, "%s;%s", ipaddr_list, ipaddr);
   }
   freeaddrinfo(result);
+
 #ifdef _WIN32
   WSACleanup();
 #endif
+
   return 0;
 }
 
 // dnsResolve in JS context; not available in core JavaScript.
 // returns javascript null if not able to resolve.
-static JSBool                                  // JS_TRUE or JS_FALSE
+static JSBool
 dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
   char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
@@ -167,7 +175,7 @@ dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   char ipaddr[INET6_ADDRSTRLEN] = "";
 
   // Return null on failure.
-  if(resolve_host(name, ipaddr, 1, AF_INET)) {
+  if(resolve_host(name, ipaddr, ONE_IP)) {
     *rval = JSVAL_NULL;
     return JS_TRUE;
   }
@@ -181,7 +189,7 @@ dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 
 // dnsResolveEx in JS context; not available in core JavaScript.
 // returns javascript null if not able to resolve.
-static JSBool                                  // JS_TRUE or JS_FALSE
+static JSBool
 dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
                jsval *rval)
 {
@@ -191,7 +199,7 @@ dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
 
   out = JS_malloc(cx, strlen(ipaddr) + 1);
   // Return "" on failure.
-  if(resolve_host(name, ipaddr, MAX_IP_RESULTS, AF_UNSPEC)) {
+  if(resolve_host(name, ipaddr, ALL_IPS)) {
     strcpy(out, "");
   }
   strcpy(out, ipaddr);
@@ -202,7 +210,7 @@ dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
 
 // myIpAddress in JS context; not available in core JavaScript.
 // returns 127.0.0.1 if not able to determine local ip.
-static JSBool                                  // JS_TRUE or JS_FALSE
+static JSBool
 my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
   char ipaddr[INET6_ADDRSTRLEN];
@@ -213,7 +221,7 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   else {
     char name[256];
     gethostname(name, sizeof(name));
-    if (resolve_host(name, ipaddr, 1, AF_INET)) {
+    if (resolve_host(name, ipaddr, ONE_IP)) {
       strcpy(ipaddr, "127.0.0.1");
     }
   }
@@ -227,7 +235,7 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 
 // myIpAddressEx in JS context; not available in core JavaScript.
 // returns 127.0.0.1 if not able to determine local ip.
-static JSBool                                  // JS_TRUE or JS_FALSE
+static JSBool
 my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS];
@@ -238,7 +246,7 @@ my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
   else {
     char name[256];
     gethostname(name, sizeof(name));
-    if (resolve_host(name, ipaddr, MAX_IP_RESULTS, AF_UNSPEC)) {
+    if (resolve_host(name, ipaddr, ALL_IPS)) {
       strcpy(ipaddr, "");
     }
   }
@@ -290,12 +298,20 @@ pacparser_init()
   jsval rval;
   char *error_prefix = "pacparser.c: pacparser_init:";
   // Initialize JS engine
-  if (!(rt = JS_NewRuntime(8L * 1024L * 1024L)) ||
-      !(cx = JS_NewContext(rt, 8192)) ||
-      !(global = JS_NewObject(cx, &global_class, NULL, NULL)) ||
-      !JS_InitStandardClasses(cx, global)) {
-    print_error("%s %s\n", error_prefix, "Could not initialize  JavaScript "
-		  "runtime.");
+  if (
+    // https://developer.mozilla.org/en-US/docs/Mozilla/Projects/SpiderMonkey/JSAPI_reference/JS_NewRuntime
+    // First argument is "the maximum number of allocated bytes after
+    // which garbage collection is run".
+    !(rt = JS_NewRuntime(8L * 1024L * 1024L)) ||
+    // https://developer.mozilla.org/en-US/docs/Mozilla/Projects/SpiderMonkey/JSAPI_reference/JS_NewContext
+    // The second argument is "a memory management tuning parameter which
+    // most users should not adjust; 8192 is a good default value".
+    !(cx = JS_NewContext(rt, 8192)) ||
+    !(global = JS_NewObject(cx, &global_class, NULL, NULL)) ||
+    !JS_InitStandardClasses(cx, global)
+  ) {
+    print_error("%s %s\n", error_prefix,
+                "Could not initialize  JavaScript runtime.");
     return 0;
   }
   JS_SetErrorReporter(cx, print_jserror);
@@ -463,11 +479,11 @@ pacparser_find_proxy(const char *url, const char *host)
   return JS_GetStringBytes(JS_ValueToString(cx, rval));
 }
 
-// Destroys JavaSctipt Engine.
+// Destroys JavaScript Engine.
 void
 pacparser_cleanup()
 {
-  // Reinitliaze config variables.
+  // Reinitialize config variables.
   myip = NULL;
   if (cx) {
     JS_DestroyContext(cx);
