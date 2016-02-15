@@ -85,18 +85,21 @@ jsapi_buildstamp: spidermonkey/js/src
 libjs.a: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" "$(MAKE)" jslib
 
-pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
-	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
-	touch pymod/pacparser_o_buildstamp
+%.o: %.c
+	$(CC) $(CFLAGS) $(SHFLAGS) -c $< -o $@
 
-$(LIBRARY): pacparser.o libjs.a
+pacparser.o: pac_utils.h pacparser.h jsapi_buildstamp
+util.o: util.c util.h
+pactester.o: pacparser.h util.h
+
+$(LIBRARY): util.o pacparser.o libjs.a
 	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a -lm
 
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
-pactester: pactester.c pacparser.h $(LIBRARY_LINK)
-	$(CC) $(CFLAGS) $(LDFLAGS) pactester.c -o pactester -lpacparser -L. -I.
+pactester: pactester.o $(LIBRARY_LINK)
+	$(CC) $(CFLAGS) $(LDFLAGS) $@.o -o $@ -lpacparser -L. -I.
 
 testpactester: pactester
 	echo "Running tests for pactester."
@@ -137,7 +140,6 @@ install: all
 	install -d $(PREFIX)/share/doc/pacparser/examples/
 	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc/pacparser/examples/) || true
 
-# Targets to build python module
 pymod: pacparser.o pacparser.h libjs.a
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
 	$(PYTHON) ../tests/runtests.py
@@ -146,8 +148,7 @@ install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
 clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester
+	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a *.o pactester jsapi_buildstamp
 	rm -f pac.js.tmp stdout.tmp stderr.tmp
-	rm -f pymod/pacparser_o_buildstamp jsapi_buildstamp
 	cd pymod && python setup.py clean --all
 	cd spidermonkey && "$(MAKE)" clean
