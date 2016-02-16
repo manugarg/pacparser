@@ -41,7 +41,7 @@ ifeq "$(HAVE_C_ARES)" "yes"
   C_ARES_CFLAGS += -DHAVE_C_ARES
 else
   $(warning c-ares (http://c-ares.haxx.se) library not found or disabled)
-  $(warning Some DNS-related features will be unavilable)
+  $(warning Some DNS-related features will be unavailable)
 endif
 CFLAGS += $(C_ARES_CFLAGS)
 LDFLAGS += $(C_ARES_LDFLAGS)

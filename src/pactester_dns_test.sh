@@ -16,14 +16,13 @@ while (($# > 0)); do
   esac
   shift
 done
-# TODO(slattarini): make this an option once we've integrated with c-ares
-has_c_ares=false
+readonly has_ipv6_support
 
-readonly has_ipv6_support has_c_ares
-
-# We want to use a fixed, well-known DNS resolver, the only
-# way to have reasonably predictable results.
-PACPARSER_COMMON_ARGS+=(-s 8.8.8.8)
+if ${has_c_ares}; then
+  # We want to use a fixed, well-known DNS resolver, the only
+  # way to have reasonably predictable results.
+  PACPARSER_COMMON_ARGS+=(-s 8.8.8.8)
+fi
 
 set -- # clear command line args
 

@@ -29,8 +29,8 @@
 #define DOMAINMAX 32  // Max number of domains passed via option '-d'
 
 #ifndef HAVE_C_ARES
-#  define pacparser_set_dns_server(x) ((void)0)
-#  define pacparser_set_dns_domains(x) ((void)0)
+#  define pacparser_set_dns_server(x) ((void)(x), 0)
+#  define pacparser_set_dns_domains(x) ((void)(x), 0)
 #endif
 
 void
@@ -109,7 +109,6 @@ main(int argc, char* argv[])
              *client_ip = NULL, *dns_server_ip = NULL, *dns_domains_list = NULL;
 
   int disable_microsoft_extensions = 0;
-
   int rc = 0;
 
   if (argv[1] && (STREQ(argv[1], "--help") || STREQ(argv[1], "--helpshort"))) {
@@ -169,8 +168,12 @@ main(int argc, char* argv[])
   if (disable_microsoft_extensions)
     pacparser_disable_microsoft_extensions();
 
-  if (dns_server_ip)
-    pacparser_set_dns_server(dns_server_ip);
+  if (dns_server_ip) {
+    if (!pacparser_set_dns_server(dns_server_ip)) {
+      fprintf(stderr, "pactester.c: pacparser_set_dns_server() failed\n");
+      return 1;
+    }
+  }
 
   if (dns_domains_list) {
     int i = 0;
@@ -179,13 +182,17 @@ main(int argc, char* argv[])
     while (p != NULL) {
       dns_domains[i++] = strdup(p);
       if (i > DOMAINMAX) {
-        fprintf(stderr, "Too many domains specified. Maximum allowed "
-                "number is: %d", DOMAINMAX);
+        fprintf(stderr, "pactester.c: Too many domains specified. "
+                "Maximum allowed number is: %d\n", DOMAINMAX);
+        return 1;
       }
       p = strtok(NULL, ",");
     }
     dns_domains[i] = NULL;
-    pacparser_set_dns_domains(dns_domains);
+    if (!pacparser_set_dns_domains(dns_domains)) {
+      fprintf(stderr, "pactester.c: pacparser_set_dns_domains() failed\n");
+      return 1;
+    }
   }
 
   // Initialize pacparser.
@@ -212,8 +219,8 @@ main(int argc, char* argv[])
       char *old = script;
       script_size += strlen(buffer);
       if (script_size > PACMAX) {
-        fprintf(stderr, "Input file is too big. Maximum allowed size is: %d",
-                PACMAX);
+        fprintf(stderr, "pactester.c: Input file is too big. "
+                "Maximum allowed size in bytes is: %d\n", PACMAX);
         free(script);
         return 1;
       }
@@ -264,7 +271,7 @@ main(int argc, char* argv[])
       return 1;
     proxy = pacparser_find_proxy(url, host);
     if (proxy == NULL) {
-      fprintf(stderr, "pactester.c: %s %s.\n",
+      fprintf(stderr, "pactester.c: %s %s\n",
               "Problem in finding proxy for", url);
       pacparser_cleanup();
       return 1;
@@ -301,7 +308,7 @@ main(int argc, char* argv[])
       }
       proxy = pacparser_find_proxy(url, host);
       if (proxy == NULL) {
-        fprintf(stderr, "pactester.c: %s %s.\n",
+        fprintf(stderr, "pactester.c: %s %s\n",
                 "Problem in finding proxy for", url);
         pacparser_cleanup();
         return 1;
