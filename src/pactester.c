@@ -36,87 +36,103 @@
 void
 usage(const char *progname)
 {
+  const static char *common_args =
+      "-p PAC-FILE [-e|-E] [-h HOST] [-c MY_IP] [-r DNS_RESOLVER_TYPE] "
+      "[-s DNS_SERVER_IP] [-d DNS_DOMAIN_LIST]";
+
   fprintf(stderr, "\n"
-"Usage: %s -p PAC-FILE -u URL [-e|-E] [-h HOST] [-c MY_IP] "
-           "[-s DNS_SERVER_IP] [-d DNS_DOMAIN_LIST]\n"
-"       %s -p PAC-FILE -f URL-LIST [-e|-E] [-h HOST] [-c MY_IP] "
-           "[-s DNS_SERVER_IP] [-d DNS_DOMAIN_LIST]\n"
+"Usage:\n"
+"  %s -u URL %s\n"
+"or:\n"
+"  %s -f URL-LIST %s\n"
 "\n"
 "Global flags:\n"
-"  -p pacfile   : PAC file to test (specify '-' to read from standard input)\n"
-"  -u url       : URL to test for\n"
-"  -h host      : Host part of the URL\n"
+"  -p pacfile   : PAC file to test (specify '-' to read from standard input).\n"
+"  -u url       : URL to test for.\n"
+"  -h host      : Host part of the URL.\n"
+"  -r dns_type  : the DNS resolver variant; valid values are:\n"
+"                 * none: DNS resolution attempts will all return the\n"
+"                     'null' JavaScript object (but literal ip addresses will\n"
+"                     still be recognized and successfully \"resolved\");\n"
+"                 * getaddrinfo: DNS resolution will use the getaddrinfo(3)\n"
+"                     function from the system C library;\n"
+"                 * c-ares: DNS resolution will use the c-ares library; if\n"
+"                     that was not available at compile time, an error will\n"
+"                     be returned at setup time.\n"
 "  -d domains   : comma-separated list of domains to search instead of the\n"
 "                 domains specified in resolv.conf or the domain derived\n"
-"                 from the kernel hostname variable\n"
+"                 from the kernel hostname variable; this can be specified\n"
+"                 only when the DNS resolver type is \"c-ares\".\n"
 "  -s server_ip : IP address of the DNS server to use for DNS lookups,\n"
-"                 instead of the ones specified in resolv.conf\n"
+"                 instead of the ones specified in resolv.conf; this can be\n"
+"                 specified only when the DNS resolver type is \"c-ares\".\n"
 "  -c client_ip : client IP address (as returned by myIpAddres() function in\n"
 "                 PAC files), defaults to IP address on which it is running\n"
-"  -E           : disable microsoft extensions (*Ex functions);\n"
-"                 this is the default (TODO(slattarini): change it)\n"
-"  -e           : enable microsoft extensions (*Ex functions)\n"
+"  -E           : disable microsoft extensions (*Ex functions)\n"
+"  -e           : enable microsoft extensions (*Ex functions); notice that\n"
 "                 those extensions are enabled by default\n"
 "  -f urlsfile  : a file containing list of URLs to be tested\n"
 "  -v           : print version and exit\n",
-    progname, progname);
+    progname, common_args, progname, common_args);
   exit(1);
 }
 
 char *
 get_host_from_url(const char *url)
 {
-  // Copy url to a pointer that we'll use to seek through the string.
+  // Copy url to a (modifiable) buffer that we'll use to seek through
+  // the string.
   char *p = strdup(url);
 
-  // Move to first ':'.
+  // Move to first ':'
   while (*p != ':' && *p != '\0')
     p++;
-  if (p[0] == '\0'||              // we reached end without hitting ':'
-      p[1] != '/' || p[2] != '/'  // next two characters are not '//'
-  ) {
-    fprintf(stderr, "pactester.c: Not a proper URL\n");
-    return NULL;
-  }
+  if (p[0] == '\0')
+    // We reached end without hitting ':'
+    goto not_a_proper_url;
+  if (p[1] != '/' || p[2] != '/')
+    // Next two characters are not '//'
+    goto not_a_proper_url;
   p += 3;  // get past '://'
   // Host part starts from here.
   char *host = p;
-  if (*p == '\0' || *p == '/' || *p == ':') {  // if host part is null
-    fprintf(stderr, "pactester.c: Not a proper URL\n");
-    return NULL;
-  }
+  if (*p == '\0' || *p == '/' || *p == ':')
+    // If host part is null.
+    goto not_a_proper_url;
   if (*p == '[') {
     // Expect a bracketed IPv6 address, such as in the URL http://[::1]
     while (*p != ']' && *p != '\0')
       p++;
-    if (!*p) {
+    if (!*p)
       // Never saw the closing bracket.
-      fprintf(stderr, "pactester.c: Not a proper URL\n");
-      return NULL;
-    }
+      goto not_a_proper_url;
   }
   // Seek until next '/', ':' or end of string.
   while (*p != '/' && *p != ':' && *p != '\0')
     p++;
   *p = '\0';
   return host;
+
+not_a_proper_url:
+  fprintf(stderr, "pactester.c: Not a proper URL: %s\n", url);
+  return NULL;
 }
 
 int
 main(int argc, char* argv[])
 {
   const char *pacfile = NULL, *host = NULL, *url = NULL, *urlsfile = NULL,
-             *client_ip = NULL, *dns_server_ip = NULL, *dns_domains_list = NULL;
+             *client_ip = NULL, *dns_server_ip = NULL, *dns_domains_list = NULL,
+             *dns_resolver_variant = "getaddrinfo";
 
   int disable_microsoft_extensions = 0;
-  int rc = 0;
 
   if (argv[1] && (STREQ(argv[1], "--help") || STREQ(argv[1], "--helpshort"))) {
     usage(argv[0]);
   }
 
   signed char c;
-  while ((c = getopt(argc, argv, "eEvp:u:h:f:c:s:d:")) != -1)
+  while ((c = getopt(argc, argv, "eEvp:u:h:f:c:s:d:r:")) != -1)
     switch (c)
     {
       case 'v':
@@ -143,6 +159,9 @@ main(int argc, char* argv[])
       case 'd':
         dns_domains_list = optarg;
         break;
+      case 'r':
+        dns_resolver_variant = optarg;
+        break;
      case 'e':
         disable_microsoft_extensions = 0;
         break;
@@ -161,12 +180,26 @@ main(int argc, char* argv[])
     usage(argv[0]);
   }
   if (!url && !urlsfile) {
-    fprintf(stderr, "pactester.c: You didn't specify the URL\n");
+    fprintf(stderr, "pactester.c: You didn't specify a URL or URL-FILE\n");
     usage(argv[0]);
   }
 
-  if (disable_microsoft_extensions)
-    pacparser_disable_microsoft_extensions();
+  dns_resolver_t type;
+  if STREQ(dns_resolver_variant, "none") {
+    type = DNS_NONE;
+  } else if STREQ(dns_resolver_variant, "getaddrinfo") {
+    type = DNS_GETADDRINFO;
+  } else if STREQ(dns_resolver_variant, "c-ares") {
+    type = DNS_C_ARES;
+  } else {
+    fprintf(stderr, "pactester.c: invalid DNS resolver vaiant \"%s\"\n",
+            dns_resolver_variant);
+    usage(argv[0]);
+  }
+  if (!pacparser_set_dns_resolver_type(type)) {
+    fprintf(stderr, "pactester.c: pacparser_set_dns_resolver_type() failed\n");
+    return 1;
+  }
 
   if (dns_server_ip) {
     if (!pacparser_set_dns_server(dns_server_ip)) {
@@ -194,6 +227,9 @@ main(int argc, char* argv[])
       return 1;
     }
   }
+
+  if (disable_microsoft_extensions)
+    pacparser_disable_microsoft_extensions();
 
   // Initialize pacparser.
   if (!pacparser_init()) {
@@ -261,6 +297,7 @@ main(int argc, char* argv[])
     pacparser_setmyip(client_ip);
 
   char *proxy;
+  int rc = 0;
 
   if (url) {
     // If the host was not explicitly given, get it from the URL.

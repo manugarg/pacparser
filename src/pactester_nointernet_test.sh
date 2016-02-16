@@ -6,15 +6,8 @@ set -u -e
 
 . ./pactester_test_lib.sh || exit 1
 
-if ${has_c_ares}; then
-  # We want to make sure not to do any non-local network request, so use
-  # an invalid IP as the address of the DNS server.
-  # And some systems run (likely for caching reasons) a local DNS server
-  # listening on 127.0.0.1; so we use a somewhat more creative address.
-  # TODO(slattarini): add a pacparser option to really disable DNS resolution!
-  # And then get rid of this hack.
-  PACPARSER_COMMON_ARGS+=(-s 127.1.2.3)
-fi
+# We want to make sure not to do any DNS query, local or remote.
+PACPARSER_COMMON_ARGS+=(-r "none")
 
 #=== Option parsing ===#
 
@@ -22,12 +15,11 @@ fi
 
 #=== Tests ===#
 
-# TODO(slattarini): add a pacparser option to really disable DNS resolution!
-### Sanity check: DNS queries actually fail.
-#ok <<'EOT'
-#  var r = dnsResolve('www.google.com');
-#  return (r == null) ? 'OK': 'KO -> ' + r;
-#EOT
+## Sanity check: DNS queries actually fail.
+ok <<'EOT'
+  var r = dnsResolve('www.google.com');
+  return (r == null) ? 'OK': 'KO -> ' + r;
+EOT
 
 ## Basics.
 

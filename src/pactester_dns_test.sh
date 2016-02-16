@@ -18,10 +18,14 @@ while (($# > 0)); do
 done
 readonly has_ipv6_support
 
+# TODO(slattarini): make this configurable once we've integrated with c-ares.
+# The run the test with both c-ares enabled and disabled.
+readonly has_c_ares=false
+
 if ${has_c_ares}; then
   # We want to use a fixed, well-known DNS resolver, the only
   # way to have reasonably predictable results.
-  PACPARSER_COMMON_ARGS+=(-s 8.8.8.8)
+  PACPARSER_COMMON_ARGS+=(-r "c-ares" -s "8.8.8.8")
 fi
 
 set -- # clear command line args

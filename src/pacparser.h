@@ -100,8 +100,22 @@ void pacparser_cleanup(void);
 ///
 /// Sets my IP address to a custom value. This is the IP address returned by
 /// myIpAddress() javascript function.
-void pacparser_setmyip(const char *ip                 // Custom IP address.
-                       );
+void pacparser_setmyip(const char *ip);
+
+/// @brief Type definition for valid DNS resolver types.
+typedef enum {
+  DNS_NONE,
+  DNS_GETADDRINFO,
+  DNS_C_ARES
+} dns_resolver_t;
+
+/// @brief Set DNS resolver to use
+/// @param type DNS resolver type to use, must have type dns_resolver_t.
+/// @returns 0 on failure, non-zero otherwise.
+///
+/// Return value will be zero only if asked to use c-ares as the DNS resolver,
+/// but that library was not available at compile time.
+int pacparser_set_dns_resolver_type(dns_resolver_t type);
 
 /// @brief Type definition for pacparser_error_printer.
 /// @param fmt printf format

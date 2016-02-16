@@ -27,7 +27,8 @@
 
 #ifdef XP_UNIX
 #include <unistd.h>
-#include <sys/socket.h>                // for AF_INET
+#include <arpa/inet.h>  // for inet_pton
+#include <sys/socket.h>  // for AF_INET
 #include <netdb.h>
 #endif
 
@@ -50,14 +51,13 @@
 #define DISABLED 0
 #define ENABLED 1
 
-// TODO(slattarini): this should disappear.
-#define MAX_IP_RESULTS 10
-
 static char *myip = NULL;
 static int enable_microsoft_extensions = ENABLED;
 
 // Default error printer function.
-static int		// Number of characters printed, negative value in case of output error.
+// Returns the number of characters printed, and a negative value
+// in case of output error.
+static int
 _default_error_printer(const char *fmt, va_list argp)
 {
   return vfprintf(stderr, fmt, argp);
@@ -128,7 +128,7 @@ print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 // DNS Resolve functions; used by other routines which implement the PAC
 // builtins dnsResolve(), dnsResolveEx(), myIpAddress(), myIpAddressEx().
 
-int
+static int
 addrinfo_len(const struct addrinfo *ai)
 {
   int i = 0;
@@ -140,7 +140,7 @@ addrinfo_len(const struct addrinfo *ai)
 }
 
 static char *
-resolve_host(const char *hostname, int all_ips)
+resolve_host_getaddrinfo(const char *hostname, int all_ips)
 {
   struct addrinfo *ai[2] = {NULL, NULL};
 
@@ -199,13 +199,58 @@ resolve_host_done:
   char *retval = *ips ? join_string_list(ips, ";") : NULL;
   // No memory leaks: free the ip addresses and the pointers to them.
   deep_free_string_list(ips);
+  // And we are done.
   return retval;
+}
+
+static int
+is_ip_address(const char *str)
+{
+  char ipaddr4[INET_ADDRSTRLEN], ipaddr6[INET6_ADDRSTRLEN];
+  return (inet_pton(AF_INET, str, &ipaddr4) > 0 ||
+          inet_pton(AF_INET6, str, &ipaddr6) > 0);
+}
+
+static char *
+resolve_host_literal_ips_only(const char *hostname, int all_ips)
+{
+  (void)all_ips;  // shut up linter
+  return is_ip_address(hostname) ? strdup(hostname) : NULL;
 }
 
 //------------------------------------------------------------------------------
 
+// Functions for DNS resolution.
+
+typedef char *(*pacparser_resolve_host_func)(const char *, int all_ips);
+pacparser_resolve_host_func resolve_host_func = &resolve_host_getaddrinfo;
+
+int
+pacparser_set_dns_resolver_type(dns_resolver_t type)
+{
+  switch (type) {
+    case DNS_NONE:
+      resolve_host_func = &resolve_host_literal_ips_only;
+      return 1;
+    case DNS_GETADDRINFO:
+      resolve_host_func = &resolve_host_getaddrinfo;
+      return 1;
+    case DNS_C_ARES:
+#ifdef C_ARES
+      resolve_host_func = &resolve_host_c_ares;
+      return 1;
+#else
+      print_error("pacparser.c: cannot use c-ares as DNS resolver: was not "
+                  "available at compile time.\n");
+      return 0;
+#endif
+  }
+  abort(); /* NOTREACHED */
+}
+
 // dnsResolve/dnsResolveEx in JS context; not available in core JavaScript.
 // Return javascript null if not able to resolve.
+
 static JSBool
 dns_resolve_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
                       jsval *rval, int all_ips)
@@ -213,7 +258,7 @@ dns_resolve_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
   char *name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
   char *ipaddr, *out;
 
-  if ((ipaddr = resolve_host(name, all_ips)) == NULL) {
+  if ((ipaddr = resolve_host_func(name, all_ips)) == NULL) {
     *rval = JSVAL_NULL;
     return JS_TRUE;
   }
@@ -238,10 +283,9 @@ dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
   return dns_resolve_internals(cx, obj, argc, argv, rval, ALL_IPS);
 }
 
-//------------------------------------------------------------------------------
-
 // myIpAddress/myIpAddressEx in JS context; not available in core JavaScript.
 // Return 127.0.0.1 if not able to determine local ip.
+
 static JSBool
 my_ip_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
                 jsval *rval, int all_ips)
@@ -256,7 +300,7 @@ my_ip_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
     // "Host names are limited to 255 bytes".
     char name[256];
     gethostname(name, sizeof(name));
-    if ((ipaddr = resolve_host(name, all_ips)) == NULL) {
+    if ((ipaddr = resolve_host_func(name, all_ips)) == NULL) {
       ipaddr = strdup("127.0.0.1");
     }
   }
@@ -308,7 +352,7 @@ pacparser_set_microsoft_extensions(int setting)
     print_error(
         "pacparser.c: pacparser_set_microsoft_extensions: cannot enable or "
         "disable microsoft extensions now. This function should be called "
-        "before pacparser_init.\n");
+        "before pacparser_init().\n");
     return;
   }
   enable_microsoft_extensions = setting;

@@ -19,9 +19,6 @@ readonly PAC=pac.js.tmp
 readonly OUT=stdout.tmp
 readonly ERR=stderr.tmp
 
-# TODO(slattarini): make this configurable once we've integrated with c-ares
-readonly has_c_ares=false
-
 # Regular expressions to roughly match IPv4 and IPv6 addresses.
 # Not very strict, but good enough.
 readonly ip4_rx='([0-9]{1,3}\.){3}[0-9]{1,3}'
