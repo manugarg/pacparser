@@ -103,13 +103,13 @@ util.o: util.c util.h
 pactester.o: pacparser.h util.h
 
 $(LIBRARY): util.o pacparser.o libjs.a
-	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a -lm
+	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) $^ -lm
 
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
 pactester: pactester.o $(LIBRARY_LINK)
-	$(CC) $(CFLAGS) $(LDFLAGS) $@.o -o $@ -lpacparser -L. -I.
+	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -lpacparser -L. -I.
 
 testpactester: pactester
 	echo "Running tests for pactester."

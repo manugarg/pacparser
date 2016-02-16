@@ -40,6 +40,7 @@
 #include <ws2tcpip.h>
 #endif
 
+#include "util.h"
 #include "pac_utils.h"
 #include "pacparser.h"
 
@@ -126,17 +127,16 @@ print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 
 // DNS Resolve function; used by other routines which implement the PAC builtins
 // dnsResolve(), dnsResolveEx(), myIpAddress(), myIpAddressEx().
+
 static char *
-resolve_host(const char *hostname, int all_ips)
+resolve_host_internals(const char *hostname, int ai_family, int max_results)
 {
   struct addrinfo hints;
   struct addrinfo *result;
   struct addrinfo *ai;
+  // This is large enough to contain either an IPv4 and IPv6 address.
   char ipaddr[INET6_ADDRSTRLEN];
-
-  int max_results = all_ips ? MAX_IP_RESULTS : 1;
-  char *ipaddr_list = malloc(INET6_ADDRSTRLEN * max_results + 1);
-  ipaddr_list[0] = '\0'; // Truncate ipaddr_list to an empty string.
+  char *ipaddr_list = NULL;
 
 #ifdef _WIN32
   // On windows, we need to initialize the winsock dll first.
@@ -146,20 +146,22 @@ resolve_host(const char *hostname, int all_ips)
 
   memset(&hints, 0, sizeof(struct addrinfo));
 
-  hints.ai_family = all_ips ? AF_UNSPEC : AF_INET;
+  hints.ai_family = ai_family;
   hints.ai_socktype = SOCK_STREAM;
 
   if (getaddrinfo(hostname, NULL, &hints, &result) != 0)
     return NULL;
 
   int i;
-  for(ai = result, i = 0; ai != NULL && i < MAX_IP_RESULTS; ai = ai->ai_next, i++) {
+  for(ai = result, i = 0; ai != NULL && i < max_results; ai = ai->ai_next, i++) {
     getnameinfo(ai->ai_addr, ai->ai_addrlen, ipaddr, sizeof(ipaddr), NULL, 0,
                 NI_NUMERICHOST);
-    if (ipaddr_list[0] == '\0')
+    if (!ipaddr_list) {
+      ipaddr_list = malloc(INET6_ADDRSTRLEN * max_results + 1);
       sprintf(ipaddr_list, "%s", ipaddr);
-    else
+    } else {
       sprintf(ipaddr_list, "%s;%s", ipaddr_list, ipaddr);
+    }
   }
   freeaddrinfo(result);
 
@@ -168,6 +170,25 @@ resolve_host(const char *hostname, int all_ips)
 #endif
 
   return ipaddr_list;
+}
+
+static char *
+resolve_host(const char *hostname, int all_ips)
+{
+  const char *lst[3];
+  int i = 0;
+
+  if (!all_ips) {
+    lst[i++] = resolve_host_internals(hostname, AF_INET, 1);
+  } else {
+    lst[i] = resolve_host_internals(hostname, AF_INET, MAX_IP_RESULTS);
+    if (lst[i])
+      i++;
+    lst[i++] = resolve_host_internals(hostname, AF_INET6, MAX_IP_RESULTS);
+  }
+  lst[i++] = NULL;
+  char *res = join_string_list(lst, ";");
+  return (res && *res) ? res : NULL;
 }
 
 //------------------------------------------------------------------------------

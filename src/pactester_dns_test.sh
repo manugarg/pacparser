@@ -53,34 +53,40 @@ declare -a addresses=('127.0.0.1' '8.8.8.8' '74.125.138.129')
 ${has_c_ares} && addressess+=('::1' '2a00:1450:400b:c01::81')
 
 for addr in "${addresses[@]}"; do
+
   ok -E <<EOT
     var r = dnsResolve('${addr}');
     if (r == '${addr}')
       return 'OK';
     return 'KO -> ' + r;
 EOT
+
   ok -e <<EOT
     var r = dnsResolveEx('${addr}');
     if (r == '${addr}')
       return 'OK';
     return 'KO -> ' + r;
 EOT
+
 done
 unset addr addresses
 
 for host in invalid i--dont--exist--really.google.com; do
+
   ok -E <<EOT
     var r = dnsResolve('${host}');
     if (r == null)
       return 'OK';
     return 'KO -> ' + r;
 EOT
+
   ok -e <<EOT
     var r = dnsResolveEx('${host}');
     if (r == null)
       return 'OK';
     return 'KO -> ' + r;
 EOT
+
 done
 unset h
 
@@ -99,12 +105,14 @@ ok -e <<EOT
 EOT
 
 if ${has_c_ares}; then
+
   ok -E <<EOT
     var r = dnsResolve('uberproxy6.l.google.com');
     if (/^${up_ip6_rx}$/.test(r))
       return 'OK';
     return 'KO -> ' + r;
 EOT
+
 fi # ${has_c_ares}
 
 ok -e <<EOT
@@ -170,23 +178,27 @@ ip_repeated_rx="${ip4_rx}(;${ip4_rx})*"
 if ${has_ipv6_support}; then
   ip_repeated_rx+=";${ip6_rx}(;${ip6_rx})*"
 fi
+
 ok -e <<EOT
   var r = dnsResolveEx('www.google.com');
   if (/^${ip_repeated_rx}$/.test(r))
     return 'OK';
   return 'KO -> ' + r;
 EOT
+
 unset ip_repeated_rx
 
 # But dnsResolve() should just return one IPv4 address. Both with
 # Microsoft extensions enabled and with Microsoft extensions disabled.
 for opt in '-E' '-e'; do
+
   ok ${opt} <<EOT
     var r = dnsResolve('www.google.com');
     if (/^${ip4_rx}$/.test(r))
       return 'OK';
     return 'KO -> ' + r;
 EOT
+
 done
 unset opt
 
@@ -210,12 +222,14 @@ EOT
 
 if ${has_ipv6_support}; then
 
-  ok -E <<EOT
-    var r = dnsResolve('ipv6.l.google.com');
-    if (/^${ip6_rx}$/.test(r))
-      return 'OK';
-    return 'KO -> ' + r;
+  if ${has_c_ares}; then
+    ok -E <<EOT
+      var r = dnsResolve('ipv6.l.google.com');
+      if (/^${ip6_rx}$/.test(r))
+        return 'OK';
+      return 'KO -> ' + r;
 EOT
+  fi  # ${has_c_ares}
 
   ok -e <<EOT
     var r = dnsResolveEx('ipv6.l.google.com');
