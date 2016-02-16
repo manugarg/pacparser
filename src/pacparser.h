@@ -47,8 +47,7 @@ int pacparser_init(void);
 ///
 /// Reads the given PAC file and evaluates it in the JavaScript context created
 /// by pacparser_init.
-int pacparser_parse_pac_file(const char *pacfile       // PAC file to parse
-                             );
+int pacparser_parse_pac_file(const char *pacfile);
 
 /// @brief Parses the given PAC script string.
 /// @param pacstring PAC string to parse.
@@ -56,8 +55,7 @@ int pacparser_parse_pac_file(const char *pacfile       // PAC file to parse
 ///
 /// Evaulates the given PAC script string in the JavaScript context created
 /// by pacparser_init.
-int pacparser_parse_pac_string(const char *pacstring      // PAC string to parse
-                               );
+int pacparser_parse_pac_string(const char *pacstring);
 
 /// @brief Parses the gievn pac file.
 /// \deprecated Use pacparser_parse_pac_file instead.
@@ -65,8 +63,7 @@ int pacparser_parse_pac_string(const char *pacstring      // PAC string to parse
 /// @returns 0 on failure and 1 on success.
 ///
 /// Same as pacparser_parse_pac_file. Included only for backward compatibility.
-int pacparser_parse_pac(const char *pacfile               // PAC file to parse
-                        );
+int pacparser_parse_pac(const char *pacfile);
 
 /// @brief Finds proxy for the given URL and Host.
 /// @param url URL to find proxy for.
@@ -77,9 +74,7 @@ int pacparser_parse_pac(const char *pacfile               // PAC file to parse
 /// after pacparser engine has been initialized (using pacparser_init) and pac
 /// script has been parsed (using pacparser_parse_pac_file or
 /// pacparser_parse_pac_string).
-char *pacparser_find_proxy(const char *url,           // URL to find proxy for
-                           const char *host           // Host part of the URL
-                           );
+char *pacparser_find_proxy(const char *url, const char *host);
 
 /// @brief Finds proxy for the given PAC file, URL and Host.
 /// @param pacfile PAC file to parse.
@@ -92,10 +87,8 @@ char *pacparser_find_proxy(const char *url,           // URL to find proxy for
 /// you just want to find out proxy for a given set of pac file, url and host, this
 /// is the function to call. This function takes care of all the initialization
 /// and cleanup.
-char *pacparser_just_find_proxy(const char *pacfile,       // PAC file
-				const char *url,           // URL to find proxy for
-				const char *host           // Host part of the URL
-			       );
+char *pacparser_just_find_proxy(const char *pacfile, const char *url,
+                                const char *host);
 
 /// @brief Destroys JavaSctipt context.
 ///
@@ -111,18 +104,20 @@ void pacparser_setmyip(const char *ip                 // Custom IP address.
                        );
 
 /// @brief Type definition for pacparser_error_printer.
-typedef int (*pacparser_error_printer)(const char *fmt,	// printf format
-				       va_list argp	// Variadic arg list
-				      );
+/// @param fmt printf format
+/// @param argp Variadic arg list
+///
+/// Default printing function for pacparser_set_error_printer
+typedef int (*pacparser_error_printer)(const char *fmt, va_list argp);
+
 /// @brief Sets error printing function.
-/// @param func Printing function.
+/// @param func Variadic-argument Printing function.
 ///
 /// Sets error variadic-argument printing function.  If not set the messages
 /// are printed to stderr.  If messages begin with DEBUG: or WARNING:,
 /// they are not fatal error messages, otherwise they are.
 /// May be called before pacparser_init().
-void pacparser_set_error_printer(pacparser_error_printer func	// Printing function
-				);
+void pacparser_set_error_printer(pacparser_error_printer func);
 
 /// @brief (Deprecated) Enable Microsoft IPv6 PAC extensions.
 ///
@@ -136,8 +131,8 @@ void pacparser_disable_microsoft_extensions(void);
 /// @returns version string if version defined, "" otherwise.
 ///
 /// Version string is determined at the time of build. If built from a released
-/// package, version corresponds to the latest release (git) tag. If built from the
-/// repository, it corresponds to the head revision of the repo.
+/// package, version corresponds to the latest release (git) tag. If built from
+/// the repository, it corresponds to the head revision of the repo.
 char* pacparser_version(void);
 
 #ifdef __cplusplus
