@@ -43,16 +43,18 @@ CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
 # several autotools conventions, we take the easier albeit suboptimal
 # solution.
 ENABLE_C_ARES ?= auto
-ifeq "$(ENAVLEENABLE_C_ARES)" "auto"
+ifeq "$(ENABLE_C_ARES)" "auto"
   ENABLE_C_ARES := $(shell pkg-config --exists libcares && echo yes || echo no)
   $(info ENABLE_C_ARES was undefined; autodetected to "$(ENABLE_C_ARES)")
   ifeq "$(ENABLE_C_ARES)" "yes"
     C_ARES_CFLAGS := $(shell pkg-config --cflags libcares)
     C_ARES_LDFLAGS := $(shell pkg-config --libs libcares)
+    C_ARES_LDFLAGS += -Wl,-rpath
+    C_ARES_LDFLAGS += -Wl,$(shell pkg-config --variable=libdir libcares)
   endif
 endif
 ifeq "$(ENABLE_C_ARES)" "yes"
-  C_ARES_CFLAGS += -DENABLE_C_ARES
+  C_ARES_CFLAGS += -DHAVE_C_ARES
 else
   $(warning c-ares (http://c-ares.haxx.se) library not found or disabled)
   $(warning Some DNS-related features will be unavailable)
@@ -118,13 +120,13 @@ pacparser_dns.o: pacparser_dns.h util.h
 pactester.o: pacparser.h util.h
 
 $(LIBRARY): util.o pacparser_dns.o pacparser.o libjs.a
-	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) $^ -lm
+	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lm
 
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
 pactester: pactester.o $(LIBRARY_LINK)
-	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -lpacparser -L. -I.
+	$(CC) $(CFLAGS) $< -o $@ -lpacparser $(LDFLAGS) -L. -I.
 
 oldtestpactester: pactester
 	@echo "Running tests for pactester."

@@ -121,9 +121,8 @@ print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 
 // Functions related to DNS resolution.
 
-static pacparser_resolve_host_func resolve_host_func = &resolve_host_getaddrinfo;
+static pacparser_resolve_host_func dns_resolver = &pacparser_resolve_host_getaddrinfo;
 
-// Set my (client's) IP address to a custom value.
 void
 pacparser_setmyip(const char *ip)
 {
@@ -137,14 +136,14 @@ pacparser_set_dns_resolver_type(dns_resolver_t type)
 {
   switch (type) {
     case DNS_NONE:
-      resolve_host_func = &resolve_host_literal_ips_only;
+      dns_resolver = &pacparser_resolve_host_literal_ips;
       return 1;
     case DNS_GETADDRINFO:
-      resolve_host_func = &resolve_host_getaddrinfo;
+      dns_resolver = &pacparser_resolve_host_getaddrinfo;
       return 1;
     case DNS_C_ARES:
 #ifdef HAVE_C_ARES
-      resolve_host_func = &resolve_host_c_ares;
+      dns_resolver = &pacparser_resolve_host_ares;
       return 1;
 #else
       print_error("pacparser.c: cannot use c-ares as DNS resolver: was not "
@@ -159,13 +158,13 @@ pacparser_set_dns_resolver_type(dns_resolver_t type)
 // Return javascript null if not able to resolve.
 
 static JSBool
-dns_resolve_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-                      jsval *rval, int all_ips)
+dns_resolve_js_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
+                         jsval *rval, int all_ips)
 {
   char *name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
   char *ipaddr, *out;
 
-  if ((ipaddr = resolve_host_func(name, all_ips)) == NULL) {
+  if ((ipaddr = dns_resolver(name, all_ips)) == NULL) {
     *rval = JSVAL_NULL;
     return JS_TRUE;
   }
@@ -178,24 +177,24 @@ dns_resolve_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
 }
 
 static JSBool
-dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+dns_resolve_js(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 {
-  return dns_resolve_internals(cx, obj, argc, argv, rval, ONE_IP);
+  return dns_resolve_js_internals(cx, obj, argc, argv, rval, ONE_IP);
 }
 
 static JSBool
-dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-               jsval *rval)
+dns_resolve_ex_js(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
+                  jsval *rval)
 {
-  return dns_resolve_internals(cx, obj, argc, argv, rval, ALL_IPS);
+  return dns_resolve_js_internals(cx, obj, argc, argv, rval, ALL_IPS);
 }
 
 // myIpAddress/myIpAddressEx in JS context; not available in core JavaScript.
 // Return 127.0.0.1 if not able to determine local ip.
 
 static JSBool
-my_ip_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-                jsval *rval, int all_ips)
+my_ip_address_js_internals(JSContext *cx, JSObject *obj, uintN argc,
+                           jsval *argv, jsval *rval, int all_ips)
 {
   char *ipaddr, *out;
 
@@ -203,7 +202,7 @@ my_ip_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
     // If "my" (client's) IP address is already set.
     ipaddr = strdup(myip);
   } else {
-    ipaddr = get_my_ip_address(resolve_host_func, all_ips);
+    ipaddr = pacparser_get_my_ip_address(dns_resolver, all_ips);
   }
 
   out = JS_strdup(cx, ipaddr);
@@ -214,15 +213,17 @@ my_ip_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
 }
 
 static JSBool
-my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+my_ip_address_js(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
+                 jsval *rval)
 {
-  return my_ip_internals(cx, obj, argc, argv, rval, ONE_IP);
+  return my_ip_address_js_internals(cx, obj, argc, argv, rval, ONE_IP);
 }
 
 static JSBool
-my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+my_ip_address_ex_js(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
+                    jsval *rval)
 {
-  return my_ip_internals(cx, obj, argc, argv, rval, ALL_IPS);
+  return my_ip_address_js_internals(cx, obj, argc, argv, rval, ALL_IPS);
 }
 
 //------------------------------------------------------------------------------
@@ -264,9 +265,10 @@ pacparser_disable_microsoft_extensions(void)
 
 // Initialize PAC parser.
 //
-// - Initializes JavaScript engine,
+// - Initialize the c-ares library (if needed).
+// - Initializes JavaScript engine.
 // - Exports dns_functions (defined above) to JavaScript context.
-// - Sets error reporting function to print_jserror,
+// - Sets error reporting function to print_jserror.
 // - Evaluates JavaScript code in pacUtils variable defined in pac_utils.h.
 //
 // Return 0 on failure, 1 on success.
@@ -274,7 +276,14 @@ int
 pacparser_init()
 {
   jsval rval;
-  char *error_prefix = "pacparser.c: pacparser_init";
+  const char *error_prefix = "pacparser.c: pacparser_init";
+
+  if (!pacparser_ares_init()) {
+    print_error("%s: %s\n", error_prefix,
+                "Could not initialize c-ares DNS library.");
+    return 0;
+  }
+
   // Initialize JS engine.
   if (
     // https://developer.mozilla.org/en-US/docs/Mozilla/Projects/SpiderMonkey/JSAPI_reference/JS_NewRuntime
@@ -294,23 +303,27 @@ pacparser_init()
   }
   JS_SetErrorReporter(cx, print_jserror);
   // Export our functions to Javascript engine
-  if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve, 1, 0)) {
+  if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve_js,
+                         1, 0)) {
     print_error("%s: %s\n", error_prefix,
                 "Could not define dnsResolve in JS context.");
     return 0;
   }
-  if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0)) {
+  if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip_address_js,
+                         0, 0)) {
     print_error("%s: %s\n", error_prefix,
                 "Could not define myIpAddress in JS context.");
     return 0;
   }
   if (enable_microsoft_extensions) {
-    if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0)) {
+    if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex_js,
+                           1, 0)) {
       print_error("%s: %s\n", error_prefix,
                   "Could not define dnsResolveEx in JS context.");
       return 0;
     }
-    if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0)) {
+    if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_address_ex_js,
+                           0, 0)) {
       print_error("%s: %s\n", error_prefix,
                   "Could not define myIpAddressEx in JS context.");
       return 0;
@@ -361,7 +374,7 @@ int
 pacparser_parse_pac_string(const char *script)
 {
   jsval rval;
-  char *error_prefix = "pacparser.c: pacparser_parse_pac_string";
+  const char *error_prefix = "pacparser.c: pacparser_parse_pac_string";
   if (cx == NULL || global == NULL) {
     print_error("%s: %s\n", error_prefix, "Pac parser is not initialized.");
     return 0;
@@ -383,7 +396,7 @@ pacparser_parse_pac_string(const char *script)
 
 // Parses the given PAC file.
 //
-// Rads the given PAC file and evaluates it in the JavaScript context
+// Reads the given PAC file and evaluates it in the JavaScript context
 // created by pacparser_init.
 //
 // Return 0 on failure and 1 on succcess.
@@ -428,7 +441,7 @@ pacparser_parse_pac(const char *pacfile)
 char *
 pacparser_find_proxy(const char *url, const char *host)
 {
-  char *error_prefix = "pacparser.c: pacparser_find_proxy";
+  const char *error_prefix = "pacparser.c: pacparser_find_proxy";
   char *script;
   jsval rval;
 
@@ -476,7 +489,8 @@ pacparser_find_proxy(const char *url, const char *host)
   strcat(script, "')");
   print_debug("Executing JavaScript: %s\n", script);
   if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval)) {
-    print_error("%s %s\n", error_prefix, "Problem in executing findProxyForURL.");
+    print_error("%s: %s\n", error_prefix,
+                "Problem in executing findProxyForURL.");
     free(sanitized_url);
     free(script);
     return NULL;
@@ -502,6 +516,8 @@ pacparser_cleanup()
   }
   JS_ShutDown();
   global = NULL;
+  pacparser_ares_cleanup();
+  enable_microsoft_extensions = ENABLED;
   print_debug("Pacparser destroyed.\n");
 }
 
@@ -512,7 +528,7 @@ pacparser_cleanup()
 // want to find out proxy a given set of pac file, url and host, this is the
 // function to call.
 //
-// Returns the proxy string on succcess, NULL on failure.
+// Returns the proxy string on success, NULL on failure.
 char *
 pacparser_just_find_proxy(const char *pacfile, const char *url,
                           const char *host)
@@ -520,7 +536,7 @@ pacparser_just_find_proxy(const char *pacfile, const char *url,
   char *proxy;
   char *out;
   int initialized_here = 0;
-  char *error_prefix = "pacparser.c: pacparser_just_find_proxy";
+  const char *error_prefix = "pacparser.c: pacparser_just_find_proxy";
   if (!global) {
     if (!pacparser_init()) {
       print_error("%s: %s\n", error_prefix, "Could not initialize pacparser");

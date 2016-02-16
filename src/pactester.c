@@ -58,9 +58,10 @@ usage(const char *progname)
 "                 domains specified in resolv.conf or the domain derived\n"
 "                 from the kernel hostname variable; this can be specified\n"
 "                 only when the DNS resolver type is \"c-ares\".\n"
-"  -s server_ip : IP address of the DNS server to use for DNS lookups,\n"
-"                 instead of the ones specified in resolv.conf; this can be\n"
-"                 specified only when the DNS resolver type is \"c-ares\".\n"
+"  -s servers   : comma-separated IP addresses of the DNS servers to use for\n"
+"                 DNS lookups, instead of the ones specified in resolv.conf;\n"
+"                 this can be specified only when the DNS resolver type is\n"
+"                 \"c-ares\".\n"
 "  -c client_ip : client IP address (as returned by myIpAddres() function in\n"
 "                 PAC files), defaults to IP address on which it is running\n"
 "  -E           : disable microsoft extensions (*Ex functions)\n"
@@ -117,10 +118,10 @@ int
 main(int argc, char* argv[])
 {
   const char *pacfile = NULL, *host = NULL, *url = NULL, *urlsfile = NULL,
-             *client_ip = NULL, *dns_server_ip = NULL, *dns_domains_list = NULL,
+             *client_ip = NULL, *dns_servers = NULL, *dns_domains = NULL,
              *dns_resolver_variant = "getaddrinfo";
 
-  int disable_microsoft_extensions = 0;
+  int enable_microsoft_extensions = 1;
 
   if (argv[1] && (STREQ(argv[1], "--help") || STREQ(argv[1], "--helpshort"))) {
     usage(argv[0]);
@@ -149,19 +150,19 @@ main(int argc, char* argv[])
         client_ip = optarg;
         break;
       case 's':
-        dns_server_ip = optarg;
+        dns_servers = optarg;
         break;
       case 'd':
-        dns_domains_list = optarg;
+        dns_domains = optarg;
         break;
       case 'r':
         dns_resolver_variant = optarg;
         break;
      case 'e':
-        disable_microsoft_extensions = 0;
+        enable_microsoft_extensions = 1;
         break;
      case 'E':
-        disable_microsoft_extensions = 1;
+        enable_microsoft_extensions = 0;
         break;
       case '?':
         usage(argv[0]);
@@ -187,28 +188,31 @@ main(int argc, char* argv[])
   } else if STREQ(dns_resolver_variant, "c-ares") {
     type = DNS_C_ARES;
   } else {
-    fprintf(stderr, "pactester.c: invalid DNS resolver vaiant \"%s\"\n",
+    fprintf(stderr, "pactester.c: invalid DNS resolver variant \"%s\"\n",
             dns_resolver_variant);
     usage(argv[0]);
+    // Silence bogus "variable 'type' is used uninitialized" compiler error
+    // when compiling with clang in strict mode.
+    abort();
   }
   if (!pacparser_set_dns_resolver_type(type)) {
     fprintf(stderr, "pactester.c: pacparser_set_dns_resolver_type() failed\n");
     return 1;
   }
 
-  if (dns_server_ip) {
-    if (!pacparser_set_dns_server(dns_server_ip)) {
-      fprintf(stderr, "pactester.c: pacparser_set_dns_server() failed\n");
+  if (dns_servers) {
+    if (!pacparser_set_dns_servers(dns_servers)) {
+      fprintf(stderr, "pactester.c: pacparser_set_dns_servers() failed\n");
       return 1;
     }
   }
 
-  if (dns_domains_list) {
+  if (dns_domains) {
     int i = 0;
-    const char *dns_domains[DOMAINMAX + 1];
-    char *p = strtok((char *) dns_domains_list, ",");
+    const char *dns_domains_list[DOMAINMAX + 1];
+    char *p = strtok((char *) dns_domains, ",");
     while (p != NULL) {
-      dns_domains[i++] = strdup(p);
+      dns_domains_list[i++] = strdup(p);
       if (i > DOMAINMAX) {
         fprintf(stderr, "pactester.c: Too many domains specified. "
                 "Maximum allowed number is: %d\n", DOMAINMAX);
@@ -216,14 +220,16 @@ main(int argc, char* argv[])
       }
       p = strtok(NULL, ",");
     }
-    dns_domains[i] = NULL;
-    if (!pacparser_set_dns_domains(dns_domains)) {
+    dns_domains_list[i] = NULL;
+    if (!pacparser_set_dns_domains(dns_domains_list)) {
       fprintf(stderr, "pactester.c: pacparser_set_dns_domains() failed\n");
       return 1;
     }
   }
 
-  if (disable_microsoft_extensions)
+  if (enable_microsoft_extensions)
+    pacparser_enable_microsoft_extensions();
+  else
     pacparser_disable_microsoft_extensions();
 
   // Initialize pacparser.

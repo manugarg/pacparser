@@ -50,8 +50,13 @@ EOT
 ok -E <<< 'return isResolvable("www.google.com") ? "OK" : "KO";'
 ok -e <<< 'return isResolvableEx("mail.google.com") ? "OK" : "KO";'
 
-declare -a addresses=('127.0.0.1' '8.8.8.8' '74.125.138.129')
-${has_c_ares} && addressess+=('::1' '2a00:1450:400b:c01::81')
+declare -a addresses=(
+  '127.0.0.1'
+  '::1'
+  '8.8.8.8'
+  '74.125.138.129'
+  '2a00:1450:400b:c01::81'
+)
 
 for addr in "${addresses[@]}"; do
 
@@ -105,16 +110,12 @@ ok -e <<EOT
   return 'KO -> ' + r;
 EOT
 
-if ${has_c_ares}; then
-
-  ok -E <<EOT
-    var r = dnsResolve('uberproxy6.l.google.com');
-    if (/^${up_ip6_rx}$/.test(r))
-      return 'OK';
-    return 'KO -> ' + r;
+ok -E <<EOT
+  var r = dnsResolve('uberproxy6.l.google.com');
+  if (/^${up_ip6_rx}$/.test(r))
+    return 'OK';
+  return 'KO -> ' + r;
 EOT
-
-fi # ${has_c_ares}
 
 ok -e <<EOT
   var r = dnsResolveEx('uberproxy6.l.google.com');
@@ -136,41 +137,6 @@ ok -e <<EOT
     return 'OK';
   return 'KO -> ' + r;
 EOT
-
-# Test the addition of DNS domains to append during DNS lookups.
-# And interactions with other options.
-
-if ${has_c_ares}; then
-
-  ok -E -d foobar.google.com <<EOT
-    var r = dnsResolve('teams');
-    if (r == null)
-      return 'OK';
-    return 'KO -> ' + r;
-EOT
-
-  ok -E -d googleplex.com <<EOT
-    var r = dnsResolve('teams');
-    if (/^${up_ip4_rx}$/.test(r))
-      return 'OK';
-    return 'KO -> ' + r;
-EOT
-
-  ok -E -d corp.google.com,google.com <<EOT
-    var r = dnsResolve('www');
-    if (/^${up_ip4_rx}$/.test(r))
-      return 'OK';
-    return 'KO -> ' + r;
-EOT
-
-  ok -e -d corp.google.com,microsoft.com <<EOT
-    var r = dnsResolveEx('www');
-    if (/^${up_ip4_rx};${up_ip6_rx}$/.test(r))
-      return 'OK';
-    return 'KO -> ' + r;
-EOT
-
-fi # ${has_c_ares}
 
 # dnsResolveEx() on www.google.com should return several IPv4
 # addresses (3 or more) and at least one IPv6 address.
@@ -223,14 +189,12 @@ EOT
 
 if ${has_ipv6_support}; then
 
-  if ${has_c_ares}; then
-    ok -E <<EOT
-      var r = dnsResolve('ipv6.l.google.com');
-      if (/^${ip6_rx}$/.test(r))
-        return 'OK';
-      return 'KO -> ' + r;
+  ok -E <<EOT
+    var r = dnsResolve('ipv6.l.google.com');
+    if (/^${ip6_rx}$/.test(r))
+      return 'OK';
+    return 'KO -> ' + r;
 EOT
-  fi  # ${has_c_ares}
 
   ok -e <<EOT
     var r = dnsResolveEx('ipv6.l.google.com');
@@ -260,23 +224,51 @@ EOT
 done
 unset h
 
+# Test the addition of DNS domains to append during DNS lookups.
+
 if ${has_c_ares}; then
 
-  ok -E -d example.com,googleplex.com,example.org <<EOT
+  ok -E -d l.google.com <<EOT
+    return isResolvable('ipv6') ? 'OK' : 'KO';
+EOT
+
+  ok -E -d "" <<EOT
+    r = dnsResolve('teams');
+    if (r == null)
+      return 'OK'
+    else
+      return 'KO -> ' + r;
+EOT
+
+  ok -d microsoft.com,corp.google.com <<EOT
+    return isResolvable('critique') ? 'OK' : 'OK';
+EOT
+
+  ok -d microsoft.com,google.com <<EOT
+    r = dnsResolve('critique');
+    if (r == null)
+      return 'OK'
+    else
+      return 'KO -> ' + r;
+EOT
+
+  ok -E -d wikipedia.org <<EOT
+    return isResolvable('en') ? 'OK' : 'KO';
+EOT
+
+  ok -d googleplex.com <<EOT
     var r = dnsResolve('teams');
-    if (/^${up_ip4_rx}$/.test(r))
+    if (/^$up_ip4_rx$/.test(r))
       return 'OK';
     return 'KO -> ' + r;
 EOT
 
-  if ${has_ipv6_support}; then
-    ok -e -d example.com,googleplex.com,example.org <<EOT
-      var r = dnsResolveEx('teams');
-      if (/^${up_ip4_rx};${up_ip6_rx}$/.test(r))
-        return 'OK';
-      return 'KO -> ' + r;
+  ok -d corp.google.com,google.com <<EOT
+    var r = dnsResolve('www');
+    if (/^$up_ip4_rx$/.test(r))
+      return 'OK';
+    return 'KO -> ' + r;
 EOT
-  fi # ${has_ipv6_support}
 
 fi # ${has_c_ares}
 

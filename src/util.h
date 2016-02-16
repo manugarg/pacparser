@@ -27,7 +27,7 @@
 #endif
 
 #define STREQ(s1, s2) (strcmp((s1), (s2)) == 0)
-#define free(x) free((void *)(x))  // silence annoying compiler warnings
+#define FREE(x) free((void *)(x))  // silence annoying compiler warnings
 
 char *str_replace(const char *orig, char *rep, char *with);
 int string_list_len(const char **list);
