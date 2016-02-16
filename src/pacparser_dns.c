@@ -23,13 +23,7 @@
 #include "pacparser_dns.h"
 #include "util.h"
 
-#include <errno.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-
 #ifdef XP_UNIX
-#include <unistd.h>
 #include <arpa/inet.h>  // for inet_pton
 #include <sys/socket.h>  // for AF_INET
 #include <netdb.h>
