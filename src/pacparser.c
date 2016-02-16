@@ -125,18 +125,24 @@ print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 
 //------------------------------------------------------------------------------
 
-// DNS Resolve function; used by other routines which implement the PAC builtins
-// dnsResolve(), dnsResolveEx(), myIpAddress(), myIpAddressEx().
+// DNS Resolve functions; used by other routines which implement the PAC
+// builtins dnsResolve(), dnsResolveEx(), myIpAddress(), myIpAddressEx().
+
+int
+addrinfo_len(const struct addrinfo *ai)
+{
+  int i = 0;
+  while (ai != NULL) {
+    i++;
+    ai = ai->ai_next;
+  }
+  return i;
+}
 
 static char *
-resolve_host_internals(const char *hostname, int ai_family, int max_results)
+resolve_host(const char *hostname, int all_ips)
 {
-  struct addrinfo hints;
-  struct addrinfo *result;
-  struct addrinfo *ai;
-  // This is large enough to contain either an IPv4 and IPv6 address.
-  char ipaddr[INET6_ADDRSTRLEN];
-  char *ipaddr_list = NULL;
+  struct addrinfo *ai[2] = {NULL, NULL};
 
 #ifdef _WIN32
   // On windows, we need to initialize the winsock dll first.
@@ -144,51 +150,56 @@ resolve_host_internals(const char *hostname, int ai_family, int max_results)
   WSAStartup(MAKEWORD(2,0), &WsaData);
 #endif
 
+  struct addrinfo hints;
   memset(&hints, 0, sizeof(struct addrinfo));
-
-  hints.ai_family = ai_family;
   hints.ai_socktype = SOCK_STREAM;
 
-  if (getaddrinfo(hostname, NULL, &hints, &result) != 0)
-    return NULL;
+  int ips_count = 0;
 
-  int i;
-  for(ai = result, i = 0; ai != NULL && i < max_results; ai = ai->ai_next, i++) {
-    getnameinfo(ai->ai_addr, ai->ai_addrlen, ipaddr, sizeof(ipaddr), NULL, 0,
-                NI_NUMERICHOST);
-    if (!ipaddr_list) {
-      ipaddr_list = malloc(INET6_ADDRSTRLEN * max_results + 1);
-      sprintf(ipaddr_list, "%s", ipaddr);
-    } else {
-      sprintf(ipaddr_list, "%s;%s", ipaddr_list, ipaddr);
+  // First, IPv4 addresses (if any).
+  hints.ai_family = AF_INET;
+  if (getaddrinfo(hostname, NULL, &hints, &ai[0]) == 0) {
+    ips_count += addrinfo_len(ai[0]);
+  }
+
+  // Then, IPv6 addresses (if any, and only if needed).
+  if (all_ips || !ips_count) {
+    hints.ai_family = AF_INET6;
+    if (getaddrinfo(hostname, NULL, &hints, &ai[1]) == 0) {
+      ips_count += addrinfo_len(ai[1]);
     }
   }
-  freeaddrinfo(result);
 
+  if (!all_ips && ips_count)
+    ips_count = 1;
+
+  // Add one for terminating NULL.
+  const char **ips = calloc(ips_count + 1, sizeof(char **));
+  int i = 0, k;
+
+  // First format the IPv4 addrinfos (if any), then the IPv6 ones (if any).
+  for (k = 0; k < 2; k++) {
+    for (; ai[k] != NULL; ai[k] = ai[k]->ai_next) {
+      // This is large enough to contain either an IPv4 and IPv6 address.
+      char ipaddr[INET6_ADDRSTRLEN];
+      getnameinfo(ai[k]->ai_addr, ai[k]->ai_addrlen, ipaddr, sizeof(ipaddr),
+                  NULL, 0, NI_NUMERICHOST);
+      ips[i++] = strdup(ipaddr);
+      if (i >= ips_count)
+        goto resolve_host_done;
+    }
+  }
+
+resolve_host_done:
+  ips[i] = NULL;
 #ifdef _WIN32
   WSACleanup();
 #endif
-
-  return ipaddr_list;
-}
-
-static char *
-resolve_host(const char *hostname, int all_ips)
-{
-  const char *lst[3];
-  int i = 0;
-
-  if (!all_ips) {
-    lst[i++] = resolve_host_internals(hostname, AF_INET, 1);
-  } else {
-    lst[i] = resolve_host_internals(hostname, AF_INET, MAX_IP_RESULTS);
-    if (lst[i])
-      i++;
-    lst[i++] = resolve_host_internals(hostname, AF_INET6, MAX_IP_RESULTS);
-  }
-  lst[i++] = NULL;
-  char *res = join_string_list(lst, ";");
-  return (res && *res) ? res : NULL;
+  // On failed resolution, we want to return null, not the empty string.
+  char *retval = *ips ? join_string_list(ips, ";") : NULL;
+  // No memory leaks: free the ip addresses and the pointers to them.
+  deep_free_string_list(ips);
+  return retval;
 }
 
 //------------------------------------------------------------------------------
