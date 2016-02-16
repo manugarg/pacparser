@@ -98,11 +98,12 @@ libjs.a: spidermonkey/js/src
 %.o: %.c
 	$(CC) $(CFLAGS) $(SHFLAGS) -c $< -o $@
 
-pacparser.o: pac_utils.h pacparser.h jsapi_buildstamp
 util.o: util.c util.h
+pacparser.o: pac_utils.h pacparser.h pacparser_dns.h util.h jsapi_buildstamp
+pacparser_dns.o: pacparser_dns.h util.h
 pactester.o: pacparser.h util.h
 
-$(LIBRARY): util.o pacparser.o libjs.a
+$(LIBRARY): util.o pacparser_dns.o pacparser.o libjs.a
 	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) $^ -lm
 
 $(LIBRARY_LINK): $(LIBRARY)

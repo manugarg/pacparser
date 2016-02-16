@@ -94,13 +94,41 @@ js_false <<< 'isInNet("1.2.3.4", "1.2.3.5", "255.255.255.255")'
 js_false <<< 'isInNet("1.2.3.4", "1.2.3.5", "255.255.255.255")'
 js_false <<< 'isInNet("1.2.3.4", "1.2.3.6", "255.255.255.254")'
 
-# dnsDomainLevels.
+# dnsDomainLevels
 ok <<< 'r = dnsDomainLevels("foo"); return r == 0 ? "OK" : "KO -> " + r'
 ok <<< 'r = dnsDomainLevels("foo.edu"); return r == 1 ? "OK" : "KO -> " + r'
 ok <<'EOF'
   r = dnsDomainLevels("username.www.corp.google.com")
   return r == 4 ? "OK" : "KO -> " + r
 EOF
+
+# myIpAddress
+
+ok -E <<'EOF'
+  r = myIpAddress();
+  return r == "127.0.0.1" ? "OK" : "KO -> " + r;
+EOF
+
+ipv4='1.2.3.4'
+ok -E -c "${ipv4}" <<EOF
+  r = myIpAddress();
+  return r == "${ipv4}" ? "OK" : "KO -> " + r;
+EOF
+unset ipv4
+
+# myIpAddressEx
+
+ok -e <<'EOF'
+  r = myIpAddressEx();
+  return r == "127.0.0.1" ? "OK" : "KO -> " + r;
+EOF
+
+ipv6='2620:0:1040:c:a1d6:dd57:fc3a:609c'
+ok -e -c "${ipv6}" <<EOF
+  r = myIpAddressEx();
+  return r == "${ipv6}" ? "OK" : "KO -> " + r;
+EOF
+unset ipv6
 
 ## Runtime/syntax errors are diagnosed.
 

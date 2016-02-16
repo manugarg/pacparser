@@ -25,24 +25,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#ifdef XP_UNIX
-#include <unistd.h>
-#include <arpa/inet.h>  // for inet_pton
-#include <sys/socket.h>  // for AF_INET
-#include <netdb.h>
-#endif
-
-#ifdef _WIN32
-#ifdef __MINGW32__
-// MinGW enables definition of getaddrinfo et al only if WINVER >= 0x0501.
-#define WINVER 0x0501
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#endif
-
-#include "util.h"
 #include "pac_utils.h"
+#include "pacparser_dns.h"
 #include "pacparser.h"
 
 // To make some function calls more readable.
@@ -90,7 +74,9 @@ _debug(void) {
 }
 
 // Utility function to read a file into string.
-static char *                      // File content in string or NULL if failed.
+// Returns a malloc'ed string containing the file content on success,
+// NULL on error.
+static char *
 read_file_into_str(const char *filename)
 {
   char *str;
@@ -125,105 +111,18 @@ print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 
 //------------------------------------------------------------------------------
 
-// DNS Resolve functions; used by other routines which implement the PAC
-// builtins dnsResolve(), dnsResolveEx(), myIpAddress(), myIpAddressEx().
+// Functions related to DNS resolution.
 
-static int
-addrinfo_len(const struct addrinfo *ai)
+static pacparser_resolve_host_func resolve_host_func = &resolve_host_getaddrinfo;
+
+// Set my (client's) IP address to a custom value.
+void
+pacparser_setmyip(const char *ip)
 {
-  int i = 0;
-  while (ai != NULL) {
-    i++;
-    ai = ai->ai_next;
-  }
-  return i;
+  if (myip)
+    free(myip);
+  myip = (const char *) strdup(ip);
 }
-
-static char *
-resolve_host_getaddrinfo(const char *hostname, int all_ips)
-{
-  struct addrinfo *ai[2] = {NULL, NULL};
-
-#ifdef _WIN32
-  // On windows, we need to initialize the winsock dll first.
-  WSADATA WsaData;
-  WSAStartup(MAKEWORD(2,0), &WsaData);
-#endif
-
-  struct addrinfo hints;
-  memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_socktype = SOCK_STREAM;
-
-  int ips_count = 0;
-
-  // First, IPv4 addresses (if any).
-  hints.ai_family = AF_INET;
-  if (getaddrinfo(hostname, NULL, &hints, &ai[0]) == 0) {
-    ips_count += addrinfo_len(ai[0]);
-  }
-
-  // Then, IPv6 addresses (if any, and only if needed).
-  if (all_ips || !ips_count) {
-    hints.ai_family = AF_INET6;
-    if (getaddrinfo(hostname, NULL, &hints, &ai[1]) == 0) {
-      ips_count += addrinfo_len(ai[1]);
-    }
-  }
-
-  if (!all_ips && ips_count)
-    ips_count = 1;
-
-  // Add one for terminating NULL.
-  const char **ips = calloc(ips_count + 1, sizeof(char **));
-  int i = 0, k;
-
-  // First format the IPv4 addrinfos (if any), then the IPv6 ones (if any).
-  for (k = 0; k < 2; k++) {
-    for (; ai[k] != NULL; ai[k] = ai[k]->ai_next) {
-      // This is large enough to contain either an IPv4 and IPv6 address.
-      char ipaddr[INET6_ADDRSTRLEN];
-      getnameinfo(ai[k]->ai_addr, ai[k]->ai_addrlen, ipaddr, sizeof(ipaddr),
-                  NULL, 0, NI_NUMERICHOST);
-      ips[i++] = strdup(ipaddr);
-      if (i >= ips_count)
-        goto resolve_host_done;
-    }
-  }
-
-resolve_host_done:
-  ips[i] = NULL;
-#ifdef _WIN32
-  WSACleanup();
-#endif
-  // On failed resolution, we want to return null, not the empty string.
-  char *retval = *ips ? join_string_list(ips, ";") : NULL;
-  // No memory leaks: free the ip addresses and the pointers to them.
-  deep_free_string_list(ips);
-  // And we are done.
-  return retval;
-}
-
-static int
-is_ip_address(const char *str)
-{
-  char ipaddr4[INET_ADDRSTRLEN], ipaddr6[INET6_ADDRSTRLEN];
-  return (inet_pton(AF_INET, str, &ipaddr4) > 0 ||
-          inet_pton(AF_INET6, str, &ipaddr6) > 0);
-}
-
-static char *
-resolve_host_literal_ips_only(const char *hostname, int all_ips)
-{
-  (void)all_ips;  // shut up linter
-  return is_ip_address(hostname) ? strdup(hostname) : NULL;
-}
-
-//------------------------------------------------------------------------------
-
-// Functions for DNS resolution.
-
-typedef char *(*pacparser_resolve_host_func)(const char *, int all_ips);
-pacparser_resolve_host_func resolve_host_func = &resolve_host_getaddrinfo;
 
 int
 pacparser_set_dns_resolver_type(dns_resolver_t type)
@@ -296,13 +195,7 @@ my_ip_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
     // If "my" (client's) IP address is already set.
     ipaddr = strdup(myip);
   } else {
-    // According to the gethostname(2) manpage, SUSv2  guarantees that
-    // "Host names are limited to 255 bytes".
-    char name[256];
-    gethostname(name, sizeof(name));
-    if ((ipaddr = resolve_host_func(name, all_ips)) == NULL) {
-      ipaddr = strdup("127.0.0.1");
-    }
+    ipaddr = get_my_ip_address(resolve_host_func, all_ips);
   }
 
   out = JS_strdup(cx, ipaddr);
@@ -335,15 +228,6 @@ static JSClass global_class = {
     JS_PropertyStub,JS_PropertyStub,JS_PropertyStub,JS_PropertyStub,
     JS_EnumerateStub,JS_ResolveStub,JS_ConvertStub,JS_FinalizeStub
 };
-
-// Set my (client's) IP address to a custom value.
-void
-pacparser_setmyip(const char *ip)
-{
-  if (myip)
-    free(myip);
-  myip = (const char *) strdup(ip);
-}
 
 static void
 pacparser_set_microsoft_extensions(int setting)
