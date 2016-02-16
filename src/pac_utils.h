@@ -9,7 +9,7 @@
 // Note: This file is derived from "nsProxyAutoConfig.js" file that comes with
 // mozilla source code. Please check out the following for initial developer
 // and contributors:
-//http://lxr.mozilla.org/seamonkey/source/netwerk/base/src/nsProxyAutoConfig.js
+// http://lxr.mozilla.org/seamonkey/source/netwerk/base/src/nsProxyAutoConfig.js
 //
 // This file is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -22,20 +22,19 @@
 // Lesser General Public License for more details.
 
 // You should have received a copy of the GNU Lesser General Public
-// License along with this library; if not, write to the Free Software
-// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
-// USA
+// License along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 // Common PAC files builtins.
 
 static const char *pac_builtins =
+
 "function dnsDomainIs(host, domain) {\n"
 "    return (host.length >= domain.length &&\n"
 "            host.substring(host.length - domain.length) == domain);\n"
 "}\n"
 
 "function dnsDomainLevels(host) {\n"
-"    return host.split('.').length-1;\n"
+"    return host.split('.').length - 1;\n"
 "}\n"
 
 "function convert_addr(ipchars) {\n"
@@ -53,7 +52,7 @@ static const char *pac_builtins =
 "        ipaddr = dnsResolve(ipaddr);\n"
 "        if (ipaddr == null)\n"
 "            return false;\n"
-"    } else if (test[1] > 255 || test[2] > 255 || \n"
+"    } else if (test[1] > 255 || test[2] > 255 ||\n"
 "               test[3] > 255 || test[4] > 255) {\n"
 "        return false;    // not an IP address\n"
 "    }\n"
@@ -85,9 +84,30 @@ static const char *pac_builtins =
 "   return newRe.test(url);\n"
 "}\n"
 
-"var wdays = {SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6};\n"
+"var wdays = {"
+"  SUN: 0,"
+"  MON: 1,"
+"  TUE: 2,"
+"  WED: 3,"
+"  THU: 4,"
+"  FRI: 5,"
+"  SAT: 6"
+"};\n"
 
-"var months = {JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11};\n"
+"var months = {"
+"  JAN: 0,"
+"  FEB: 1,"
+"  MAR: 2,"
+"  APR: 3,"
+"  MAY: 4,"
+"  JUN: 5,"
+"  JUL: 6,"
+"  AUG: 7,"
+"  SEP: 8,"
+"  OCT: 9,"
+"  NOV: 10,"
+"  DEC: 11"
+"};\n"
 
 "function weekdayRange() {\n"
 "    function getDay(weekday) {\n"
@@ -134,13 +154,14 @@ static const char *pac_builtins =
 "    if (argc == 1) {\n"
 "        var tmp = parseInt(arguments[0]);\n"
 "        if (isNaN(tmp)) {\n"
-"            return ((isGMT ? date.getUTCMonth() : date.getMonth()) ==\n"
-"getMonth(arguments[0]));\n"
+"            return ((isGMT ? date.getUTCMonth() :\n""date.getMonth())\n"
+"                    == getMonth(arguments[0]));\n"
 "        } else if (tmp < 32) {\n"
-"            return ((isGMT ? date.getUTCDate() : date.getDate()) == tmp);\n"
+"            return ((isGMT ? date.getUTCDate() : date.getDate())\n"
+"                    == tmp);\n"
 "        } else { \n"
-"            return ((isGMT ? date.getUTCFullYear() : date.getFullYear()) ==\n"
-"tmp);\n"
+"            return ((isGMT ? date.getUTCFullYear() : date.getFullYear())\n"
+"                    == tmp);\n"
 "        }\n"
 "    }\n"
 "    var year = date.getFullYear();\n"
@@ -246,6 +267,7 @@ static const char *pac_builtins =
 "}\n";
 
 // Builtins enabled by Microsoft extensions.
+
 static const char *pac_builtins_ex =
 
 "function convert_addr6(ipchars) {\n"
@@ -336,40 +358,3 @@ static const char *pac_builtins_ex =
 "        return FindProxyForURL(url, host);\n"
 "    }\n"
 "}\n";
-
-// You must free the result if result is non-NULL.
-char *str_replace(const char *orig, char *rep, char *with) {
-    char *tmporig = malloc(strlen(orig) + 1); // Copy of orig that we work with
-    tmporig = strcpy(tmporig, orig);
-
-    char *result;  // the return string
-    char *ins;     // the next insert point
-    char *tmp;     // varies
-    int count;     // number of replacements
-    int len_front; // distance between rep and end of last rep
-    int len_rep  = strlen(rep);
-    int len_with = strlen(with);
-
-    // Get the count of replacements
-    ins = tmporig;
-    for (count = 0; (tmp = strstr(ins, rep)); ++count) {
-        ins = tmp + len_rep;
-    }
-
-    tmp = result = malloc(strlen(tmporig) + (len_with - len_rep) * count + 1);
-
-    // first time through the loop, all the variable are set correctly
-    // from here on,
-    //    tmp points to the end of the result string
-    //    ins points to the next occurrence of rep in tmporig
-    //    tmporig points to the remainder of tmporig after "end of rep"
-    while (count--) {
-        ins = strstr(tmporig, rep);
-        len_front = ins - tmporig;
-        tmp = strncpy(tmp, tmporig, len_front) + len_front;
-        tmp = strcpy(tmp, with) + len_with;
-        tmporig += len_front + len_rep; // move to next "end of rep"
-    }
-    strcpy(tmp, tmporig);
-    return result;
-}

@@ -5,26 +5,23 @@
 // (PAC) files. Please read README file included with this package for more
 // information about this library.
 //
-// pacparser is free software; you can redistribute it and/or
-// modify it under the terms of the GNU Lesser General Public
-// License as published by the Free Software Foundation; either
-// version 3 of the License, or (at your option) any later version.
-
-// pacparser is distributed in the hope that it will be useful,
+// Pacparser is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Pacparser is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-// Lesser General Public License for more details.
-
-// You should have received a copy of the GNU Lesser General Public
-// License along with this library; if not, write to the Free Software
-// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Pacparser.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <errno.h>
 #include <jsapi.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 
+#include "util.h"
 #include "pac_utils.h"
 #include "pacparser_dns.h"
 #include "pacparser.h"
@@ -35,20 +32,20 @@
 #define DISABLED 0
 #define ENABLED 1
 
-static char *myip = NULL;
+static const char *myip = NULL;
 static int enable_microsoft_extensions = ENABLED;
 
 // Default error printer function.
 // Returns the number of characters printed, and a negative value
 // in case of output error.
 static int
-_default_error_printer(const char *fmt, va_list argp)
+default_error_printer(const char *fmt, va_list argp)
 {
   return vfprintf(stderr, fmt, argp);
 }
 
 // File level variable to hold error printer function pointer.
-static pacparser_error_printer error_printer_func = &_default_error_printer;
+static pacparser_error_printer error_printer_func = &default_error_printer;
 
 // Set error printer to a user defined function.
 void
@@ -57,7 +54,8 @@ pacparser_set_error_printer(pacparser_error_printer func)
   error_printer_func = func;
 }
 
-static int print_error(const char *fmt, ...)
+static int
+print_error(const char *fmt, ...)
 {
   int ret;
   va_list args;
@@ -67,11 +65,13 @@ static int print_error(const char *fmt, ...)
   return ret;
 }
 
-static int
-_debug(void) {
-  if(getenv("PACPARSER_DEBUG")) return 1;
-  return 0;
-}
+#define print_debug(...) \
+    do { \
+      if (getenv("PACPARSER_DEBUG")) { \
+        print_error("DEBUG: "); \
+        print_error(__VA_ARGS__); \
+      } \
+    } while (0)
 
 // Utility function to read a file into string.
 // Returns a malloc'ed string containing the file content on success,
@@ -79,26 +79,34 @@ _debug(void) {
 static char *
 read_file_into_str(const char *filename)
 {
-  char *str;
+  char *str = NULL;
   int file_size;
   FILE *fptr;
   int records_read;
-  if (!(fptr = fopen(filename, "r"))) goto error1;
-  if ((fseek(fptr, 0L, SEEK_END) != 0)) goto error2;
-  if (!(file_size=ftell(fptr))) goto error2;
-  if ((fseek(fptr, 0L, SEEK_SET) != 0)) goto error2;
-  if (!(str = (char*) malloc(file_size+1))) goto error2;
-  if (!(records_read=fread(str, 1, file_size, fptr))) {
+
+  if (!(fptr = fopen(filename, "r")))
+    return NULL;
+
+  if (fseek(fptr, 0L, SEEK_END) != 0)
+    goto close_and_return;
+  if ((file_size = ftell(fptr)) < 0)
+    goto close_and_return;
+  if (fseek(fptr, 0L, SEEK_SET) != 0)
+    goto close_and_return;
+  if ((str = (char *) malloc(file_size + 1)) == NULL)
+    goto close_and_return;
+
+  // 'str' is no longer NULL if we are here.
+  if (!(records_read = fread(str, 1, file_size, fptr))) {
     free(str);
-    goto error2;
+    str = NULL;
+    goto close_and_return;
   }
   str[records_read] = '\0';
+
+close_and_return:
   fclose(fptr);
   return str;
-error2:
-  fclose(fptr);
-error1:
-  return NULL;
 }
 
 static void
@@ -121,7 +129,7 @@ pacparser_setmyip(const char *ip)
 {
   if (myip)
     free(myip);
-  myip = (const char *) strdup(ip);
+  myip = strdup(ip);
 }
 
 int
@@ -260,12 +268,14 @@ pacparser_disable_microsoft_extensions(void)
 // - Exports dns_functions (defined above) to JavaScript context.
 // - Sets error reporting function to print_jserror,
 // - Evaluates JavaScript code in pacUtils variable defined in pac_utils.h.
-int                                     // 0 (=Failure) or 1 (=Success)
+//
+// Return 0 on failure, 1 on success.
+int
 pacparser_init()
 {
   jsval rval;
-  char *error_prefix = "pacparser.c: pacparser_init:";
-  // Initialize JS engine
+  char *error_prefix = "pacparser.c: pacparser_init";
+  // Initialize JS engine.
   if (
     // https://developer.mozilla.org/en-US/docs/Mozilla/Projects/SpiderMonkey/JSAPI_reference/JS_NewRuntime
     // First argument is "the maximum number of allocated bytes after
@@ -278,30 +288,30 @@ pacparser_init()
     !(global = JS_NewObject(cx, &global_class, NULL, NULL)) ||
     !JS_InitStandardClasses(cx, global)
   ) {
-    print_error("%s %s\n", error_prefix,
+    print_error("%s: %s\n", error_prefix,
                 "Could not initialize JavaScript runtime.");
     return 0;
   }
   JS_SetErrorReporter(cx, print_jserror);
   // Export our functions to Javascript engine
   if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve, 1, 0)) {
-    print_error("%s %s\n", error_prefix,
+    print_error("%s: %s\n", error_prefix,
                 "Could not define dnsResolve in JS context.");
     return 0;
   }
   if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0)) {
-    print_error("%s %s\n", error_prefix,
+    print_error("%s: %s\n", error_prefix,
                 "Could not define myIpAddress in JS context.");
     return 0;
   }
   if (enable_microsoft_extensions) {
     if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0)) {
-      print_error("%s %s\n", error_prefix,
+      print_error("%s: %s\n", error_prefix,
                   "Could not define dnsResolveEx in JS context.");
       return 0;
     }
     if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0)) {
-      print_error("%s %s\n", error_prefix,
+      print_error("%s: %s\n", error_prefix,
                   "Could not define myIpAddressEx in JS context.");
       return 0;
     }
@@ -316,7 +326,7 @@ pacparser_init()
                          NULL,         // filename (NULL in this case)
                          1,            // line number, used for reporting
                          &rval)) {
-    print_error("%s %s\n", error_prefix,
+    print_error("%s: %s\n", error_prefix,
                 "Could not evaluate pac_builtins defined in pac_utils.h");
     return 0;
   }
@@ -337,7 +347,7 @@ pacparser_init()
     }
   }
 
-  if (_debug()) print_error("DEBUG: Pacparser Initalized.\n");
+  print_debug("Pacparser Initalized.\n");
   return 1;
 }
 
@@ -345,13 +355,15 @@ pacparser_init()
 //
 // Evaulates the given PAC script string in the JavaScript context created
 // by pacparser_init.
-int                                     // 0 (=Failure) or 1 (=Success)
+//
+// Return 0 on failure and 1 on succcess.
+int
 pacparser_parse_pac_string(const char *script)
 {
   jsval rval;
-  char *error_prefix = "pacparser.c: pacparser_parse_pac_string:";
+  char *error_prefix = "pacparser.c: pacparser_parse_pac_string";
   if (cx == NULL || global == NULL) {
-    print_error("%s %s\n", error_prefix, "Pac parser is not initialized.");
+    print_error("%s: %s\n", error_prefix, "Pac parser is not initialized.");
     return 0;
   }
   if (!JS_EvaluateScript(cx,
@@ -361,37 +373,38 @@ pacparser_parse_pac_string(const char *script)
                          "PAC script",
                          1,
                          &rval)) {     // If script evaluation failed
-    print_error("%s %s\n", error_prefix, "Failed to evaluate the pac script.");
-    if (_debug()) print_error("DEBUG: Failed to parse the PAC script:\n%s\n",
-				script);
+    print_error("%s: %s\n", error_prefix, "Failed to evaluate the pac script.");
+    print_debug("Failed to parse the PAC script:\n%s\n", script);
     return 0;
   }
-  if (_debug()) print_error("DEBUG: Parsed the PAC script.\n");
+  print_debug("Parsed the PAC script.\n");
   return 1;
 }
 
 // Parses the given PAC file.
 //
-// reads the given PAC file and evaluates it in the JavaScript context created
-// by pacparser_init.
-int                                     // 0 (=Failure) or 1 (=Success)
+// Rads the given PAC file and evaluates it in the JavaScript context
+// created by pacparser_init.
+//
+// Return 0 on failure and 1 on succcess.
+int
 pacparser_parse_pac_file(const char *pacfile)
 {
   char *script = NULL;
 
   if ((script = read_file_into_str(pacfile)) == NULL) {
     print_error("pacparser.c: pacparser_parse_pac: %s: %s: %s\n",
-            "Could not read the pacfile: ", pacfile, strerror(errno));
+                "Could not read the pacfile: ", pacfile, strerror(errno));
     return 0;
   }
 
   int result = pacparser_parse_pac_string(script);
-  if (script != NULL) free(script);
+  free(script);
 
-  if (_debug()) {
-    if(result) print_error("DEBUG: Parsed the PAC file: %s\n", pacfile);
-    else print_error("DEBUG: Could not parse the PAC file: %s\n", pacfile);
-  }
+  if (result)
+    print_debug("Parsed the PAC file: %s\n", pacfile);
+  else
+    print_debug("Could not parse the PAC file: %s\n", pacfile);
 
   return result;
 }
@@ -410,53 +423,58 @@ pacparser_parse_pac(const char *pacfile)
 // If JavaScript engine is intialized and findProxyForURL function is defined,
 // it evaluates code findProxyForURL(url,host) in JavaScript context and
 // returns the result.
-char *                                  // Proxy string or NULL if failed.
+//
+// Returns the proxy string on succcess, NULL on failure.
+char *
 pacparser_find_proxy(const char *url, const char *host)
 {
-  char *error_prefix = "pacparser.c: pacparser_find_proxy:";
-  if (_debug()) print_error("DEBUG: Finding proxy for URL: %s and Host:"
-                        " %s\n", url, host);
-  jsval rval;
+  char *error_prefix = "pacparser.c: pacparser_find_proxy";
   char *script;
-  if (url == NULL || (strcmp(url, "") == 0)) {
-    print_error("%s %s\n", error_prefix, "URL not defined");
+  jsval rval;
+
+  print_debug("Finding proxy for URL '%s' and Host '%s'\n", url, host);
+
+  if (url == NULL || STREQ(url, "")) {
+    print_error("%s: %s\n", error_prefix, "URL not defined");
     return NULL;
   }
-  if (host == NULL || (strcmp(host,"") == 0)) {
-    print_error("%s %s\n", error_prefix, "Host not defined");
+  if (host == NULL || STREQ(host,"")) {
+    print_error("%s: %s\n", error_prefix, "Host not defined");
     return NULL;
   }
   if (cx == NULL || global == NULL) {
-    print_error("%s %s\n", error_prefix, "Pac parser is not initialized.");
+    print_error("%s: %s\n", error_prefix, "Pac parser is not initialized.");
     return NULL;
   }
+
   // Test if findProxyForURL is defined.
   script = "typeof(findProxyForURL);";
-  if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
+  print_debug("Executing JavaScript: %s\n", script);
   JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
-  if (strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0) {
-    print_error("%s %s\n", error_prefix,
-		  "Javascript function findProxyForURL not defined.");
+  if (!STREQ("function", JS_GetStringBytes(JS_ValueToString(cx, rval)))) {
+    print_error("%s: %s\n", error_prefix,
+                "Javascript function findProxyForURL not defined.");
     return NULL;
   }
 
-  // URL-encode "'" as we use single quotes to stick the URL into a temporary script.
+  // URL-encode "'" as we use single quotes to stick the URL into a
+  // temporary script.
   char *sanitized_url = str_replace(url, "'", "%27");
-  // Hostname shouldn't have single quotes in them
+  // Hostname shouldn't have single quotes in them.
   if (strchr(host, '\'')) {
-    print_error("%s %s\n", error_prefix,
-		"Invalid hostname: hostname can't have single quotes.");
+    print_error("%s: %s\n", error_prefix,
+                "Invalid hostname: hostname can't have single quotes.");
     return NULL;
   }
 
-  script = (char*) malloc(32 + strlen(url) + strlen(host));
+  script = (char *) malloc(32 + strlen(url) + strlen(host));
   script[0] = '\0';
   strcat(script, "findProxyForURL('");
   strcat(script, sanitized_url);
   strcat(script, "', '");
   strcat(script, host);
   strcat(script, "')");
-  if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
+  print_debug("Executing JavaScript: %s\n", script);
   if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval)) {
     print_error("%s %s\n", error_prefix, "Problem in executing findProxyForURL.");
     free(sanitized_url);
@@ -482,9 +500,9 @@ pacparser_cleanup()
     JS_DestroyRuntime(rt);
     rt = NULL;
   }
-  if (!cx && !rt) JS_ShutDown();
+  JS_ShutDown();
   global = NULL;
-  if (_debug()) print_error("DEBUG: Pacparser destroyed.\n");
+  print_debug("Pacparser destroyed.\n");
 }
 
 // Finds proxy for the given PAC file, url and host.
@@ -493,44 +511,47 @@ pacparser_cleanup()
 // pacparser_parse_pac, pacparser_find_proxy and pacparser_cleanup. If you just
 // want to find out proxy a given set of pac file, url and host, this is the
 // function to call.
-char *                                  // Proxy string or NULL if failed.
-pacparser_just_find_proxy(const char *pacfile,
-                         const char *url,
-                         const char *host)
+//
+// Returns the proxy string on succcess, NULL on failure.
+char *
+pacparser_just_find_proxy(const char *pacfile, const char *url,
+                          const char *host)
 {
   char *proxy;
   char *out;
   int initialized_here = 0;
-  char *error_prefix = "pacparser.c: pacparser_just_find_proxy:";
+  char *error_prefix = "pacparser.c: pacparser_just_find_proxy";
   if (!global) {
     if (!pacparser_init()) {
-      print_error("%s %s\n", error_prefix, "Could not initialize pacparser");
+      print_error("%s: %s\n", error_prefix, "Could not initialize pacparser");
       return NULL;
     }
     initialized_here = 1;
   }
   if (!pacparser_parse_pac(pacfile)) {
-    print_error("%s %s %s\n", error_prefix, "Could not parse pacfile",
-		  pacfile);
-    if (initialized_here) pacparser_cleanup();
+    print_error("%s: %s %s\n", error_prefix,
+                "Could not parse pacfile", pacfile);
+    if (initialized_here)
+      pacparser_cleanup();
     return NULL;
   }
   if (!(out = pacparser_find_proxy(url, host))) {
-    print_error("%s %s %s\n", error_prefix,
-		  "Could not determine proxy for url", url);
-    if (initialized_here) pacparser_cleanup();
+    print_error("%s: %s %s\n", error_prefix,
+                "Could not determine proxy for url", url);
+    if (initialized_here)
+      pacparser_cleanup();
     return NULL;
   }
-  proxy = (char*) malloc(strlen(out) + 1);
-  strcpy(proxy, out);
-  if (initialized_here) pacparser_cleanup();
+  proxy = strdup(out);
+  if (initialized_here)
+    pacparser_cleanup();
   return proxy;
 }
 
 #define QUOTEME_(x) #x
 #define QUOTEME(x) QUOTEME_(x)
 
-char* pacparser_version(void) {
+char *pacparser_version(void) {
 #ifndef VERSION
   print_error("WARNING: VERSION not defined.");
   return "";
