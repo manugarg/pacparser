@@ -9,18 +9,16 @@ set -u -e
 #=== Option parsing ===#
 
 has_ipv6_support=true
+has_c_ares=false
 while (($# > 0)); do
   case ${1} in
     --ipv6) has_ipv6_support=true;;
+    --c-ares) has_c_ares=true;;
     *) die "invalid argument '${1}";;
   esac
   shift
 done
-readonly has_ipv6_support
-
-# TODO(slattarini): make this configurable once we've integrated with c-ares.
-# The run the test with both c-ares enabled and disabled.
-readonly has_c_ares=false
+readonly has_ipv6_support has_c_ares
 
 if ${has_c_ares}; then
   # We want to use a fixed, well-known DNS resolver, the only

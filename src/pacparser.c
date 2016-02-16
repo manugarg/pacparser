@@ -135,7 +135,7 @@ pacparser_set_dns_resolver_type(dns_resolver_t type)
       resolve_host_func = &resolve_host_getaddrinfo;
       return 1;
     case DNS_C_ARES:
-#ifdef C_ARES
+#ifdef HAVE_C_ARES
       resolve_host_func = &resolve_host_c_ares;
       return 1;
 #else

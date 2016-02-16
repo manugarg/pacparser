@@ -23,6 +23,44 @@
 extern "C" {
 #endif
 
+  //------------------------------------------------------------------------------
+
+/// @defgroup pacparser_dns pacparser_dns
+/// @{
+/// @brief API for DNS base functionalities of the pacparser library, a library
+///        to use proxy auto-config (PAC) files.
+///        See project homepage: http://github.com/pacparser/pacparser
+///        for more information.
+/// @author Manu Garg <manugarg@gmail.com>
+/// @author Stefano Lattarini <stefano.lattarini@gmail.com>
+
+/// @brief Use a custom DNS server (specified by IP)
+/// @param ip The IP of the DNS server as a string.
+/// @returns 0 on failure and 1 on success.
+///
+/// Use a custom DNS server, instead of relying on the "nameserver" directive
+/// in /etc/resolv.conf.
+/// It will always succeed if c-ares integration was active at compile time,
+/// and always fail otherwise.
+int pacparser_set_dns_server(const char *ip);
+
+/// @brief Use a custom list of domains.
+/// @param domains A NULL-terminated list of strings, one for each domain.
+/// @returns 0 on failure and 1 on success.
+///
+/// Use a custom list of domains, instead of relying on, e.g., the
+/// "search" directive in /etc/resolv.conf.
+/// It will always succeed if c-ares integration was active at compile time,
+/// and always fail otherwise.
+int pacparser_set_dns_domains(const char **domains);
+
+/// @}
+
+//------------------------------------------------------------------------------
+
+// Function not meant for external use. We reserve the right to change
+// or remove these at any time.
+
 typedef char *(*pacparser_resolve_host_func)(const char *, int all_ips);
 
 char *get_my_ip_address(pacparser_resolve_host_func resolve_host_func,
@@ -31,3 +69,9 @@ char *get_my_ip_address(pacparser_resolve_host_func resolve_host_func,
 char *resolve_host_getaddrinfo(const char *hostname, int all_ips);
 char *resolve_host_literal_ips_only(const char *hostname, int all_ips);
 char *resolve_host_c_ares(const char *hostname, int all_ips);
+
+//------------------------------------------------------------------------------
+
+#ifdef __cplusplus
+}
+#endif

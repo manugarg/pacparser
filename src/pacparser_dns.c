@@ -1,5 +1,5 @@
 // Copyright (C) 2007 Manu Garg.
-// Authors: Stefano Lattarini <slattarini@gmail.com>,
+// Authors: Stefano Lattarini <stefano.lattarini@gmail.com>,
 //          Manu Garg <manugarg@gmail.com>
 //
 // DNS-related function to be used in the pacparser library.
@@ -154,16 +154,37 @@ resolve_host_done:
 
 //------------------------------------------------------------------------------
 
-#ifdef C_ARES
+#ifdef HAVE_C_ARES
 #  error "TODO(slattarini): c-ares support TBD"
 # else
 
-// This function shoud never be called when c-ares integration is disabled.
+// TODO(slattarini): refactor stuff to use print_error() here (will have to be
+// ripped out from pacparser.c)
+#define pacparser_no_c_ares(funcname) \
+  fprintf(stderr, "function %s requires c-ares integration to be enabled " \
+          "at compile time", funcname) \
+
+// These functions shoud never be called when c-ares integration is disabled.
+
 char *
 resolve_host_c_ares(const char *hostname, int all_ips)
 {
-  // TODO(slattarini): is this OK in a library?
-  abort();
+  pacparser_no_c_ares("resolve_host_c_ares");
+  return NULL;
+}
+
+int
+pacparser_set_dns_server(const char *ip)
+{
+  pacparser_no_c_ares("pacparser_set_dns_server");
+  return 0;
+}
+
+int
+pacparser_set_dns_domains(const char **domains)
+{
+  pacparser_no_c_ares("pacparser_set_dns_domains");
+  return 0;
 }
 
 #endif // !C_ARES

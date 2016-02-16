@@ -28,11 +28,6 @@
 #define PACMAX (1024 * 1024)  // Max size of the PAC script (1 MiB)
 #define DOMAINMAX 32  // Max number of domains passed via option '-d'
 
-#ifndef HAVE_C_ARES
-#  define pacparser_set_dns_server(x) ((void)(x), 0)
-#  define pacparser_set_dns_domains(x) ((void)(x), 0)
-#endif
-
 void
 usage(const char *progname)
 {

@@ -35,10 +35,24 @@ PYTHON ?= python
 LDFLAGS =
 CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
 
-# TODO(slattarini): add actual support/integration for c-ares
-HAVE_C_ARES ?= auto
-ifeq "$(HAVE_C_ARES)" "yes"
-  C_ARES_CFLAGS += -DHAVE_C_ARES
+# NOTICE(slattarini): in an ideal world, we would autonconfiscate the
+# pacparser build system and turn these definition into automatically
+# populated ones (via ./configure); however, given the current status of
+# the build system, compounded by the fact that we use a bundled package
+# (SpiderMonkey) which is not autoconfiscated and mostly incompatible with
+# several autotools conventions, we take the easier albeit suboptimal
+# solution.
+ENABLE_C_ARES ?= auto
+ifeq "$(ENAVLEENABLE_C_ARES)" "auto"
+  ENABLE_C_ARES := $(shell pkg-config --exists libcares && echo yes || echo no)
+  $(info ENABLE_C_ARES was undefined; autodetected to "$(ENABLE_C_ARES)")
+  ifeq "$(ENABLE_C_ARES)" "yes"
+    C_ARES_CFLAGS := $(shell pkg-config --cflags libcares)
+    C_ARES_LDFLAGS := $(shell pkg-config --libs libcares)
+  endif
+endif
+ifeq "$(ENABLE_C_ARES)" "yes"
+  C_ARES_CFLAGS += -DENABLE_C_ARES
 else
   $(warning c-ares (http://c-ares.haxx.se) library not found or disabled)
   $(warning Some DNS-related features will be unavailable)
@@ -112,20 +126,23 @@ $(LIBRARY_LINK): $(LIBRARY)
 pactester: pactester.o $(LIBRARY_LINK)
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ -lpacparser -L. -I.
 
-testpactester: pactester
-	echo "Running tests for pactester."
-	NO_INTERNET=$(NO_INTERNET) ../tests/runtests.sh
+oldtestpactester: pactester
+	@echo "Running tests for pactester."
+	NO_INTERNET='$(NO_INTERNET)' ../tests/runtests.sh
 
-newtestpactester: pactester
+testpactester: pactester
 	@set -u -e; st=0; \
 	 export PACTESTER="$$(pwd)/$<"; \
 	 (set -x && $(BASH) pactester_nointernet_test.sh) || st=1; \
 	 tst=pactester_dns_test.sh; \
-	 if test -n '$(NO_INTERNET)'; then \
+	 if [ -n '$(NO_INTERNET)' ]; then \
 	   echo "Skipping test $${tst}"; \
-	 else \
-	   args=$$(test -z '$(NO_IPV6)' && printf '%s\n' '--ipv6'); \
-	   (set -x && $(BASH) $${tst} $${args}) || st=1; \
+	   exit $${st}; \
+	 fi; \
+	 args=$$(test -z '$(NO_IPV6)' && printf '%s\n' '--ipv6'); \
+	 (set -x && $(BASH) $${tst} $${args}) || st=1; \
+	 if [ '$(ENABLE_C_ARES)' = 'yes' ]; then \
+	   (set -x && $(BASH) $${tst} $${args} --c-ares) || st=1; \
 	 fi; \
 	 exit $${st}
 
@@ -138,6 +155,7 @@ install: all
 	ln -sf $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY_LINK)
 	install -m 755 pactester $(BIN_PREFIX)/pactester
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
+	install -m 644 pacparser_dns.h $(INC_PREFIX)/pacparser_dns.h
 	# install pactester manpages
 	install -d $(MAN_PREFIX)/man1/
 	(test -d ../docs && install -m 644 ../docs/man/man1/*.1 $(MAN_PREFIX)/man1/) || true
