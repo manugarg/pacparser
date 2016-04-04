@@ -132,26 +132,29 @@ pacparser_setmyip(const char *ip)
 }
 
 int
-pacparser_set_dns_resolver_type(dns_resolver_t type)
+pacparser_set_dns_resolver_variant(const char *dns_resolver_variant)
 {
-  switch (type) {
-    case DNS_NONE:
-      dns_resolver = &pacparser_resolve_host_literal_ips;
-      return 1;
-    case DNS_GETADDRINFO:
-      dns_resolver = &pacparser_resolve_host_getaddrinfo;
-      return 1;
-    case DNS_C_ARES:
+  const char *error_prefix = "pacparser.c: pacparser_set_dns_resolver_variant";
+  if STREQ(dns_resolver_variant, DNS_NONE) {
+    dns_resolver = &pacparser_resolve_host_literal_ips;
+    return 1;
+  } else if STREQ(dns_resolver_variant, DNS_GETADDRINFO) {
+    dns_resolver = &pacparser_resolve_host_getaddrinfo;
+    return 1;
+  } else if STREQ(dns_resolver_variant, DNS_C_ARES) {
 #ifdef HAVE_C_ARES
-      dns_resolver = &pacparser_resolve_host_ares;
-      return 1;
+    dns_resolver = &pacparser_resolve_host_ares;
+    return 1;
 #else
-      print_error("pacparser.c: cannot use c-ares as DNS resolver: was not "
-                  "available at compile time.\n");
-      return 0;
+    print_error("pacparser.c: cannot use c-ares as DNS resolver: was not "
+                "available at compile time.\n");
+    return 0;
 #endif
+  } else {
+    print_error("%s invalid DNS resolver variant \"%s\"\n",
+                error_prefix, dns_resolver_variant);
+    return 0;
   }
-  abort(); /* NOTREACHED */
 }
 
 // dnsResolve/dnsResolveEx in JS context; not available in core JavaScript.

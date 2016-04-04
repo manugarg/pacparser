@@ -119,7 +119,7 @@ main(int argc, char* argv[])
 {
   const char *pacfile = NULL, *host = NULL, *url = NULL, *urlsfile = NULL,
              *client_ip = NULL, *dns_servers = NULL, *dns_domains = NULL,
-             *dns_resolver_variant = "getaddrinfo";
+             *dns_resolver_variant = DNS_GETADDRINFO;
 
   int enable_microsoft_extensions = 1;
 
@@ -180,25 +180,8 @@ main(int argc, char* argv[])
     usage(argv[0]);
   }
 
-  dns_resolver_t type;
-  if STREQ(dns_resolver_variant, "none") {
-    type = DNS_NONE;
-  } else if STREQ(dns_resolver_variant, "getaddrinfo") {
-    type = DNS_GETADDRINFO;
-  } else if STREQ(dns_resolver_variant, "c-ares") {
-    type = DNS_C_ARES;
-  } else {
-    fprintf(stderr, "pactester.c: invalid DNS resolver variant \"%s\"\n",
-            dns_resolver_variant);
+  if (!pacparser_set_dns_resolver_variant(dns_resolver_variant))
     usage(argv[0]);
-    // Silence bogus "variable 'type' is used uninitialized" compiler error
-    // when compiling with clang in strict mode.
-    abort();
-  }
-  if (!pacparser_set_dns_resolver_type(type)) {
-    fprintf(stderr, "pactester.c: pacparser_set_dns_resolver_type() failed\n");
-    return 1;
-  }
 
   if (dns_servers) {
     if (!pacparser_set_dns_servers(dns_servers)) {

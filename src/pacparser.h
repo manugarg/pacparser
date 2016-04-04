@@ -104,20 +104,19 @@ void pacparser_cleanup(void);
 /// myIpAddress() javascript function.
 void pacparser_setmyip(const char *ip);
 
-/// @brief Type definition for valid DNS resolver types.
-typedef enum {
-  DNS_NONE,
-  DNS_GETADDRINFO,
-  DNS_C_ARES
-} dns_resolver_t;
+/// @brief Valid DNS resolver types.
+#define DNS_NONE "none"
+#define DNS_GETADDRINFO "getaddrinfo"
+#define DNS_C_ARES "c-ares"
 
-/// @brief Set DNS resolver to use
-/// @param type DNS resolver type to use, must have type dns_resolver_t.
+/// @brief Set DNS resolver to use, via a string
+/// @param variant of DNS resolver type to use
 /// @returns 0 on failure, non-zero otherwise.
 ///
-/// Return value will be zero only if asked to use c-ares as the DNS resolver,
-/// but that library was not available at compile time.
-int pacparser_set_dns_resolver_type(dns_resolver_t type);
+/// Return value will be zero if asked to use an unrecognized DNS variant (that
+/// is, not one of "none", "getaddrinfo", "c-ares"), or if asked to use c-ares
+/// as the DNS resolver, but that library was not available at compile time.
+int pacparser_set_dns_resolver_variant(const char *);
 
 /// @brief Type definition for pacparser_error_printer.
 /// @param fmt printf format
