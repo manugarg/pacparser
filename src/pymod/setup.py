@@ -41,10 +41,17 @@ def main():
               (' '.join(sys.argv[1:]), sys.prefix, pyDLL, pyVer))
     return
 
-  pacparser_module = Extension('_pacparser',
-                               include_dirs = ['../spidermonkey/js/src', '..'],
-                               sources = ['pacparser_py.c'],
-                               extra_objects = ['../pacparser.o', '../libjs.a'])
+  pacparser_module = Extension(
+      '_pacparser',
+      include_dirs = ['../spidermonkey/js/src', '..'],
+      sources = ['pacparser_py.c'],
+      extra_objects = [
+          '../pacparser.o',
+          '../pacparser_dns.o',
+          '../util.o',
+          '../libjs.a'
+      ], extra_link_args = os.getenv("C_ARES_LDFLAGS", "").split()
+  )
   setup (name = 'pacparser',
          version = '1',
          description = 'Pacparser package',
@@ -52,7 +59,7 @@ def main():
          author_email = 'manugarg@gmail.com',
          url = 'http://github.com/pacparser/pacparser',
          long_description = 'python library to parse proxy auto-config (PAC) '
-                           'files.',
+                            'files.',
          license = 'LGPL',
          ext_package = 'pacparser',
          ext_modules = [pacparser_module],

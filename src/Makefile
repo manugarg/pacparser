@@ -119,7 +119,10 @@ pacparser.o: pac_utils.h pacparser.h pacparser_dns.h util.h jsapi_buildstamp
 pacparser_dns.o: pacparser_dns.h util.h
 pactester.o: pacparser.h util.h
 
-$(LIBRARY): util.o pacparser_dns.o pacparser.o libjs.a
+# Also used for the python module, below.
+LIBRARY_DEPS = util.o pacparser_dns.o pacparser.o libjs.a
+
+$(LIBRARY): $(LIBRARY_DEPS)
 	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lm
 
 $(LIBRARY_LINK): $(LIBRARY)
@@ -171,8 +174,8 @@ install: all
 	install -d $(PREFIX)/share/doc/pacparser/examples/
 	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc/pacparser/examples/) || true
 
-pymod: pacparser.o pacparser.h libjs.a
-	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
+pymod: $(LIBRARY_DEPS)
+	cd pymod && C_ARES_LDFLAGS="$(C_ARES_LDFLAGS)" ARCHFLAGS="" $(PYTHON) setup.py build
 	$(PYTHON) ../tests/runtests.py
 
 install-pymod: pymod

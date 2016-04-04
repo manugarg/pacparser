@@ -139,6 +139,44 @@ py_pacparser_enable_microsoft_extensions(PyObject *self, PyObject *args)
   Py_RETURN_NONE;
 }
 
+// Disables Microsoft extensions.
+static PyObject *
+py_pacparser_disable_microsoft_extensions(PyObject *self, PyObject *args)
+{
+  pacparser_disable_microsoft_extensions();
+  Py_RETURN_NONE;
+}
+
+// Use custom DNS servers instead of relying on the "nameserver"
+// directive in /etc/resolv.conf.
+static PyObject *
+py_pacparser_set_dns_servers(PyObject *self, PyObject *args)
+{
+  const char *ip;
+  if (!PyArg_ParseTuple(args, "s", &ip))
+    return NULL;
+  pacparser_set_dns_servers(ip);
+  Py_RETURN_NONE;
+}
+
+// Use a custom DNS domains instead of relying on the "search" directive
+// in /etc/resolv.conf.
+static PyObject *
+py_pacparser_set_dns_domains(PyObject *self, PyObject *args)
+{
+  PyObject* list;
+  if (!PyArg_ParseTuple(args, "O", &list))
+    return NULL;
+  Py_ssize_t len = PyList_Size(list);
+  Py_ssize_t i;
+  char **domains = (char **) calloc(len + 1, sizeof(char *));
+  for (i = 0; i < len; i++)
+    domains[i] = PyString_AsString(PyList_GetItem(list, i));
+  domains[i] = NULL;
+  pacparser_set_dns_domains((const char **)domains);
+  Py_RETURN_NONE;
+}
+
 static PyMethodDef  PpMethods[] = {
   {"init", py_pacparser_init, METH_VARARGS, "initialize pacparser"},
   {"parse_pac_string", py_pacparser_parse_pac_string, METH_VARARGS,
@@ -149,6 +187,14 @@ static PyMethodDef  PpMethods[] = {
   {"setmyip", py_pacparser_setmyip, METH_VARARGS, "set my ip address"},
   {"enable_microsoft_extensions", py_pacparser_enable_microsoft_extensions,
     METH_VARARGS, "enable Microsoft extensions"},
+  {"disable_microsoft_extensions", py_pacparser_disable_microsoft_extensions,
+    METH_VARARGS, "disable Microsoft extensions"},
+  {"set_dns_servers", py_pacparser_set_dns_servers,
+    METH_VARARGS, "use the given DNS servers instead of relying on the ones "
+                  "in /etc/resolv.conf"},
+  {"set_dns_domains", py_pacparser_set_dns_domains,
+    METH_VARARGS, "use the given DNS domains instead of relying on the ones "
+                  "in /etc/resolv.conf"},
   {NULL, NULL, 0, NULL}
 };
 

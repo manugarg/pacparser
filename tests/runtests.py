@@ -45,10 +45,7 @@ def runtests(pacfile, testdata, tests_dir):
                                   pacparser_module_path)
   sys.path.insert(0, pacparser_module_path)
 
-  try:
-    import pacparser
-  except ImportError:
-    raise Exception('Tests failed. Could not import pacparser.')
+  import pacparser
 
   if 'DEBUG' in os.environ: print('Imported pacparser module: %s' %
                                   sys.modules['pacparser'])
