@@ -22,7 +22,7 @@
 #include <jsapi.h>
 
 #include "util.h"
-#include "pac_utils.h"
+#include "pac_builtins.h"
 #include "pacparser_dns.h"
 #include "pacparser.h"
 
@@ -272,7 +272,7 @@ pacparser_disable_microsoft_extensions(void)
 // - Initializes JavaScript engine.
 // - Exports dns_functions (defined above) to JavaScript context.
 // - Sets error reporting function to print_jserror.
-// - Evaluates JavaScript code in pacUtils variable defined in pac_utils.h.
+// - Evaluates JavaScript code in pacUtils variable defined in pac_builtins.h.
 //
 // Return 0 on failure, 1 on success.
 int
@@ -337,13 +337,14 @@ pacparser_init()
   // parse PAC files.
   if (!JS_EvaluateScript(cx,           // JS engine context
                          global,       // global object
-                         pac_builtins, // this is defined in pac_utils.h
+                         pac_builtins, // this is defined in pac_builtins.h
                          strlen(pac_builtins),
                          NULL,         // filename (NULL in this case)
                          1,            // line number, used for reporting
                          &rval)) {
     print_error("%s: %s\n", error_prefix,
-                "Could not evaluate pac_builtins defined in pac_utils.h");
+                "Could not evaluate pac_builtins defined in "
+                "pac_builtins.h");
     return 0;
   }
 
@@ -352,13 +353,14 @@ pacparser_init()
     // functions defined above.
     if (!JS_EvaluateScript(cx,              // JS engine context
                            global,          // global object
-                           pac_builtins_ex, // this is defined in pac_utils.h
+                           pac_builtins_ex, // this is defined in pac_builtins.h
                            strlen(pac_builtins_ex),
                            NULL,            // filename (NULL in this case)
                            1,               // line number, used for reporting
                            &rval)) {
       print_error("%s: %s\n", error_prefix,
-                  "Could not evaluate pac_builtins_ex defined in pac_utils.h");
+                  "Could not evaluate pac_builtins_ex defined in "
+                  "pac_builtins.h");
       return 0;
     }
   }

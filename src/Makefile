@@ -115,7 +115,7 @@ libjs.a: spidermonkey/js/src
 	$(CC) $(CFLAGS) $(SHFLAGS) -c $< -o $@
 
 util.o: util.c util.h
-pacparser.o: pac_utils.h pacparser.h pacparser_dns.h util.h jsapi_buildstamp
+pacparser.o: pac_builtins.h pacparser.h pacparser_dns.h util.h jsapi_buildstamp
 pacparser_dns.o: pacparser_dns.h util.h
 pactester.o: pacparser.h util.h
 

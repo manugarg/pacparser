@@ -1,7 +1,7 @@
 // Copyright (C) 2007 Manu Garg.
 // Author: Manu Garg <manugarg@gmail.com>
 //
-// pac_utils.h defines some of the functions used by PAC files. This file is
+// pac_builtins.h defines some of the functions used by PAC files. This file is
 // packaged with pacparser source code and is required for compiling pacparser.
 // Please read README file included with this package for more information
 // about pacparser.
