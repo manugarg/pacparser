@@ -1,4 +1,4 @@
-// Author: Stefano Lattarini <slattarini@gmail.com>,
+// Author: Stefano Lattarini <slattarini@gmail.com>
 //
 // Private utility functions used by the pacparser project.
 //

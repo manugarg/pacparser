@@ -262,7 +262,7 @@ callback(void *arg, int status, int timeouts, struct hostent *host)
 
 // Shamelessly copied from ares_process(3)
 static int
-ares_wait_for_all_queries_to_complete(ares_channel channel)
+ares_wait_for_all_queries(ares_channel channel)
 {
    int nfds, count;
    fd_set readers, writers;
@@ -346,8 +346,8 @@ pacparser_resolve_host_ares(const char *hostname, int all_ips)
   ares_gethostbyname(global_channel, hostname, ip6.h_addrtype, callback,
                      (void *) &ip6);
 
-  if (!ares_wait_for_all_queries_to_complete(global_channel)) {
-    print_err("Some c-ares quory did not complete succesfully");
+  if (!ares_wait_for_all_queries(global_channel)) {
+    print_err("Some c-ares queries did not complete successfully");
     return NULL;
   }
   // We'll need to properly free this before returning, to avoid memory leaks.
