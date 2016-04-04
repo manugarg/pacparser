@@ -125,6 +125,18 @@ def just_find_proxy(pacfile, url, host=None):
   return proxy
 
 
+def set_dns_resolver_variant(variant):
+  """
+  Set DNS resolver to use.
+
+  Valid values are those in the DNS_* module-level constants.
+  """
+  if variant in (DNS_NONE, DNS_GETADDRINFO, DNS_C_ARES):
+    _pacparser.set_dns_resolver_variant(variant)
+  else:
+    raise ValueError("invalid DNS resolver variant: '%s'" % variant)
+
+
 def setmyip(ip_address):
   """
   Set my ip address. This is the IP address returned by myIpAddress()

@@ -177,6 +177,17 @@ py_pacparser_set_dns_domains(PyObject *self, PyObject *args)
   Py_RETURN_NONE;
 }
 
+// Set DNS resolver variant to use ("none", "getaddrinfo", "c-ares").
+static PyObject *
+py_pacparser_set_dns_resolver_variant(PyObject *self, PyObject *args)
+{
+  const char *variant;
+  if (!PyArg_ParseTuple(args, "s", &variant))
+    return NULL;
+  pacparser_set_dns_resolver_variant(variant);
+  Py_RETURN_NONE;
+}
+
 static PyMethodDef  PpMethods[] = {
   {"init", py_pacparser_init, METH_VARARGS, "initialize pacparser"},
   {"parse_pac_string", py_pacparser_parse_pac_string, METH_VARARGS,
@@ -185,6 +196,8 @@ static PyMethodDef  PpMethods[] = {
   {"version", py_pacparser_version, METH_VARARGS, "returns pacparser version"},
   {"cleanup", py_pacparser_cleanup, METH_VARARGS, "destroy pacparser engine"},
   {"setmyip", py_pacparser_setmyip, METH_VARARGS, "set my ip address"},
+  {"set_dns_resolver_variant", py_pacparser_set_dns_resolver_variant,
+    METH_VARARGS, "set DNS resolver variant to use"},
   {"enable_microsoft_extensions", py_pacparser_enable_microsoft_extensions,
     METH_VARARGS, "enable Microsoft extensions"},
   {"disable_microsoft_extensions", py_pacparser_disable_microsoft_extensions,
