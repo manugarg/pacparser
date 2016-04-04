@@ -127,7 +127,7 @@ int pacparser_set_dns_resolver_type(dns_resolver_t type);
 typedef int (*pacparser_error_printer)(const char *fmt, va_list argp);
 
 /// @brief Sets error printing function.
-/// @param func Variadic-argument Printing function.
+/// @param func Variadic-argument printing function.
 ///
 /// Sets error variadic-argument printing function.  If not set the messages
 /// are printed to stderr.  If messages begin with DEBUG: or WARNING:,
