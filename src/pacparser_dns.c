@@ -193,8 +193,9 @@ static int dns_domains_count = 0;
 static ares_channel global_channel;
 
 struct callback_arg {
-  const char **addresses;
-  int h_addrtype;
+  char *mallocd_addresses;
+  int ai_family;
+  int all_ips;
 };
 
 // Use a custom DNS server (specified by IP), instead of relying on the
@@ -239,24 +240,22 @@ callback(void *arg, int status, int timeouts, struct hostent *host)
   // actually need this little abomination. Sorry.
   struct callback_arg *p = (struct callback_arg *) arg;
 
-  if (status != ARES_SUCCESS) {
-    // TODO(slattarini): make this debugging, as it's OK
-    print_err("A c-ares callback failed with errno = %d", status);
+  if (status != ARES_SUCCESS || host->h_addrtype != p->ai_family)
     return;
-  }
-
-  if (host->h_addrtype != p->h_addrtype) {
-    // TODO(slattarini): make this debugging, as it's OK
-    print_err("Ignoring result as it doesn't have expected addrtype %d",
-              p->h_addrtype);
-    return;
-  }
 
   char **s;
   for (s = host->h_addr_list; *s; s++) {
-    char addr_buf[INET6_ADDRSTRLEN];
-    ares_inet_ntop(host->h_addrtype, *s, addr_buf, sizeof(addr_buf));
-    p->addresses = append_to_string_list(p->addresses, strdup(addr_buf));
+    char addr_buf[INET6_ADDRSTRLEN];  // large enough for IPv4 and IPv6 alike
+    ares_inet_ntop(p->ai_family, *s, addr_buf, sizeof(addr_buf));
+    if (p->all_ips) {
+      if (p->mallocd_addresses) {
+        p->mallocd_addresses = concat_strings(p->mallocd_addresses, ";");
+      }
+      p->mallocd_addresses = concat_strings(p->mallocd_addresses, addr_buf);
+    } else {
+      p->mallocd_addresses = strdup(addr_buf);
+      return;  // we only need and want one result
+    }
   }
 }
 
@@ -337,38 +336,23 @@ pacparser_resolve_host_ares(const char *hostname, int all_ips)
     return strdup("");
   }
 
-  struct callback_arg ip4, ip6;
-  ip4.addresses = NULL, ip4.h_addrtype = AF_INET;
-  ip6.addresses = NULL, ip6.h_addrtype = AF_INET6;
+  struct callback_arg cba;
+  cba.all_ips = all_ips;
+  cba.mallocd_addresses = NULL;
 
-  ares_gethostbyname(global_channel, hostname, ip4.h_addrtype, callback,
-                     (void *) &ip4);
-  ares_gethostbyname(global_channel, hostname, ip6.h_addrtype, callback,
-                     (void *) &ip6);
-
-  if (!ares_wait_for_all_queries(global_channel)) {
-    print_err("Some c-ares queries did not complete successfully");
-    return NULL;
+  int i, ai_families[] = {AF_INET, AF_INET6};
+  for (i = 0; i < 2; i++) {
+    cba.ai_family = ai_families[i];
+    ares_gethostbyname(global_channel, hostname, ai_families[i], callback,
+                       (void *) &cba);
+    if (!ares_wait_for_all_queries(global_channel)) {
+      print_err("Some c-ares queries did not complete successfully");
+      return NULL;
+    }
+    if (!all_ips && cba.mallocd_addresses)
+      return cba.mallocd_addresses;
   }
-  // We'll need to properly free this before returning, to avoid memory leaks.
-  char **ip_addresses = concatenate_and_dup_string_lists(ip4.addresses,
-                                                         ip6.addresses);
-  // Free memory pointing to early intermediate results.
-  deep_free_string_list(ip4.addresses);
-  deep_free_string_list(ip6.addresses);
-  // Build the final result.
-  char *result;
-  if (!*ip_addresses) {
-    result = NULL;
-  } else if (!all_ips) {
-    result = strdup(ip_addresses[0]);
-  } else {
-    result = join_string_list(ip_addresses, ";");
-  }
-  // Free memory pointing to late intermediate results.
-  deep_free_string_list(ip_addresses);
-  // And return the final result.
-  return result;
+  return cba.mallocd_addresses;
 }
 
 # else // !HAVE_C_ARES

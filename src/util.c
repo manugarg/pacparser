@@ -1,22 +1,24 @@
-// Author: Stefano Lattarini <slattarini@gmail.com>
+// Author: Stefano Lattarini <slattarini@google.com>
 //
 // Private utility functions used by the pacparser project.
 //
-// Pacparser is free software: you can redistribute it and/or modify
+// pacparser is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Lesser General Public License as published
 // by the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// Pacparser is distributed in the hope that it will be useful,
+// pacparser is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Lesser General Public License for more details.
 //
 // You should have received a copy of the GNU Lesser General Public License
-// along with Pacparser.  If not, see <http://www.gnu.org/licenses/>.
+// along with pacparser.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "util.h"
 #include <assert.h>
+
+#define STRSIZE(s) (s ? strlen(s) + 1 : 0)
 
 // You must free the result if result is non-NULL.
 char *
@@ -102,41 +104,6 @@ measure_and_dup_string_list(const char **original, int *len_ptr)
   return copy;
 }
 
-char **
-dup_string_list(const char **original)
-{
-  return measure_and_dup_string_list(original, NULL);
-}
-
-char **
-concatenate_and_dup_string_lists(const char **head, const char **tail)
-{
-  int head_len, tail_len, len, i;
-  // Strdup all the strings of the original lists (so that we can copy around
-  // pointers to them from now on) and calculate their length.
-  head = (const char **) measure_and_dup_string_list(head, &head_len);
-  tail = (const char **) measure_and_dup_string_list(tail, &tail_len);
-  // The length of the concatenated list we are going to build.
-  len = head_len + tail_len;
-  // Allocate space for the copied list. The '+1' is to account for the
-  // trailing NULL pointer.
-  const char **concat = (const char **) calloc(len + 1, sizeof(char **));
-  // Concatenate the strduped lists.
-  for (i = 0; i < head_len; i++) {
-    concat[i] = head[i];
-  }
-  for (i = 0; i < tail_len; i++) {
-    concat[head_len + i] = tail[i];
-  }
-  concat[len] = NULL;
-  // Do *not* use deep_free_string_list() here, as the strings these lists point
-  // to are also pointed to by the concatenated list.
-  free(head);
-  free(tail);
-   // Return pointer to the concatenated list.
-  return (char **) concat;
-}
-
 char *
 join_string_list(const char **list, const char *separator)
 {
@@ -164,15 +131,20 @@ join_string_list(const char **list, const char *separator)
   return result;
 }
 
-char **
-append_to_string_list(const char **list, const char *str)
+char *
+concat_strings(const char *mallocd_str1, const char *str2)
 {
-  int len = string_list_len(list);
-  // Make sure we have space to append the string and the new terminating NULL.
-  const char **extended_list = realloc(list, (len + 2) * sizeof(char **));
-  // Add the string to be appended where the terminating NULL used to be, and
-  // append a new NULL after that.
-  extended_list[len] = str;
-  extended_list[len + 1] = NULL;
-  return extended_list;
+  int size1 = STRSIZE(mallocd_str1);
+  int size2 = STRSIZE(str2);
+
+  if (!size1)
+    return strdup(str2);
+
+  char *mallocd_result;
+  if ((mallocd_result = realloc(mallocd_str1, size1 + size2)) == NULL)
+    return NULL;
+  if (size2)
+    strcat(mallocd_result, str2);
+
+  return mallocd_result;
 }
