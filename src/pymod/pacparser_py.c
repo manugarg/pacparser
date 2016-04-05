@@ -56,7 +56,7 @@ static PyObject *PacparserError;
 // - Initializes JavaScript engine,
 // - Exports dns_functions (defined above) to JavaScript context.
 // - Sets error reporting function to print_error,
-// - Evaluates JavaScript code in pacUtils variable defined in pac_builtins.h.
+// - Evaluates JavaScript code defined in pac_builtins.h.
 static PyObject *                          // 0 (=Failure) or 1 (=Success)
 py_pacparser_init(PyObject *self, PyObject *args)
 {
