@@ -319,7 +319,7 @@ pacparser_ares_init(void)
     char *p, *sp;
     p = strtok_r(dns_domains, ",", &sp);
     while (p != NULL) {
-      domains_list = realloc(domains_list, (i + 1) * sizeof(char **));
+      domains_list = realloc(domains_list, (i + 2) * sizeof(char **));
       domains_list[i++] = p;
       p = strtok_r(NULL, ",", &sp);
     }
