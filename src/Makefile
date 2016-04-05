@@ -114,13 +114,13 @@ libjs.a: spidermonkey/js/src
 %.o: %.c
 	$(CC) $(CFLAGS) $(SHFLAGS) -c $< -o $@
 
-util.o: util.c util.h
-pacparser.o: pac_builtins.h pacparser.h pacparser_dns.h util.h jsapi_buildstamp
-pacparser_dns.o: pacparser_dns.h util.h
-pactester.o: pacparser.h util.h
+pacparser.o: pac_builtins.h pacparser.h pacparser_dns.h pacparser_utils.h
+pacparser.o: jsapi_buildstamp
+pacparser_dns.o: pacparser_dns.h pacparser_utils.h
+pactester.o: pacparser.h pacparser_utils.h
 
 # Also used for the python module, below.
-LIBRARY_DEPS = util.o pacparser_dns.o pacparser.o libjs.a
+LIBRARY_DEPS = pacparser_dns.o pacparser.o libjs.a
 
 $(LIBRARY): $(LIBRARY_DEPS)
 	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lm

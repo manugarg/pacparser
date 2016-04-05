@@ -21,10 +21,10 @@
 #include <errno.h>
 #include <jsapi.h>
 
-#include "util.h"
 #include "pac_builtins.h"
 #include "pacparser_dns.h"
 #include "pacparser.h"
+#include "pacparser_utils.h"
 
 // To make some function calls more readable.
 #define ONE_IP 0
@@ -32,7 +32,7 @@
 #define DISABLED 0
 #define ENABLED 1
 
-static const char *myip = NULL;
+static char *myip = NULL;
 static int enable_microsoft_extensions = ENABLED;
 
 // Default error printer function.
@@ -72,6 +72,45 @@ print_error(const char *fmt, ...)
         print_error(__VA_ARGS__); \
       } \
     } while (0)
+
+// You must free the result if result is non-NULL.
+static char *
+str_replace(const char *orig, char *rep, char *with)
+{
+  char *copy = strdup(orig);
+
+  char *result;  // the returned string
+  char *ins;     // the next insert point
+  char *tmp;     // varies
+  int count;     // number of replacements
+  int len_front; // distance between rep and end of last rep
+  int len_rep  = strlen(rep);
+  int len_with = strlen(with);
+
+  // Get the count of replacements
+  ins = copy;
+  for (count = 0; (tmp = strstr(ins, rep)); ++count) {
+    ins = tmp + len_rep;
+  }
+
+  tmp = result = malloc(strlen(copy) + (len_with - len_rep) * count + 1);
+
+  // First time through the loop, all the variable are set correctly
+  // from here on,
+  //    tmp points to the end of the result string
+  //    ins points to the next occurrence of rep in copy
+  //    copy points to the remainder of copy after "end of rep"
+  while (count--) {
+      ins = strstr(copy, rep);
+      len_front = ins - copy;
+      tmp = strncpy(tmp, copy, len_front) + len_front;
+      tmp = strcpy(tmp, with) + len_with;
+      copy += len_front + len_rep;  // move to next "end of rep"
+  }
+  strcpy(tmp, copy);
+  free(copy);
+  return result;
+}
 
 // Utility function to read a file into string.
 // Returns a malloc'ed string containing the file content on success,
@@ -126,8 +165,7 @@ static pacparser_resolve_host_func dns_resolver = &pacparser_resolve_host_getadd
 void
 pacparser_setmyip(const char *ip)
 {
-  if (myip)
-    free(myip);
+  free(myip);
   myip = strdup(ip);
 }
 
@@ -447,7 +485,7 @@ char *
 pacparser_find_proxy(const char *url, const char *host)
 {
   const char *error_prefix = "pacparser.c: pacparser_find_proxy";
-  char *script;
+  char *script, *retval;
   jsval rval;
 
   print_debug("Finding proxy for URL '%s' and Host '%s'\n", url, host);
@@ -496,13 +534,13 @@ pacparser_find_proxy(const char *url, const char *host)
   if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval)) {
     print_error("%s: %s\n", error_prefix,
                 "Problem in executing findProxyForURL.");
-    free(sanitized_url);
-    free(script);
-    return NULL;
+    retval = NULL;
+  } else {
+    retval = JS_GetStringBytes(JS_ValueToString(cx, rval));
   }
   free(sanitized_url);
   free(script);
-  return JS_GetStringBytes(JS_ValueToString(cx, rval));
+  return retval;
 }
 
 // Destroys JavaScript Engine.

@@ -20,9 +20,9 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with Pacparser.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "util.h"
 #include "pacparser.h"
 #include "pacparser_dns.h"
+#include "pacparser_utils.h"
 
 #define LINEMAX 4096  // Max length of any line read from text files (4 KiB)
 #define PACMAX (5 * 1024 * 1024)  // Max size of the PAC script (5 MiB)

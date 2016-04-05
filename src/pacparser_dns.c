@@ -20,7 +20,7 @@
 // along with Pacparser.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "pacparser_dns.h"
-#include "util.h"
+#include "pacparser_utils.h"
 
 #ifdef XP_UNIX
 #  include <arpa/inet.h>  // for inet_pton
@@ -45,7 +45,27 @@ struct callback_arg {
   int ai_family;
 };
 
-enum collect_status { COLLECT_DONE = 0, COLLECT_MORE = 1 };
+enum collect_status {
+  COLLECT_DONE = 0,
+  COLLECT_MORE = 1
+};
+
+//------------------------------------------------------------------------------
+
+static char *
+concat_strings(char *mallocd_str, const char *appended_str)
+{
+  if (!appended_str)
+    return mallocd_str;
+  if (!mallocd_str)
+    return strdup(appended_str);
+
+  char *mallocd_result;
+  int reallocd_size = strlen(mallocd_str) + strlen(appended_str) + 1;
+  if ((mallocd_result = realloc(mallocd_str, reallocd_size)) == NULL)
+    return NULL;
+  return strcat(mallocd_result, appended_str);
+}
 
 static enum collect_status
 collect_mallocd_address(struct callback_arg *p, const char *addr_buf)
