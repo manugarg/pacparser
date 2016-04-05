@@ -37,6 +37,12 @@
 #include <ws2tcpip.h>
 #endif
 
+struct callback_arg {
+  char *mallocd_addresses;
+  int ai_family;
+  int all_ips;
+};
+
 //------------------------------------------------------------------------------
 
 char *
@@ -77,78 +83,59 @@ pacparser_resolve_host_literal_ips(const char *hostname, int all_ips)
 
 // DNS resolutions via the getaddrinfo(3) function.
 
-static int
-addrinfo_len(const struct addrinfo *ai)
+void
+callback_for_getaddrinfo(struct callback_arg *p, struct addrinfo *ai)
 {
-  int i = 0;
-  while (ai != NULL) {
-    i++;
-    ai = ai->ai_next;
+  for (; ai != NULL; ai = ai->ai_next) {
+    char addr_buf[INET6_ADDRSTRLEN];  // large enough for IPv4 and IPv6 alike
+    getnameinfo(ai->ai_addr, ai->ai_addrlen, addr_buf, sizeof(addr_buf),
+                NULL, 0, NI_NUMERICHOST);
+    if (p->all_ips) {
+      if (p->mallocd_addresses) {
+        p->mallocd_addresses = concat_strings(p->mallocd_addresses, ";");
+      }
+      p->mallocd_addresses = concat_strings(p->mallocd_addresses, addr_buf);
+    } else {
+      p->mallocd_addresses = strdup(addr_buf);
+      return;  // we only need and want one result
+    }
   }
-  return i;
+}
+
+inline static char *
+pacparser_resolve_host_getaddrinfo_impl(const char *hostname, int all_ips)
+{
+  struct addrinfo hints, *ai;
+  memset(&hints, 0, sizeof(struct addrinfo));
+  hints.ai_socktype = SOCK_STREAM;
+
+  struct callback_arg cba;
+  cba.all_ips = all_ips;
+  cba.mallocd_addresses = NULL;
+
+  int i, ai_families[] = {AF_INET, AF_INET6};
+  for (i = 0; i < 2; i++) {
+    cba.ai_family = hints.ai_family = ai_families[i];
+    if (getaddrinfo(hostname, NULL, &hints, &ai) == 0)
+      callback_for_getaddrinfo(&cba, ai);
+    if (!all_ips && cba.mallocd_addresses)
+      return cba.mallocd_addresses;
+  }
+  return cba.mallocd_addresses;
 }
 
 char *
 pacparser_resolve_host_getaddrinfo(const char *hostname, int all_ips)
 {
-  struct addrinfo *ai[2] = {NULL, NULL};
-
 #ifdef _WIN32
   // On windows, we need to initialize the winsock dll first.
   WSADATA WsaData;
   WSAStartup(MAKEWORD(2,0), &WsaData);
 #endif
-
-  struct addrinfo hints;
-  memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_socktype = SOCK_STREAM;
-
-  int ips_count = 0;
-
-  // First, IPv4 addresses (if any).
-  hints.ai_family = AF_INET;
-  if (getaddrinfo(hostname, NULL, &hints, &ai[0]) == 0) {
-    ips_count += addrinfo_len(ai[0]);
-  }
-
-  // Then, IPv6 addresses (if any, and only if needed).
-  if (all_ips || !ips_count) {
-    hints.ai_family = AF_INET6;
-    if (getaddrinfo(hostname, NULL, &hints, &ai[1]) == 0) {
-      ips_count += addrinfo_len(ai[1]);
-    }
-  }
-
-  if (!all_ips && ips_count)
-    ips_count = 1;
-
-  // Add one for terminating NULL.
-  const char **ips = calloc(ips_count + 1, sizeof(char **));
-  int i = 0, k;
-
-  // First format the IPv4 addrinfos (if any), then the IPv6 ones (if any).
-  for (k = 0; k < 2; k++) {
-    for (; ai[k] != NULL; ai[k] = ai[k]->ai_next) {
-      // This is large enough to contain either an IPv4 and IPv6 address.
-      char ipaddr[INET6_ADDRSTRLEN];
-      getnameinfo(ai[k]->ai_addr, ai[k]->ai_addrlen, ipaddr, sizeof(ipaddr),
-                  NULL, 0, NI_NUMERICHOST);
-      ips[i++] = strdup(ipaddr);
-      if (i >= ips_count)
-        goto resolve_host_done;
-    }
-  }
-
-resolve_host_done:
-  ips[i] = NULL;
+  char *retval = pacparser_resolve_host_getaddrinfo_impl(hostname, all_ips);
 #ifdef _WIN32
   WSACleanup();
 #endif
-  // On failed resolution, we want to return null, not the empty string.
-  char *retval = *ips ? join_string_list(ips, ";") : NULL;
-  // No memory leaks: free the ip addresses and the pointers to them.
-  deep_free_string_list(ips);
-  // And we are done.
   return retval;
 }
 
@@ -192,12 +179,6 @@ static int dns_domains_count = 0;
 
 static ares_channel global_channel;
 
-struct callback_arg {
-  char *mallocd_addresses;
-  int ai_family;
-  int all_ips;
-};
-
 // Use a custom DNS server (specified by IP), instead of relying on the
 // "nameserver" directive in /etc/resolv.conf.
 int
@@ -232,7 +213,7 @@ pacparser_set_dns_domains(const char **domains)
 }
 
 static void
-callback(void *arg, int status, int timeouts, struct hostent *host)
+callback_for_ares(void *arg, int status, int timeouts, struct hostent *host)
 {
   (void) timeouts;  // unused
 
@@ -343,8 +324,8 @@ pacparser_resolve_host_ares(const char *hostname, int all_ips)
   int i, ai_families[] = {AF_INET, AF_INET6};
   for (i = 0; i < 2; i++) {
     cba.ai_family = ai_families[i];
-    ares_gethostbyname(global_channel, hostname, ai_families[i], callback,
-                       (void *) &cba);
+    ares_gethostbyname(global_channel, hostname, ai_families[i],
+                       callback_for_ares, (void *) &cba);
     if (!ares_wait_for_all_queries(global_channel)) {
       print_err("Some c-ares queries did not complete successfully");
       return NULL;
