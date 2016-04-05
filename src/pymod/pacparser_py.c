@@ -152,10 +152,10 @@ py_pacparser_disable_microsoft_extensions(PyObject *self, PyObject *args)
 static PyObject *
 py_pacparser_set_dns_servers(PyObject *self, PyObject *args)
 {
-  const char *ip;
-  if (!PyArg_ParseTuple(args, "s", &ip))
+  const char *ips;
+  if (!PyArg_ParseTuple(args, "s", &ips))
     return NULL;
-  pacparser_set_dns_servers(ip);
+  pacparser_set_dns_servers(ips);
   Py_RETURN_NONE;
 }
 
@@ -164,16 +164,10 @@ py_pacparser_set_dns_servers(PyObject *self, PyObject *args)
 static PyObject *
 py_pacparser_set_dns_domains(PyObject *self, PyObject *args)
 {
-  PyObject* list;
-  if (!PyArg_ParseTuple(args, "O", &list))
+  const char *domains;
+  if (!PyArg_ParseTuple(args, "s", &domains))
     return NULL;
-  Py_ssize_t len = PyList_Size(list);
-  Py_ssize_t i;
-  char **domains = (char **) calloc(len + 1, sizeof(char *));
-  for (i = 0; i < len; i++)
-    domains[i] = PyString_AsString(PyList_GetItem(list, i));
-  domains[i] = NULL;
-  pacparser_set_dns_domains((const char **)domains);
+  pacparser_set_dns_domains(domains);
   Py_RETURN_NONE;
 }
 

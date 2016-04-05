@@ -48,7 +48,6 @@ def main():
       extra_objects = [
           '../pacparser.o',
           '../pacparser_dns.o',
-          '../util.o',
           '../libjs.a'
       ], extra_link_args = os.getenv("C_ARES_LDFLAGS", "").split()
   )
