@@ -30,9 +30,7 @@
 #define FREE(x) free((void *)(x))  // silence annoying compiler warnings
 
 char *str_replace(const char *orig, char *rep, char *with);
-int string_list_len(const char **list);
 void deep_free_string_list(const char **list);
-char **measure_and_dup_string_list(const char **original, int *len_ptr);
 char *concat_strings(const char *mallocd_str1, const char *str2);
 char *join_string_list(const char **list, const char *separator);
 

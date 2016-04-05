@@ -58,37 +58,6 @@ str_replace(const char *orig, char *rep, char *with)
   return result;
 }
 
-int
-string_list_len(const char **list)
-{
-  // Calculate the length of the list, *not* including trailing NULL.
-  int len = 0;
-  if (list)
-    while (list[len])
-      len++;
-  return len;
-}
-
-char **
-measure_and_dup_string_list(const char **original, int *len_ptr)
-{
-  int len = string_list_len(original);
-  // Allocate space for the copied list. The '+1' is to account for the
-  // trailing NULL pointer.
-  char **copy = (char **) calloc(len + 1, sizeof(char **));
-  // Copy all the strings from the original list.
-  int i;
-  for (i = 0; i < len; i++) {
-    copy[i] = strdup(original[i]);
-  }
-  copy[len] = NULL;
-  // Register the length of the list, if so asked.
-  if (len_ptr)
-    *len_ptr = len;
-  // Return pointer to the copied list.
-  return copy;
-}
-
 char *
 concat_strings(const char *mallocd_str1, const char *str2)
 {
