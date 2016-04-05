@@ -183,9 +183,8 @@ static int ares_initialized = 0;
 #include <ares.h>
 #include <ares_dns.h>
 
-static const char *dns_servers = NULL;
-static const char **dns_domains = NULL;
-static int dns_domains_count = 0;
+static char *dns_servers = NULL;
+static char *dns_domains = NULL;
 
 static ares_channel global_channel;
 
@@ -194,6 +193,8 @@ static ares_channel global_channel;
 int
 pacparser_set_dns_servers(const char *ips)
 {
+  if (!ips)
+    return 1;  // noop
   if (ares_initialized) {
     print_err(
         "pacparser_dns.c: pacparser_set_dns_servers: "
@@ -201,24 +202,35 @@ pacparser_set_dns_servers(const char *ips)
         "before c-ares is initialized (typically by pacparser_init).\n");
     return 0;
   }
-  dns_servers = (const char *) strdup(ips);
+  if ((dns_servers = strdup(ips)) == NULL) {
+    print_err(
+        "pacparser_dns.c: pacparser_set_dns_servers: "
+        "Could not allocate memory for the servers");
+    return 0;
+  }
   return 1;
 }
 
 // Use a custom list of domains, instead of relying on, e.g., the
 // "search" directive in /etc/resolv.conf.
 int
-pacparser_set_dns_domains(const char **domains)
+pacparser_set_dns_domains(const char *domains)
 {
+  if (!domains)
+    return 1;  // noop
   if (ares_initialized) {
     print_err(
         "pacparser_dns.c: pacparser_set_dns_domains: "
         "Cannot change DNS search domains now. This function should be called"
-        "before c-ares is initialized (typically by pacparser_init).\n");
+        "before c-ares is initialized (typically by pacparser_init).");
     return 0;
   }
-  dns_domains = (const char **) measure_and_dup_string_list(domains,
-                                                            &dns_domains_count);
+  if ((dns_domains = strdup(domains)) == NULL) {
+    print_err(
+        "pacparser_dns.c: pacparser_set_dns_domains: "
+        "Could not allocate memory for the domains");
+    return 0;
+  }
   return 1;
 }
 
@@ -280,26 +292,41 @@ pacparser_ares_init(void)
     return 0;
   }
 
+  int ret = 0;
+  char **domains_list = NULL;
   if (dns_domains) {
+    int i = 0;
+    char *p, *sp;
+    p = strtok_r(dns_domains, ",", &sp);
+    while (p != NULL) {
+      domains_list = realloc(domains_list, (i + 1) * sizeof(char **));
+      domains_list[i++] = p;
+      p = strtok_r(NULL, ",", &sp);
+    }
+    if (domains_list)
+      domains_list[i] = NULL;
     optmask |= ARES_OPT_DOMAINS;
-    options.domains = dns_domains;
-    options.ndomains = dns_domains_count;
+    options.domains = domains_list;
+    options.ndomains = i;
   }
 
   if (ares_init_options(&global_channel, &options, optmask) != ARES_SUCCESS) {
     print_err("Could not initialize c-ares options");
-    return 0;
+    goto done;
   }
 
   if (dns_servers) {
     if (ares_set_servers_csv(global_channel, dns_servers) != ARES_SUCCESS) {
       print_err("Could not set c-ares DNS servers");
-      return 0;
+      goto done;
     }
   }
 
   ares_initialized = 1;
-  return 1;
+  ret = 1;
+done:
+  free(domains_list);
+  return ret;
 }
 
 void
@@ -311,6 +338,8 @@ pacparser_ares_cleanup(void)
     ares_library_cleanup();
   }
   ares_initialized = 0;
+  free(dns_domains);
+  free(dns_servers);
 }
 
 char *
@@ -357,13 +386,17 @@ resolve_host_ares(const char *hostname, int all_ips)
 int
 pacparser_set_dns_servers(const char *ips)
 {
+  if (!ips)
+    return 1;  // noop
   pacparser_no_c_ares("pacparser_set_dns_servers");
   return 0;
 }
 
 int
-pacparser_set_dns_domains(const char **domains)
+pacparser_set_dns_domains(const char *domains)
 {
+  if (!domains)
+    return 1;  // noop
   pacparser_no_c_ares("pacparser_set_dns_domains");
   return 0;
 }

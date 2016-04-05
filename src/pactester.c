@@ -25,8 +25,7 @@
 #include "pacparser_dns.h"
 
 #define LINEMAX 4096  // Max length of any line read from text files (4 KiB)
-#define PACMAX (1024 * 1024)  // Max size of the PAC script (1 MiB)
-#define DOMAINMAX 32  // Max number of domains passed via option '-d'
+#define PACMAX (5 * 1024 * 1024)  // Max size of the PAC script (5 MiB)
 
 void
 usage(const char *progname)
@@ -183,31 +182,14 @@ main(int argc, char* argv[])
   if (!pacparser_set_dns_resolver_variant(dns_resolver_variant))
     usage(argv[0]);
 
-  if (dns_servers) {
-    if (!pacparser_set_dns_servers(dns_servers)) {
-      fprintf(stderr, "pactester.c: pacparser_set_dns_servers() failed\n");
-      return 1;
-    }
+  if (!pacparser_set_dns_servers(dns_servers)) {
+    fprintf(stderr, "pactester.c: pacparser_set_dns_servers() failed\n");
+    return 1;
   }
 
-  if (dns_domains) {
-    int i = 0;
-    const char *dns_domains_list[DOMAINMAX + 1];
-    char *p = strtok((char *) dns_domains, ",");
-    while (p != NULL) {
-      dns_domains_list[i++] = strdup(p);
-      if (i > DOMAINMAX) {
-        fprintf(stderr, "pactester.c: Too many domains specified. "
-                "Maximum allowed number is: %d\n", DOMAINMAX);
-        return 1;
-      }
-      p = strtok(NULL, ",");
-    }
-    dns_domains_list[i] = NULL;
-    if (!pacparser_set_dns_domains(dns_domains_list)) {
-      fprintf(stderr, "pactester.c: pacparser_set_dns_domains() failed\n");
-      return 1;
-    }
+  if (!pacparser_set_dns_domains(dns_domains)) {
+    fprintf(stderr, "pactester.c: pacparser_set_dns_domains() failed\n");
+    return 1;
   }
 
   if (enable_microsoft_extensions)

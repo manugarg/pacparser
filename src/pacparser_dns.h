@@ -47,14 +47,14 @@ extern "C" {
 int pacparser_set_dns_servers(const char *ips);
 
 /// @brief Use a custom list of domains.
-/// @param domains A NULL-terminated list of strings, one for each domain.
+/// @param domains The comma-separated list of domains.
 /// @returns 0 on failure and 1 on success.
 ///
 /// Use a custom list of domains, instead of relying on, e.g., the
 /// "search" directive in /etc/resolv.conf.
 /// It will always succeed if c-ares integration was active at compile time,
 /// and always fail otherwise.
-int pacparser_set_dns_domains(const char **domains);
+int pacparser_set_dns_domains(const char *domains);
 
 /// @}
 
