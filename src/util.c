@@ -16,7 +16,6 @@
 // along with pacparser.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "util.h"
-#include <assert.h>
 
 #define STRSIZE(s) (s ? strlen(s) + 1 : 0)
 
@@ -70,20 +69,6 @@ string_list_len(const char **list)
   return len;
 }
 
-void
-deep_free_string_list(const char **list)
-{
-  // Nothing to do if the list was the NULL pointer.
-  if (!list)
-    return;
-  // Free the individual strings.
-  int i;
-  for (i = 0; list[i]; i++)
-    free(list[i]);
-  // Free the pointers to the already-freed strings.
-  free(list);
-}
-
 char **
 measure_and_dup_string_list(const char **original, int *len_ptr)
 {
@@ -102,33 +87,6 @@ measure_and_dup_string_list(const char **original, int *len_ptr)
     *len_ptr = len;
   // Return pointer to the copied list.
   return copy;
-}
-
-char *
-join_string_list(const char **list, const char *separator)
-{
-  assert(separator);
-  int len = string_list_len(list);
-  if (!len)
-    return strdup("");
-  // Calculate the number of bytes we need to store the result.
-  int i, size = 0;
-  for (i = 0; list[i]; i++) {
-    size += strlen(list[i]);
-  }
-  // Account for size of separators between elements of the lists.
-  size += (len - 1) * strlen(separator);
-  // Account for the trailing '\0' char.
-  size++;
-  // Allocate memory to hold the result.
-  char *result = (char *) calloc(size, sizeof(char *));
-  // Build and return the result.
-  for (i = 0; i < len; i++) {
-    strcat(result, list[i]);
-    if (i < len - 1)
-      strcat(result, separator);
-  }
-  return result;
 }
 
 char *
