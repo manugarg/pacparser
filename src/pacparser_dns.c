@@ -37,11 +37,32 @@
 #include <ws2tcpip.h>
 #endif
 
+//------------------------------------------------------------------------------
+
 struct callback_arg {
   char *mallocd_addresses;
-  int ai_family;
   int all_ips;
+  int ai_family;
 };
+
+enum collect_status { COLLECT_DONE = 0, COLLECT_MORE = 1 };
+
+static enum collect_status
+collect_mallocd_address(struct callback_arg *p, const char *addr_buf)
+{
+  if (p->all_ips) {
+    if (!p->mallocd_addresses) {
+      p->mallocd_addresses = strdup(addr_buf);
+    } else {
+      p->mallocd_addresses = concat_strings(p->mallocd_addresses, ";");
+      p->mallocd_addresses = concat_strings(p->mallocd_addresses, addr_buf);
+    }
+    return COLLECT_MORE;  // it's ok to run again and get more results
+  } else {
+    p->mallocd_addresses = strdup(addr_buf);
+    return COLLECT_DONE;  // we only need and want one result
+  }
+}
 
 //------------------------------------------------------------------------------
 
@@ -83,35 +104,34 @@ pacparser_resolve_host_literal_ips(const char *hostname, int all_ips)
 
 // DNS resolutions via the getaddrinfo(3) function.
 
-void
+static void
 callback_for_getaddrinfo(struct callback_arg *p, struct addrinfo *ai)
 {
   for (; ai != NULL; ai = ai->ai_next) {
     char addr_buf[INET6_ADDRSTRLEN];  // large enough for IPv4 and IPv6 alike
     getnameinfo(ai->ai_addr, ai->ai_addrlen, addr_buf, sizeof(addr_buf),
                 NULL, 0, NI_NUMERICHOST);
-    if (p->all_ips) {
-      if (p->mallocd_addresses) {
-        p->mallocd_addresses = concat_strings(p->mallocd_addresses, ";");
-      }
-      p->mallocd_addresses = concat_strings(p->mallocd_addresses, addr_buf);
-    } else {
-      p->mallocd_addresses = strdup(addr_buf);
-      return;  // we only need and want one result
-    }
+    if (collect_mallocd_address(p, addr_buf) == COLLECT_DONE)
+      return;
   }
 }
 
-inline static char *
-pacparser_resolve_host_getaddrinfo_impl(const char *hostname, int all_ips)
+char *
+pacparser_resolve_host_getaddrinfo(const char *hostname, int all_ips)
 {
+  struct callback_arg cba;
+  cba.all_ips = all_ips;
+  cba.mallocd_addresses = NULL;
+
   struct addrinfo hints, *ai;
   memset(&hints, 0, sizeof(struct addrinfo));
   hints.ai_socktype = SOCK_STREAM;
 
-  struct callback_arg cba;
-  cba.all_ips = all_ips;
-  cba.mallocd_addresses = NULL;
+#ifdef _WIN32
+  // On windows, we need to initialize the winsock dll first.
+  WSADATA WsaData;
+  WSAStartup(MAKEWORD(2,0), &WsaData);
+#endif
 
   int i, ai_families[] = {AF_INET, AF_INET6};
   for (i = 0; i < 2; i++) {
@@ -119,24 +139,14 @@ pacparser_resolve_host_getaddrinfo_impl(const char *hostname, int all_ips)
     if (getaddrinfo(hostname, NULL, &hints, &ai) == 0)
       callback_for_getaddrinfo(&cba, ai);
     if (!all_ips && cba.mallocd_addresses)
-      return cba.mallocd_addresses;
+      goto done;
   }
-  return cba.mallocd_addresses;
-}
 
-char *
-pacparser_resolve_host_getaddrinfo(const char *hostname, int all_ips)
-{
-#ifdef _WIN32
-  // On windows, we need to initialize the winsock dll first.
-  WSADATA WsaData;
-  WSAStartup(MAKEWORD(2,0), &WsaData);
-#endif
-  char *retval = pacparser_resolve_host_getaddrinfo_impl(hostname, all_ips);
+done:
 #ifdef _WIN32
   WSACleanup();
 #endif
-  return retval;
+  return cba.mallocd_addresses;
 }
 
 //------------------------------------------------------------------------------
@@ -228,15 +238,8 @@ callback_for_ares(void *arg, int status, int timeouts, struct hostent *host)
   for (s = host->h_addr_list; *s; s++) {
     char addr_buf[INET6_ADDRSTRLEN];  // large enough for IPv4 and IPv6 alike
     ares_inet_ntop(p->ai_family, *s, addr_buf, sizeof(addr_buf));
-    if (p->all_ips) {
-      if (p->mallocd_addresses) {
-        p->mallocd_addresses = concat_strings(p->mallocd_addresses, ";");
-      }
-      p->mallocd_addresses = concat_strings(p->mallocd_addresses, addr_buf);
-    } else {
-      p->mallocd_addresses = strdup(addr_buf);
-      return;  // we only need and want one result
-    }
+    if (collect_mallocd_address(p, addr_buf) == COLLECT_DONE)
+      return;
   }
 }
 
