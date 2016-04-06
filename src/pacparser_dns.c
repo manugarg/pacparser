@@ -39,7 +39,7 @@
 
 //------------------------------------------------------------------------------
 
-struct callback_arg {
+struct dns_collector {
   char *mallocd_addresses;
   int all_ips;
   int ai_family;
@@ -55,9 +55,9 @@ enum collect_status {
 static char *
 concat_strings(char *mallocd_str, const char *appended_str)
 {
-  if (!appended_str)
+  if (appended_str == NULL)
     return mallocd_str;
-  if (!mallocd_str)
+  if (mallocd_str == NULL)
     return strdup(appended_str);
 
   char *mallocd_result;
@@ -68,18 +68,18 @@ concat_strings(char *mallocd_str, const char *appended_str)
 }
 
 static enum collect_status
-collect_mallocd_address(struct callback_arg *p, const char *addr_buf)
+collect_mallocd_address(struct dns_collector *dc, const char *addr_buf)
 {
-  if (p->all_ips) {
-    if (!p->mallocd_addresses) {
-      p->mallocd_addresses = strdup(addr_buf);
+  if (dc->all_ips) {
+    if (dc->mallocd_addresses == NULL) {
+      dc->mallocd_addresses = strdup(addr_buf);
     } else {
-      p->mallocd_addresses = concat_strings(p->mallocd_addresses, ";");
-      p->mallocd_addresses = concat_strings(p->mallocd_addresses, addr_buf);
+      dc->mallocd_addresses = concat_strings(dc->mallocd_addresses, ";");
+      dc->mallocd_addresses = concat_strings(dc->mallocd_addresses, addr_buf);
     }
     return COLLECT_MORE;  // it's ok to run again and get more results
   } else {
-    p->mallocd_addresses = strdup(addr_buf);
+    dc->mallocd_addresses = strdup(addr_buf);
     return COLLECT_DONE;  // we only need and want one result
   }
 }
@@ -116,7 +116,7 @@ is_ip_address(const char *str)
 char *
 pacparser_resolve_host_literal_ips(const char *hostname, int all_ips)
 {
-  (void)all_ips;  // shut up linter
+  (void) all_ips;  // shut up linter
   return is_ip_address(hostname) ? strdup(hostname) : NULL;
 }
 
@@ -125,13 +125,13 @@ pacparser_resolve_host_literal_ips(const char *hostname, int all_ips)
 // DNS resolutions via the getaddrinfo(3) function.
 
 static void
-callback_for_getaddrinfo(struct callback_arg *p, struct addrinfo *ai)
+collect_getaddrinfo_results(struct dns_collector *dc, struct addrinfo *ai)
 {
   for (; ai != NULL; ai = ai->ai_next) {
     char addr_buf[INET6_ADDRSTRLEN];  // large enough for IPv4 and IPv6 alike
     getnameinfo(ai->ai_addr, ai->ai_addrlen, addr_buf, sizeof(addr_buf),
                 NULL, 0, NI_NUMERICHOST);
-    if (collect_mallocd_address(p, addr_buf) == COLLECT_DONE)
+    if (collect_mallocd_address(dc, addr_buf) == COLLECT_DONE)
       return;
   }
 }
@@ -139,9 +139,9 @@ callback_for_getaddrinfo(struct callback_arg *p, struct addrinfo *ai)
 char *
 pacparser_resolve_host_getaddrinfo(const char *hostname, int all_ips)
 {
-  struct callback_arg cba;
-  cba.all_ips = all_ips;
-  cba.mallocd_addresses = NULL;
+  struct dns_collector dc;
+  dc.all_ips = all_ips;
+  dc.mallocd_addresses = NULL;
 
   struct addrinfo hints, *ai;
   memset(&hints, 0, sizeof(struct addrinfo));
@@ -155,18 +155,17 @@ pacparser_resolve_host_getaddrinfo(const char *hostname, int all_ips)
 
   int i, ai_families[] = {AF_INET, AF_INET6};
   for (i = 0; i < 2; i++) {
-    cba.ai_family = hints.ai_family = ai_families[i];
+    dc.ai_family = hints.ai_family = ai_families[i];
     if (getaddrinfo(hostname, NULL, &hints, &ai) == 0)
-      callback_for_getaddrinfo(&cba, ai);
-    if (!all_ips && cba.mallocd_addresses)
-      goto done;
+      collect_getaddrinfo_results(&dc, ai);
+    if (!all_ips && dc.mallocd_addresses)
+      break;
   }
 
-done:
 #ifdef _WIN32
   WSACleanup();
 #endif
-  return cba.mallocd_addresses;
+  return dc.mallocd_addresses;
 }
 
 //------------------------------------------------------------------------------
@@ -213,7 +212,7 @@ static ares_channel global_channel;
 int
 pacparser_set_dns_servers(const char *ips)
 {
-  if (!ips)
+  if (ips == NULL)
     return 1;  // noop
   if (ares_initialized) {
     print_err(
@@ -236,7 +235,7 @@ pacparser_set_dns_servers(const char *ips)
 int
 pacparser_set_dns_domains(const char *domains)
 {
-  if (!domains)
+  if (domains == NULL)
     return 1;  // noop
   if (ares_initialized) {
     print_err(
@@ -261,16 +260,16 @@ callback_for_ares(void *arg, int status, int timeouts, struct hostent *host)
 
   // Sigh. But the callback must have a void* as first argument, so we
   // actually need this little abomination. Sorry.
-  struct callback_arg *p = (struct callback_arg *) arg;
+  struct dns_collector *dc = (struct dns_collector *) arg;
 
-  if (status != ARES_SUCCESS || host->h_addrtype != p->ai_family)
+  if (status != ARES_SUCCESS || host->h_addrtype != dc->ai_family)
     return;
 
   char **s;
   for (s = host->h_addr_list; *s; s++) {
     char addr_buf[INET6_ADDRSTRLEN];  // large enough for IPv4 and IPv6 alike
-    ares_inet_ntop(p->ai_family, *s, addr_buf, sizeof(addr_buf));
-    if (collect_mallocd_address(p, addr_buf) == COLLECT_DONE)
+    ares_inet_ntop(dc->ai_family, *s, addr_buf, sizeof(addr_buf));
+    if (collect_mallocd_address(dc, addr_buf) == COLLECT_DONE)
       return;
   }
 }
@@ -303,23 +302,32 @@ ares_wait_for_all_queries(ares_channel channel)
 int
 pacparser_ares_init(void)
 {
+  char **domains_list = NULL;
   int optmask = ARES_OPT_FLAGS;
   struct ares_options options;
   options.flags = ARES_FLAG_NOCHECKRESP;
 
+#define FREE_AND_RETURN(retval) \
+  do { \
+    free(domains_list); \
+    return (retval); \
+  } while(0)
+
   if (ares_library_init(ARES_LIB_INIT_ALL) != ARES_SUCCESS) {
     print_err("Could not initialize the c-ares library");
-    return 0;
+    FREE_AND_RETURN(0);
   }
 
-  int ret = 0;
-  char **domains_list = NULL;
   if (dns_domains) {
     int i = 0;
     char *p, *sp;
     p = strtok_r(dns_domains, ",", &sp);
     while (p != NULL) {
       domains_list = realloc(domains_list, (i + 2) * sizeof(char **));
+      if (domains_list == NULL) {
+        print_err("Could not allocate memory for domains list");
+        FREE_AND_RETURN(0);
+      }
       domains_list[i++] = p;
       p = strtok_r(NULL, ",", &sp);
     }
@@ -332,21 +340,20 @@ pacparser_ares_init(void)
 
   if (ares_init_options(&global_channel, &options, optmask) != ARES_SUCCESS) {
     print_err("Could not initialize c-ares options");
-    goto done;
+    FREE_AND_RETURN(0);
   }
 
   if (dns_servers) {
     if (ares_set_servers_csv(global_channel, dns_servers) != ARES_SUCCESS) {
       print_err("Could not set c-ares DNS servers");
-      goto done;
+      FREE_AND_RETURN(0);
     }
   }
 
   ares_initialized = 1;
-  ret = 1;
-done:
-  free(domains_list);
-  return ret;
+  FREE_AND_RETURN(1);
+
+#undef FREE_AND_RETURN
 }
 
 void
@@ -365,27 +372,27 @@ pacparser_ares_cleanup(void)
 char *
 pacparser_resolve_host_ares(const char *hostname, int all_ips)
 {
-  if (!hostname) {
+  if (hostname == NULL) {
     return strdup("");
   }
 
-  struct callback_arg cba;
-  cba.all_ips = all_ips;
-  cba.mallocd_addresses = NULL;
+  struct dns_collector dc;
+  dc.all_ips = all_ips;
+  dc.mallocd_addresses = NULL;
 
   int i, ai_families[] = {AF_INET, AF_INET6};
   for (i = 0; i < 2; i++) {
-    cba.ai_family = ai_families[i];
+    dc.ai_family = ai_families[i];
     ares_gethostbyname(global_channel, hostname, ai_families[i],
-                       callback_for_ares, (void *) &cba);
+                       callback_for_ares, (void *) &dc);
     if (!ares_wait_for_all_queries(global_channel)) {
       print_err("Some c-ares queries did not complete successfully");
       return NULL;
     }
-    if (!all_ips && cba.mallocd_addresses)
-      return cba.mallocd_addresses;
+    if (!all_ips && dc.mallocd_addresses)
+      return dc.mallocd_addresses;
   }
-  return cba.mallocd_addresses;
+  return dc.mallocd_addresses;
 }
 
 # else // !HAVE_C_ARES
@@ -406,7 +413,7 @@ resolve_host_ares(const char *hostname, int all_ips)
 int
 pacparser_set_dns_servers(const char *ips)
 {
-  if (!ips)
+  if (ips == NULL)
     return 1;  // noop
   pacparser_no_c_ares("pacparser_set_dns_servers");
   return 0;
@@ -415,7 +422,7 @@ pacparser_set_dns_servers(const char *ips)
 int
 pacparser_set_dns_domains(const char *domains)
 {
-  if (!domains)
+  if (domains == NULL)
     return 1;  // noop
   pacparser_no_c_ares("pacparser_set_dns_domains");
   return 0;
