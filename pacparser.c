@@ -50,19 +50,21 @@
 #include <ws2tcpip.h>
 #endif
 
+#define ERR_FMT_BUFSIZ 1024
+static char err_fmt_buffer[ERR_FMT_BUFSIZ];
+
 struct dns_collector {
   char *mallocd_addresses;
   int all_ips;
   int ai_family;
 };
 
-// To make code more readable.
-
 enum collect_status {
   COLLECT_DONE = 0,
   COLLECT_MORE = 1
 };
 
+// To make code more readable.
 #define ONE_IP 0
 #define ALL_IPS 1
 
@@ -90,30 +92,44 @@ pacparser_set_error_printer(pacparser_error_printer func)
   error_printer_func = func;
 }
 
+// This assumes that prefix1 and prefix2 cannot contain conversion
+// specification, and that they are never NULL. Since we control all
+// the callers, we can be sure that's the case.
 static int
-print_error(const char *fmt, ...)
+print_error(const char *prefix1, const char *prefix2, const char *fmt, ...)
 {
-  int ret;
+  int ret, err_fmt_size;
   va_list args;
+  char *err_fmt = NULL;
+
+  err_fmt_size = strlen(prefix1) + strlen(prefix2) + strlen(fmt) + 6;
+  // We still want to print errors even if they are too big for the buffer.
+  // In that case, we just sacrifice the prefixes and the trailing newline.
+  if (err_fmt_size <= ERR_FMT_BUFSIZ) {
+    strcpy(err_fmt_buffer, prefix1);
+    strcat(err_fmt_buffer, ": ");
+    strcat(err_fmt_buffer, prefix2);
+    strcat(err_fmt_buffer, ": ");
+    strcat(err_fmt_buffer, fmt);
+    strcat(err_fmt_buffer, "\n");
+    err_fmt_buffer[err_fmt_size] = '\0';
+    err_fmt = err_fmt_buffer;
+  }
   va_start(args, fmt);
-  ret = (*error_printer_func)(fmt, args);
+  ret = (*error_printer_func)(err_fmt ? err_fmt : fmt, args);
   va_end(args);
   return ret;
 }
 
 #define print_err(...) \
     do { \
-      print_error("%s: %s: ", __FILE__, __func__ ); \
-      print_error(__VA_ARGS__); \
-      print_error("\n"); \
+      print_error(__FILE__, __func__, __VA_ARGS__); \
     } while (0)
 
 #define print_debug(...) \
     do { \
-      if (getenv("PACPARSER_DEBUG")) { \
-        print_error("DEBUG: "); \
-        print_err(__VA_ARGS__); \
-      } \
+      if (getenv("PACPARSER_DEBUG")) \
+        print_error("DEBUG: " __FILE__, __func__, __VA_ARGS__); \
     } while (0)
 
 static char *
@@ -206,9 +222,8 @@ close_and_return:
 static void
 print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 {
-  print_error("JSERROR: %s:%d:\n    %s\n",
-              (report->filename ? report->filename : "NULL"), report->lineno,
-              message);
+  print_error("JSERROR", (report->filename ? report->filename : "NULL"),
+              "%d:\n    %s", report->lineno, message);
 }
 
 //------------------------------------------------------------------------------
@@ -989,7 +1004,7 @@ pacparser_just_find_proxy(const char *pacfile, const char *url,
 
 char *pacparser_version(void) {
 #ifndef VERSION
-  print_error("WARNING: VERSION not defined.\n");
+  print_error("WARNING", __func__, "VERSION not defined.");
   return "";
 #endif
   return QUOTEME(VERSION);
