@@ -268,8 +268,11 @@ collect_getaddrinfo_results(struct dns_collector *dc, struct addrinfo *ai)
 {
   char addr_buf[INET6_ADDRSTRLEN];  // large enough for IPv4 and IPv6 alike
   for (; ai != NULL; ai = ai->ai_next) {
-    getnameinfo(ai->ai_addr, ai->ai_addrlen, addr_buf, sizeof(addr_buf),
-                NULL, 0, NI_NUMERICHOST);
+    if (getnameinfo(ai->ai_addr, ai->ai_addrlen, addr_buf, sizeof(addr_buf),
+                    NULL, 0, NI_NUMERICHOST) < 0) {
+      print_err("getnameinfo failed: %s", strerror(errno));
+      return;
+    }
     if (collect_mallocd_address(dc, addr_buf) == COLLECT_DONE)
       return;
   }
