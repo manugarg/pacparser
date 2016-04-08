@@ -7,17 +7,11 @@ fix() {
   sed -i -e "$sed_cmd" "$@"
 }
 
-tools_dir=$(dirname $0)
-if [ "${tools_dir:0:1}" != "/" ]; then
-  tools_dir=$PWD/$tools_dir
-fi
-
-docs_dir=$tools_dir/../docs
-src_dir=$tools_dir/../src
+src_dir=$PWD
+docs_dir=$PWD/docs
 
 tmpdir=$TMPDIR/pacparser_doxygen_temp_$$
 mkdir -p $tmpdir
-
 cd $tmpdir
 
 cp $src_dir/pacparser.h .

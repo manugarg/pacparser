@@ -1,6 +1,10 @@
 # Object files
 *.o
 
+# Python bytecode
+*.pyc
+*.pyo
+
 # Libraries
 *.lib
 *.a
@@ -22,9 +26,16 @@ tools/packages
 *.pkg
 
 # Other build files
+pymod/build
+pymod/pacparser.egg-info
 *buildstamp
-src/spidermonkey/js
-src/pactester
+spidermonkey/js
+pactester
+
+# Temporary files resulting from tests.
+stderr.tmp
+stdout.tmp
+pac.js.tmp
 
 # OS specific files
 .DS_Store

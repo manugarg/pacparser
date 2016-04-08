@@ -96,9 +96,10 @@ LIB_PREFIX = $(PREFIX)/lib
 INC_PREFIX = $(PREFIX)/include
 BIN_PREFIX = $(PREFIX)/bin
 MAN_PREFIX = $(PREFIX)/share/man
+DOC_PREFIX = $(PREFIX)/share/doc
 
-.PHONY: default all docs clean pymod install-pymod install testpactester
-all: testpactester
+.PHONY: all docs clean pymod install-pymod install test test-pymod
+all: pactester
 
 spidermonkey/js/src: spidermonkey/js.tar.gz
 	tar xzvf $< -C spidermonkey
@@ -129,11 +130,7 @@ $(LIBRARY_LINK): $(LIBRARY)
 pactester: pactester.o $(LIBRARY_LINK)
 	$(CC) $(CFLAGS) $< -o $@ -lpacparser $(LDFLAGS) -L. -I.
 
-oldtestpactester: pactester
-	@echo "Running tests for pactester."
-	NO_INTERNET='$(NO_INTERNET)' ../tests/runtests.sh
-
-testpactester: pactester
+test: pactester
 	@set -u -e; st=0; \
 	 export PACTESTER="$$(pwd)/$<"; \
 	 (set -x && $(BASH) pactester_nointernet_test.sh) || st=1; \
@@ -150,7 +147,7 @@ testpactester: pactester
 	 exit $${st}
 
 docs:
-	../tools/generatedocs.sh
+	tools/generatedocs.sh
 
 install: all
 	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
@@ -160,20 +157,24 @@ install: all
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
 	# install pactester manpages
 	install -d $(MAN_PREFIX)/man1/
-	(test -d ../docs && install -m 644 ../docs/man/man1/*.1 $(MAN_PREFIX)/man1/) || true
+	(test -d docs && install -m 644 docs/man/man1/*.1 $(MAN_PREFIX)/man1/) || true
 	# install pacparser manpages
 	install -d $(MAN_PREFIX)/man3/
-	(test -d ../docs && install -m 644 ../docs/man/man3/*.3 $(MAN_PREFIX)/man3/) || true
+	(test -d docs && install -m 644 docs/man/man3/*.3 $(MAN_PREFIX)/man3/) || true
 	# install html docs
 	install -d $(PREFIX)/share/doc/pacparser/html/
-	(test -d ../docs/html && install -m 644 ../docs/html/* $(PREFIX)/share/doc/pacparser/html/) || true
+	(test -d docs/html && install -m 644 docs/html/* $(PREFIX)/share/doc/pacparser/html/) || true
 	# install examples
 	install -d $(PREFIX)/share/doc/pacparser/examples/
-	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc/pacparser/examples/) || true
+	(test -d examples && install -m 644 examples/* $(PREFIX)/share/doc/pacparser/examples/) || true
 
-pymod: $(LIBRARY_DEPS)
-	cd pymod && C_ARES_LDFLAGS="$(C_ARES_LDFLAGS)" ARCHFLAGS="" $(PYTHON) setup.py build
-	$(PYTHON) ../tests/runtests.py
+pymod: all
+	cd pymod && C_ARES_LDFLAGS="$(C_ARES_LDFLAGS)" ARCHFLAGS="" \
+	  $(PYTHON) setup.py build
+
+pymod-test: pymod
+	cd pymod && C_ARES_LDFLAGS="$(C_ARES_LDFLAGS)" ARCHFLAGS="" \
+	  $(PYTHON) setup.py test
 
 install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
@@ -182,4 +183,6 @@ clean:
 	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a *.o pactester jsapi_buildstamp
 	rm -f pac.js.tmp stdout.tmp stderr.tmp
 	cd pymod && python setup.py clean --all
+	cd pymod && rm -rf pacparser.egg-info
+	cd pymod && rm -f $$(find -name '*.py[co]')
 	cd spidermonkey && "$(MAKE)" clean
