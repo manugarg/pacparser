@@ -179,7 +179,6 @@ read_file_into_str(const char *filename)
   char *str = NULL;
   int file_size;
   FILE *fptr;
-  int records_read;
 
   if (!(fptr = fopen(filename, "r")))
     return NULL;
@@ -190,16 +189,14 @@ read_file_into_str(const char *filename)
     goto close_and_return;
   if (fseek(fptr, 0L, SEEK_SET) != 0)
     goto close_and_return;
-  if ((str = malloc(file_size + 1)) == NULL)
+  if ((str = calloc(file_size + 1, sizeof(char))) == NULL)
     goto close_and_return;
 
   // 'str' is no longer NULL if we are here.
-  if (!(records_read = fread(str, 1, file_size, fptr))) {
+  if (!fread(str, sizeof(char), file_size, fptr) && ferror(fptr)) {
     free(str);
     str = NULL;
-    goto close_and_return;
   }
-  str[records_read] = '\0';
 
 close_and_return:
   fclose(fptr);
