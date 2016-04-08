@@ -32,8 +32,8 @@ extern "C" {
 /// @defgroup pacparser pacparser
 /// @{
 /// @brief API for pacparser library, a library to use proxy auto-config (PAC)
-///       files. See project homepage: http://github.com/pacparser/pacparser
-///       for more information.
+///        files. See project homepage: http://github.com/pacparser/pacparser
+///        for more information.
 /// @author Manu Garg <manugarg@gmail.com>
 
 /// @brief Initializes pac parser.
@@ -97,6 +97,11 @@ char *pacparser_just_find_proxy(const char *pacfile, const char *url,
 /// This function should be called once you're done with using pacparser engine.
 void pacparser_cleanup(void);
 
+/// @brief Valid DNS resolver types.
+#define DNS_NONE "none"
+#define DNS_GETADDRINFO "getaddrinfo"
+#define DNS_C_ARES "c-ares"
+
 /// @brief Sets my IP address.
 /// @param ip Custom IP address.
 ///
@@ -104,19 +109,34 @@ void pacparser_cleanup(void);
 /// myIpAddress() javascript function.
 void pacparser_setmyip(const char *ip);
 
-/// @brief Valid DNS resolver types.
-#define DNS_NONE "none"
-#define DNS_GETADDRINFO "getaddrinfo"
-#define DNS_C_ARES "c-ares"
+/// @brief Use a custom DNS server (specified by IP)
+/// @param ips The comma-separated list of IPs of the DNS servers.
+/// @returns 0 on failure and 1 on success.
+///
+/// Use custom DNS servers, instead of relying on the "nameserver" directive
+/// in /etc/resolv.conf.
+/// It will always succeed if c-ares integration was active at compile time,
+/// and always fail otherwise.
+int pacparser_set_dns_servers(const char *ips);
 
-/// @brief Set DNS resolver to use, via a string
-/// @param variant of DNS resolver type to use
+/// @brief Use a custom list of domains.
+/// @param domains The comma-separated list of domains.
+/// @returns 0 on failure and 1 on success.
+///
+/// Use a custom list of domains, instead of relying on, e.g., the
+/// "search" directive in /etc/resolv.conf.
+/// It will always succeed if c-ares integration was active at compile time,
+/// and always fail otherwise.
+int pacparser_set_dns_domains(const char *domains);
+
+/// @brief Set DNS resolver to use
+/// @param dns_resolver_variant The DNS resolver variant to use.
 /// @returns 0 on failure, non-zero otherwise.
 ///
-/// Return value will be zero if asked to use an unrecognized DNS variant (that
-/// is, not one of "none", "getaddrinfo", "c-ares"), or if asked to use c-ares
-/// as the DNS resolver, but that library was not available at compile time.
-int pacparser_set_dns_resolver_variant(const char *);
+/// Return value will be zero if the given DNS resolver variant is invalid.
+/// This is also the case if the function is asked to use c-ares as the
+/// DNS resolver, but c-ares was not available at compile time.
+int pacparser_set_dns_resolver_variant(const char *dns_resolver_variant);
 
 /// @brief Type definition for pacparser_error_printer.
 /// @param fmt printf format
@@ -126,7 +146,7 @@ int pacparser_set_dns_resolver_variant(const char *);
 typedef int (*pacparser_error_printer)(const char *fmt, va_list argp);
 
 /// @brief Sets error printing function.
-/// @param func Variadic-argument printing function.
+/// @param func Variadic-argument Printing function.
 ///
 /// Sets error variadic-argument printing function.  If not set the messages
 /// are printed to stderr.  If messages begin with DEBUG: or WARNING:,

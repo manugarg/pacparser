@@ -20,7 +20,6 @@
 
 #include <Python.h>
 #include "pacparser.h"
-#include "pacparser_dns.h"
 
 // PyMODINIT_FUNC macro is not defined on python < 2.3. Take care of that.
 #ifndef PyMODINIT_FUNC        /* declarations for DLL import/export */

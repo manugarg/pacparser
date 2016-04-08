@@ -114,13 +114,11 @@ libjs.a: spidermonkey/js/src
 %.o: %.c
 	$(CC) $(CFLAGS) $(SHFLAGS) -c $< -o $@
 
-pacparser.o: pac_builtins.h pacparser.h pacparser_dns.h pacparser_utils.h
-pacparser.o: jsapi_buildstamp
-pacparser_dns.o: pacparser_dns.h pacparser_utils.h
+pacparser.o: pac_builtins.h pacparser_utils.h pacparser.h jsapi_buildstamp
 pactester.o: pacparser.h pacparser_utils.h
 
 # Also used for the python module, below.
-LIBRARY_DEPS = pacparser_dns.o pacparser.o libjs.a
+LIBRARY_DEPS = pacparser.o libjs.a
 
 $(LIBRARY): $(LIBRARY_DEPS)
 	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lm
@@ -160,7 +158,6 @@ install: all
 	ln -sf $(LIBRARY) $(LIB_PREFIX)/$(LIBRARY_LINK)
 	install -m 755 pactester $(BIN_PREFIX)/pactester
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
-	install -m 644 pacparser_dns.h $(INC_PREFIX)/pacparser_dns.h
 	# install pactester manpages
 	install -d $(MAN_PREFIX)/man1/
 	(test -d ../docs && install -m 644 ../docs/man/man1/*.1 $(MAN_PREFIX)/man1/) || true

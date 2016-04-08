@@ -21,7 +21,6 @@
 // along with Pacparser.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "pacparser.h"
-#include "pacparser_dns.h"
 #include "pacparser_utils.h"
 
 #define LINEMAX 4096  // Max length of any line read from text files (4 KiB)
