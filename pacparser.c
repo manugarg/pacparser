@@ -266,8 +266,8 @@ pacparser_resolve_host_literal_ips(const char *hostname, int all_ips)
 static void
 collect_getaddrinfo_results(struct dns_collector *dc, struct addrinfo *ai)
 {
+  char addr_buf[INET6_ADDRSTRLEN];  // large enough for IPv4 and IPv6 alike
   for (; ai != NULL; ai = ai->ai_next) {
-    char addr_buf[INET6_ADDRSTRLEN];  // large enough for IPv4 and IPv6 alike
     getnameinfo(ai->ai_addr, ai->ai_addrlen, addr_buf, sizeof(addr_buf),
                 NULL, 0, NI_NUMERICHOST);
     if (collect_mallocd_address(dc, addr_buf) == COLLECT_DONE)
@@ -294,9 +294,12 @@ pacparser_resolve_host_getaddrinfo(const char *hostname, int all_ips)
 
   int i, ai_families[] = {AF_INET, AF_INET6};
   for (i = 0; i < 2; i++) {
+    ai = NULL;
     dc.ai_family = hints.ai_family = ai_families[i];
     if (getaddrinfo(hostname, NULL, &hints, &ai) == 0)
       collect_getaddrinfo_results(&dc, ai);
+    if (ai != NULL)
+      freeaddrinfo(ai);
     if (!all_ips && dc.mallocd_addresses)
       break;
   }
