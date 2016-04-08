@@ -137,8 +137,6 @@ concat_strings(char *mallocd_str, const char *appended_str)
 {
   if (appended_str == NULL)
     return mallocd_str;
-  if (mallocd_str == NULL)
-    return strdup(appended_str);
 
   char *mallocd_result;
   int reallocd_size = strlen(mallocd_str) + strlen(appended_str) + 1;
