@@ -71,25 +71,30 @@ usage(const char *progname)
   exit(1);
 }
 
+// The pointer returned by this function must be freed.
 char *
 get_host_from_url(const char *url)
 {
-  // Copy url to a (modifiable) buffer that we'll use to seek through
-  // the string.
-  char *p = strdup(url);
+  char *host = NULL;
 
   // Move to first ':'
-  while (*p != ':' && *p != '\0')
-    p++;
-  if (p[0] == '\0')
+  while (*url != ':' && *url != '\0')
+    url++;
+  if (url[0] == '\0')
     // We reached end without hitting ':'
     goto not_a_proper_url;
-  if (p[1] != '/' || p[2] != '/')
+  if (url[1] != '/' || url[2] != '/')
     // Next two characters are not '//'
     goto not_a_proper_url;
-  p += 3;  // get past '://'
+  url += 3;  // get past '://'
+
   // Host part starts from here.
-  char *host = p;
+  if ((host = strdup(url)) == NULL) {
+    perror("pactetser.c: Failed to allocate the memory for hostname");
+    return NULL;
+  }
+
+  char *p = host;
   if (*p == '\0' || *p == '/' || *p == ':')
     // If host part is null.
     goto not_a_proper_url;
@@ -109,6 +114,7 @@ get_host_from_url(const char *url)
 
 not_a_proper_url:
   fprintf(stderr, "pactester.c: Not a proper URL: %s\n", url);
+  free(host);
   return NULL;
 }
 
@@ -166,7 +172,7 @@ main(int argc, char* argv[])
         usage(argv[0]);
         /* fallthrough */
       default:
-        abort ();
+        abort();
     }
 
   if (!pacfile) {
@@ -208,7 +214,7 @@ main(int argc, char* argv[])
     size_t script_size = 1;  // for the null terminator
     char buffer[LINEMAX];
 
-    script = (char *) calloc(1, sizeof(char));
+    script = calloc(1, sizeof(char));
     if (script == NULL) {
       perror("pactetser.c: Failed to allocate the memory for the script");
       return 1;
@@ -261,20 +267,23 @@ main(int argc, char* argv[])
   if (client_ip)
     pacparser_setmyip(client_ip);
 
-  char *proxy;
+  char *proxy, *h;
   int rc = 0;
 
   if (url) {
-    // If the host was not explicitly given, get it from the URL.
-    // If that fails, return with error (the get_host_from_url()
-    // function will print a proper error message in that case).
-    host = host ? host : get_host_from_url(url);
-    if (!host)
-      return 1;
-    proxy = pacparser_find_proxy(url, host);
+    if (host) {
+      proxy = pacparser_find_proxy(url, host);
+    } else {
+      // If the host was not explicitly given, get it from the URL.
+      // If that fails, return with error (the get_host_from_url()
+      // function will print a proper error message in that case).
+      if ((h = get_host_from_url(url)) == NULL)
+        return 1;
+      proxy = pacparser_find_proxy(url, h);
+      free(h);
+    }
     if (proxy == NULL) {
-      fprintf(stderr, "pactester.c: %s %s\n",
-              "Problem in finding proxy for", url);
+      fprintf(stderr, "pactester.c: Problem in finding proxy for %s\n", url);
       pacparser_cleanup();
       return 1;
     }
@@ -284,7 +293,7 @@ main(int argc, char* argv[])
   else if (urlsfile) {
     char line[LINEMAX];
     FILE *fp;
-    if (!(fp = fopen(urlsfile, "r"))) {
+    if ((fp = fopen(urlsfile, "r")) == NULL) {
       fprintf(stderr, "pactester.c: Could not open urlsfile: %s", urlsfile);
       pacparser_cleanup();
       return 1;
@@ -304,16 +313,16 @@ main(int argc, char* argv[])
              *urlend != ' ' && *urlend != '\t')
         urlend++;  // keep moving till you hit space or end of string
       *urlend = '\0';
-      if (!(host = get_host_from_url(url))) {
-        rc = 1;  // will exit with error.
+      if ((h = get_host_from_url(url)) == NULL) {
+        rc = 1;  // will exit with error
         continue;
       }
-      proxy = pacparser_find_proxy(url, host);
+      proxy = pacparser_find_proxy(url, h);
+      free(h);
       if (proxy == NULL) {
-        fprintf(stderr, "pactester.c: %s %s\n",
-                "Problem in finding proxy for", url);
-        pacparser_cleanup();
-        return 1;
+        fprintf(stderr, "pactester.c: Problem in finding proxy for %s\n", url);
+        rc = 1; // will exit with error
+        continue;
       }
       printf("%s : %s\n", url, proxy);
     }
