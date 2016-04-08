@@ -97,11 +97,6 @@ char *pacparser_just_find_proxy(const char *pacfile, const char *url,
 /// This function should be called once you're done with using pacparser engine.
 void pacparser_cleanup(void);
 
-/// @brief Valid DNS resolver types.
-#define DNS_NONE "none"
-#define DNS_GETADDRINFO "getaddrinfo"
-#define DNS_C_ARES "c-ares"
-
 /// @brief Sets my IP address.
 /// @param ip Custom IP address.
 ///
@@ -136,7 +131,23 @@ int pacparser_set_dns_domains(const char *domains);
 /// Return value will be zero if the given DNS resolver variant is invalid.
 /// This is also the case if the function is asked to use c-ares as the
 /// DNS resolver, but c-ares was not available at compile time.
+///
+/// The valid variants are:
+///   - `"none"` (also available as the `DNS_NONE` macro in the pacparser.h
+///     file): only hostnames that are actually literal IPs are resovable (to
+///     the same IP).
+///   - `"getaddrinfo"` (also available as the `DNS_GETADDRINFO` macro in the
+///     pacparser.h file): use the system's `getaddrinfo()` function to do DNS
+///     resolution.
+///   - `"c-ares"` (also available as the `DNS_C_ARES` macro in the pacparser.h
+///     file): use the c-ares library to do DNS resolution.
+///
 int pacparser_set_dns_resolver_variant(const char *dns_resolver_variant);
+
+// Valid DNS resolver types (see the documentation just above).
+#define DNS_NONE "none"
+#define DNS_GETADDRINFO "getaddrinfo"
+#define DNS_C_ARES "c-ares"
 
 /// @brief Type definition for pacparser_error_printer.
 /// @param fmt printf format
