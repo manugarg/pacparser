@@ -101,11 +101,18 @@ print_error(const char *fmt, ...)
   return ret;
 }
 
+#define print_err(...) \
+    do { \
+      print_error("%s: %s: ", __FILE__, __func__ ); \
+      print_error(__VA_ARGS__); \
+      print_error("\n"); \
+    } while (0)
+
 #define print_debug(...) \
     do { \
       if (getenv("PACPARSER_DEBUG")) { \
         print_error("DEBUG: "); \
-        print_error(__VA_ARGS__); \
+        print_err(__VA_ARGS__); \
       } \
     } while (0)
 
@@ -183,7 +190,7 @@ read_file_into_str(const char *filename)
     goto close_and_return;
   if (fseek(fptr, 0L, SEEK_SET) != 0)
     goto close_and_return;
-  if ((str = (char *) malloc(file_size + 1)) == NULL)
+  if ((str = malloc(file_size + 1)) == NULL)
     goto close_and_return;
 
   // 'str' is no longer NULL if we are here.
@@ -314,12 +321,12 @@ pacparser_set_dns_servers(const char *ips)
   if (ips == NULL)
     return 1;  // noop
   if (ares_initialized) {
-    print_error("Cannot change DNS servers now; this function should be called "
-                "before c-ares is initialized (typically by pacparser_init).");
+    print_err("Cannot change DNS servers now; this function should be called "
+              "before c-ares is initialized (typically by pacparser_init).");
     return 0;
   }
   if ((dns_servers = strdup(ips)) == NULL) {
-    print_error("Could not allocate memory for the servers");
+    print_err("Could not allocate memory for the servers.");
     return 0;
   }
   return 1;
@@ -333,13 +340,13 @@ pacparser_set_dns_domains(const char *domains)
   if (domains == NULL)
     return 1;  // noop
   if (ares_initialized) {
-    print_error("Cannot change DNS search domains now. This function should "
-                "be called before c-ares is initialized (typically by "
-                "pacparser_init).");
+    print_err("Cannot change DNS search domains now; this function should "
+              "be called before c-ares is initialized (typically by "
+              "pacparser_init).");
     return 0;
   }
   if ((dns_domains = strdup(domains)) == NULL) {
-    print_error("Could not allocate memory for the domains");
+    print_err("Could not allocate memory for the domains.");
     return 0;
   }
   return 1;
@@ -383,7 +390,7 @@ ares_wait_for_all_queries(ares_channel channel)
      tvp = ares_timeout(channel, NULL, &tv);
      count = select(nfds, &readers, &writers, NULL, tvp);
      if (count < 0 && errno != EINVAL) {
-       perror("select"); // TODO(slattarini): proper print_error here
+       print_err("select() failed: %s", strerror(errno));
        return 0;
      }
      ares_process(channel, &readers, &writers);
@@ -406,7 +413,7 @@ pacparser_ares_init(void)
   } while(0)
 
   if (ares_library_init(ARES_LIB_INIT_ALL) != ARES_SUCCESS) {
-    print_error("Could not initialize the c-ares library");
+    print_err("Could not initialize the c-ares library.");
     FREE_AND_RETURN(0);
   }
 
@@ -417,7 +424,7 @@ pacparser_ares_init(void)
     while (p != NULL) {
       domains_list = realloc(domains_list, (i + 2) * sizeof(char **));
       if (domains_list == NULL) {
-        print_error("Could not allocate memory for domains list");
+        print_err("Could not allocate memory for domains list.");
         FREE_AND_RETURN(0);
       }
       domains_list[i++] = p;
@@ -431,13 +438,13 @@ pacparser_ares_init(void)
   }
 
   if (ares_init_options(&global_channel, &options, optmask) != ARES_SUCCESS) {
-    print_error("Could not initialize c-ares options");
+    print_err("Could not initialize c-ares options.");
     FREE_AND_RETURN(0);
   }
 
   if (dns_servers) {
     if (ares_set_servers_csv(global_channel, dns_servers) != ARES_SUCCESS) {
-      print_error("Could not set c-ares DNS servers");
+      print_err("Could not set c-ares DNS servers.");
       FREE_AND_RETURN(0);
     }
   }
@@ -478,7 +485,7 @@ pacparser_resolve_host_ares(const char *hostname, int all_ips)
     ares_gethostbyname(global_channel, hostname, ai_families[i],
                        callback_for_ares, (void *) &dc);
     if (!ares_wait_for_all_queries(global_channel)) {
-      print_error("Some c-ares queries did not complete successfully");
+      print_err("Some c-ares queries did not complete successfully.");
       return NULL;
     }
     if (!all_ips && dc.mallocd_addresses)
@@ -490,7 +497,7 @@ pacparser_resolve_host_ares(const char *hostname, int all_ips)
 # else // !HAVE_C_ARES
 
 #define pacparser_no_c_ares() \
-    print_error("requires c-ares integration to be compiled in")
+    print_err("requires c-ares integration to be compiled-in.")
 
 // Dummy fallbacks for when c-ares is not available.
 //
@@ -569,7 +576,6 @@ pacparser_setmyip(const char *ip)
 int
 pacparser_set_dns_resolver_variant(const char *dns_resolver_variant)
 {
-  const char *error_prefix = "pacparser.c: pacparser_set_dns_resolver_variant";
   if STREQ(dns_resolver_variant, DNS_NONE) {
     dns_resolver = &pacparser_resolve_host_literal_ips;
     return 1;
@@ -581,13 +587,12 @@ pacparser_set_dns_resolver_variant(const char *dns_resolver_variant)
     dns_resolver = &pacparser_resolve_host_ares;
     return 1;
 #else
-    print_error("pacparser.c: cannot use c-ares as DNS resolver: was not "
-                "available at compile time.\n");
+    print_err("cannot use c-ares as DNS resolver: was not available "
+              "at compile time.");
     return 0;
 #endif
   } else {
-    print_error("%s invalid DNS resolver variant \"%s\"\n",
-                error_prefix, dns_resolver_variant);
+    print_err("invalid DNS resolver variant \"%s\"", dns_resolver_variant);
     return 0;
   }
 }
@@ -680,10 +685,8 @@ static void
 pacparser_set_microsoft_extensions(int setting)
 {
   if (cx) {
-    print_error(
-        "pacparser.c: pacparser_set_microsoft_extensions: cannot enable or "
-        "disable microsoft extensions now. This function should be called "
-        "before pacparser_init().");
+    print_err("cannot enable or disable microsoft extensions now; "
+              "can only be done before calling pacparser_init().");
     return;
   }
   enable_microsoft_extensions = setting;
@@ -714,11 +717,9 @@ int
 pacparser_init()
 {
   jsval rval;
-  const char *error_prefix = "pacparser.c: pacparser_init";
 
   if (!pacparser_ares_init()) {
-    print_error("%s: %s\n", error_prefix,
-                "Could not initialize c-ares DNS library.");
+    print_err("Could not initialize c-ares DNS library.");
     return 0;
   }
 
@@ -735,35 +736,30 @@ pacparser_init()
     !(global = JS_NewObject(cx, &global_class, NULL, NULL)) ||
     !JS_InitStandardClasses(cx, global)
   ) {
-    print_error("%s: %s\n", error_prefix,
-                "Could not initialize JavaScript runtime.");
+    print_err("Could not initialize JavaScript runtime.");
     return 0;
   }
   JS_SetErrorReporter(cx, print_jserror);
   // Export our functions to Javascript engine
   if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve_js,
                          1, 0)) {
-    print_error("%s: %s\n", error_prefix,
-                "Could not define dnsResolve in JS context.");
+    print_err("Could not define dnsResolve in JS context.");
     return 0;
   }
   if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip_address_js,
                          0, 0)) {
-    print_error("%s: %s\n", error_prefix,
-                "Could not define myIpAddress in JS context.");
+    print_err("Could not define myIpAddress in JS context.");
     return 0;
   }
   if (enable_microsoft_extensions) {
     if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex_js,
                            1, 0)) {
-      print_error("%s: %s\n", error_prefix,
-                  "Could not define dnsResolveEx in JS context.");
+      print_err("Could not define dnsResolveEx in JS context.");
       return 0;
     }
     if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_address_ex_js,
                            0, 0)) {
-      print_error("%s: %s\n", error_prefix,
-                  "Could not define myIpAddressEx in JS context.");
+      print_err("Could not define myIpAddressEx in JS context.");
       return 0;
     }
   }
@@ -777,9 +773,7 @@ pacparser_init()
                          NULL,         // filename (NULL in this case)
                          1,            // line number, used for reporting
                          &rval)) {
-    print_error("%s: %s\n", error_prefix,
-                "Could not evaluate pac_builtins defined in "
-                "pac_builtins.h");
+    print_err("Could not evaluate pac_builtins defined in pac_builtins.h");
     return 0;
   }
 
@@ -793,14 +787,12 @@ pacparser_init()
                            NULL,            // filename (NULL in this case)
                            1,               // line number, used for reporting
                            &rval)) {
-      print_error("%s: %s\n", error_prefix,
-                  "Could not evaluate pac_builtins_ex defined in "
-                  "pac_builtins.h");
+      print_err("Could not evaluate pac_builtins_ex defined in pac_builtins.h");
       return 0;
     }
   }
 
-  print_debug("Pacparser Initalized.\n");
+  print_debug("Pacparser Initalized.");
   return 1;
 }
 
@@ -814,9 +806,8 @@ int
 pacparser_parse_pac_string(const char *script)
 {
   jsval rval;
-  const char *error_prefix = "pacparser.c: pacparser_parse_pac_string";
   if (cx == NULL || global == NULL) {
-    print_error("%s: %s\n", error_prefix, "Pac parser is not initialized.");
+    print_err("Pac parser is not initialized.");
     return 0;
   }
   if (!JS_EvaluateScript(cx,
@@ -826,11 +817,11 @@ pacparser_parse_pac_string(const char *script)
                          "PAC script",
                          1,
                          &rval)) {     // If script evaluation failed
-    print_error("%s: %s\n", error_prefix, "Failed to evaluate the pac script.");
-    print_debug("Failed to parse the PAC script:\n%s\n", script);
+    print_err("Failed to evaluate the pac script.");
+    print_debug("Failed to parse the PAC script:\n%s", script);
     return 0;
   }
-  print_debug("Parsed the PAC script.\n");
+  print_debug("Parsed the PAC script.");
   return 1;
 }
 
@@ -846,8 +837,7 @@ pacparser_parse_pac_file(const char *pacfile)
   char *script = NULL;
 
   if ((script = read_file_into_str(pacfile)) == NULL) {
-    print_error("pacparser.c: pacparser_parse_pac: %s: %s: %s\n",
-                "Could not read the pacfile: ", pacfile, strerror(errno));
+    print_err("Could not read the pacfile %s: %s", pacfile, strerror(errno));
     return 0;
   }
 
@@ -855,9 +845,9 @@ pacparser_parse_pac_file(const char *pacfile)
   free(script);
 
   if (result)
-    print_debug("Parsed the PAC file: %s\n", pacfile);
+    print_debug("Parsed the PAC file: %s", pacfile);
   else
-    print_debug("Could not parse the PAC file: %s\n", pacfile);
+    print_debug("Could not parse the PAC file: %s", pacfile);
 
   return result;
 }
@@ -881,32 +871,30 @@ pacparser_parse_pac(const char *pacfile)
 char *
 pacparser_find_proxy(const char *url, const char *host)
 {
-  const char *error_prefix = "pacparser.c: pacparser_find_proxy";
   char *script, *retval;
   jsval rval;
 
-  print_debug("Finding proxy for URL '%s' and Host '%s'\n", url, host);
+  print_debug("Finding proxy for URL '%s' and Host '%s'.", url, host);
 
   if (url == NULL || STREQ(url, "")) {
-    print_error("%s: %s\n", error_prefix, "URL not defined");
+    print_err("URL not defined");
     return NULL;
   }
   if (host == NULL || STREQ(host,"")) {
-    print_error("%s: %s\n", error_prefix, "Host not defined");
+    print_err("Host not defined");
     return NULL;
   }
   if (cx == NULL || global == NULL) {
-    print_error("%s: %s\n", error_prefix, "Pac parser is not initialized.");
+    print_err("Pac parser is not initialized.");
     return NULL;
   }
 
   // Test if findProxyForURL is defined.
   script = "typeof(findProxyForURL);";
-  print_debug("Executing JavaScript: %s\n", script);
+  print_debug("Executing JavaScript: %s", script);
   JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
   if (!STREQ("function", JS_GetStringBytes(JS_ValueToString(cx, rval)))) {
-    print_error("%s: %s\n", error_prefix,
-                "Javascript function findProxyForURL not defined.");
+    print_err("Javascript function findProxyForURL not defined.");
     return NULL;
   }
 
@@ -915,22 +903,20 @@ pacparser_find_proxy(const char *url, const char *host)
   char *sanitized_url = str_replace(url, "'", "%27");
   // Hostname shouldn't have single quotes in them.
   if (strchr(host, '\'')) {
-    print_error("%s: %s\n", error_prefix,
-                "Invalid hostname: hostname can't have single quotes.");
+    print_err("Invalid hostname: hostname can't have single quotes.");
     return NULL;
   }
 
-  script = (char *) malloc(32 + strlen(url) + strlen(host));
+  script = malloc(32 + strlen(url) + strlen(host));
   script[0] = '\0';
   strcat(script, "findProxyForURL('");
   strcat(script, sanitized_url);
   strcat(script, "', '");
   strcat(script, host);
   strcat(script, "')");
-  print_debug("Executing JavaScript: %s\n", script);
+  print_debug("Executing JavaScript: %s", script);
   if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval)) {
-    print_error("%s: %s\n", error_prefix,
-                "Problem in executing findProxyForURL.");
+    print_err("Problem in executing findProxyForURL.");
     retval = NULL;
   } else {
     retval = JS_GetStringBytes(JS_ValueToString(cx, rval));
@@ -958,7 +944,7 @@ pacparser_cleanup()
   global = NULL;
   pacparser_ares_cleanup();
   enable_microsoft_extensions = 1;
-  print_debug("Pacparser destroyed.\n");
+  print_debug("Pacparser destroyed.");
 }
 
 // Finds proxy for the given PAC file, url and host.
@@ -976,24 +962,21 @@ pacparser_just_find_proxy(const char *pacfile, const char *url,
   char *proxy;
   char *out;
   int initialized_here = 0;
-  const char *error_prefix = "pacparser.c: pacparser_just_find_proxy";
   if (!global) {
     if (!pacparser_init()) {
-      print_error("%s: %s\n", error_prefix, "Could not initialize pacparser");
+      print_err("Could not initialize pacparser.");
       return NULL;
     }
     initialized_here = 1;
   }
   if (!pacparser_parse_pac(pacfile)) {
-    print_error("%s: %s %s\n", error_prefix,
-                "Could not parse pacfile", pacfile);
+    print_err("Could not parse pacfile %s.", pacfile);
     if (initialized_here)
       pacparser_cleanup();
     return NULL;
   }
   if (!(out = pacparser_find_proxy(url, host))) {
-    print_error("%s: %s %s\n", error_prefix,
-                "Could not determine proxy for url", url);
+    print_err("Could not determine proxy for url '%s'.", url);
     if (initialized_here)
       pacparser_cleanup();
     return NULL;
@@ -1009,7 +992,7 @@ pacparser_just_find_proxy(const char *pacfile, const char *url,
 
 char *pacparser_version(void) {
 #ifndef VERSION
-  print_error("WARNING: VERSION not defined.");
+  print_error("WARNING: VERSION not defined.\n");
   return "";
 #endif
   return QUOTEME(VERSION);
