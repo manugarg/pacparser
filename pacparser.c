@@ -147,40 +147,37 @@ concat_strings(char *mallocd_str, const char *appended_str)
 
 // You must free the result if result is non-NULL.
 static char *
-str_replace(const char *orig, char *rep, char *with)
+str_replace(const char *string, char *orig, char *repl)
 {
-  char *copy = strdup(orig);
+  char *result;
+  const char *ins;  // the next insert point
+  int count;        // number of replacements
+  int len_orig = strlen(orig);
+  int len_repl = strlen(repl);
 
-  char *result;  // the returned string
-  char *ins;     // the next insert point
-  char *tmp;     // varies
-  int count;     // number of replacements
-  int len_front; // distance between rep and end of last rep
-  int len_rep  = strlen(rep);
-  int len_with = strlen(with);
+  // Get the count of replacements.
+  for (ins = string, count = 0; (ins = strstr(ins, orig)) != NULL; ++count)
+    ins += len_orig;
 
-  // Get the count of replacements
-  ins = copy;
-  for (count = 0; (tmp = strstr(ins, rep)); ++count) {
-    ins = tmp + len_rep;
-  }
-
-  tmp = result = malloc(strlen(copy) + (len_with - len_rep) * count + 1);
+  result = malloc(strlen(string) + (len_repl - len_orig) * count + 1);
+  if (result == NULL)
+    return NULL;
 
   // First time through the loop, all the variable are set correctly
   // from here on,
-  //    tmp points to the end of the result string
-  //    ins points to the next occurrence of rep in copy
-  //    copy points to the remainder of copy after "end of rep"
+  //    p points to the end of the result string
+  //    ins points to the next occurrence of orig in string
+  //    string points to the remainder after "end of replacement"
+  char *p = result;
+  int len_front;    // distance between orig and end of last orig
   while (count--) {
-      ins = strstr(copy, rep);
-      len_front = ins - copy;
-      tmp = strncpy(tmp, copy, len_front) + len_front;
-      tmp = strcpy(tmp, with) + len_with;
-      copy += len_front + len_rep;  // move to next "end of rep"
+      ins = strstr(string, orig);
+      len_front = ins - string;
+      p = strncpy(p, string, len_front) + len_front;
+      p = strcpy(p, repl) + len_repl;
+      string += len_front + len_orig;  // move to next "end of replacement"
   }
-  strcpy(tmp, copy);
-  free(copy);
+  strcpy(p, string);
   return result;
 }
 
