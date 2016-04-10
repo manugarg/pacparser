@@ -183,7 +183,7 @@ pymod-clean:
 	cd pymod && rm -rf pacparser.egg-info
 	cd pymod && rm -f $$(find -name '*.py[co]')
 
-clean: clean-pymod
+clean: pymod-clean
 	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a *.o pactester jsapi_buildstamp
 	rm -f pac.js.tmp stdout.tmp stderr.tmp
 	cd spidermonkey && "$(MAKE)" clean
