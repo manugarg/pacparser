@@ -36,7 +36,6 @@
 #  include <sys/socket.h>
 #  include <netinet/in.h>
 #  include <arpa/nameser.h>
-//#  include <arpa/nameser_compat.h>
 #  include <ares.h>
 #  include <ares_dns.h>
 #endif
@@ -496,7 +495,9 @@ pacparser_ares_cleanup(void)
   }
   ares_initialized = 0;
   free(dns_domains);
+  dns_domains = NULL;
   free(dns_servers);
+  dns_servers = NULL;
 }
 
 static char *
