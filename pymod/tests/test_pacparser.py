@@ -1,3 +1,5 @@
+"""Tests for pacparser python wrapper."""
+
 import unittest
 import pacparser
 

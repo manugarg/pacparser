@@ -239,10 +239,11 @@ collect_mallocd_address(struct dns_collector *dc, const char *addr_buf)
       return COLLECT_DONE;  // give up when OOM
   }
 
-  const char **p = {";", addr_buf, NULL};
-  while (p++ != NULL) {
+  const char *p[] = {";", addr_buf};
+  int i;
+  for (i = 0; i < 2; i++) {
     // Temporary pointer to avoid memory leaks on failed reallocs.
-    char *tmp = concat_strings(dc->mallocd_addresses, *p);
+    char *tmp = concat_strings(dc->mallocd_addresses, p[i]);
     if (tmp == NULL) {
       free(dc->mallocd_addresses);
       dc->mallocd_addresses = NULL;
