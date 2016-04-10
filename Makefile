@@ -98,7 +98,7 @@ BIN_PREFIX = $(PREFIX)/bin
 MAN_PREFIX = $(PREFIX)/share/man
 DOC_PREFIX = $(PREFIX)/share/doc
 
-.PHONY: all docs clean pymod install-pymod install test test-pymod
+.PHONY: all docs pymod install-pymod install test pymod-test clean pymod-clean
 all: pactester
 
 spidermonkey/js/src: spidermonkey/js.tar.gz
@@ -127,7 +127,7 @@ $(LIBRARY): $(LIBRARY_DEPS)
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
-pactester: pactester.o $(LIBRARY_LINK)
+pactester: pactester.o $(LIBRARY_LINK) $(LIBRARY_DEPS)
 	$(CC) $(CFLAGS) $< -o $@ -lpacparser $(LDFLAGS) -L. -I.
 
 test: pactester
@@ -169,20 +169,21 @@ install: all
 	(test -d examples && install -m 644 examples/* $(PREFIX)/share/doc/pacparser/examples/) || true
 
 pymod: all
-	cd pymod && C_ARES_LDFLAGS="$(C_ARES_LDFLAGS)" ARCHFLAGS="" \
-	  $(PYTHON) setup.py build
+	cd pymod && python setup.py clean --all
+	cd pymod && C_ARES_LDFLAGS='$(C_ARES_LDFLAGS)' ARCHFLAGS="" $(PYTHON) setup.py build
 
 pymod-test: pymod
-	cd pymod && C_ARES_LDFLAGS="$(C_ARES_LDFLAGS)" ARCHFLAGS="" \
-	  $(PYTHON) setup.py test
+	cd pymod && ENABLE_C_ARES='$(ENABLE_C_ARES)' $(PYTHON) setup.py test
 
 install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
-clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a *.o pactester jsapi_buildstamp
-	rm -f pac.js.tmp stdout.tmp stderr.tmp
+pymod-clean:
 	cd pymod && python setup.py clean --all
 	cd pymod && rm -rf pacparser.egg-info
 	cd pymod && rm -f $$(find -name '*.py[co]')
+
+clean: clean-pymod
+	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a *.o pactester jsapi_buildstamp
+	rm -f pac.js.tmp stdout.tmp stderr.tmp
 	cd spidermonkey && "$(MAKE)" clean

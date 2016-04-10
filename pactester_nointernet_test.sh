@@ -82,7 +82,8 @@ js_false <<< 'localHostOrDomainIs("www.google.com", "www")'
 js_false <<< 'localHostOrDomainIs("www.edu", "www")'
 js_false <<< 'localHostOrDomainIs("www.edu", "www.ed")'
 
-# isInNet (notice: this could use more extensive tests...)
+# isInNet
+
 js_true  <<< 'isInNet("1.2.3.4", "1.0.0.0", "255.0.0.0")'
 js_true  <<< 'isInNet("1.2.3.4", "1.2.0.0", "255.255.0.0")'
 js_true  <<< 'isInNet("1.2.3.4", "1.2.3.0", "255.255.255.0")'
@@ -91,8 +92,26 @@ js_true  <<< 'isInNet("1.2.3.4", "1.2.3.5", "255.255.255.254")'
 js_true  <<< 'isInNet("1.2.3.4", "212.10.75.33", "0.0.0.0")'
 js_false <<< 'isInNet("1.2.3.4", "1.0.0.0", "255.255.0.0")'
 js_false <<< 'isInNet("1.2.3.4", "1.2.3.5", "255.255.255.255")'
-js_false <<< 'isInNet("1.2.3.4", "1.2.3.5", "255.255.255.255")'
 js_false <<< 'isInNet("1.2.3.4", "1.2.3.6", "255.255.255.254")'
+
+# isInNetEx (IPv4)
+js_true  <<< 'isInNetEx("1.2.3.4", "1.0.0.0/8")'
+js_true  <<< 'isInNetEx("1.2.3.4", "1.2.0.0/16")'
+js_true  <<< 'isInNetEx("1.2.3.4", "1.2.3.0/24")'
+js_true  <<< 'isInNetEx("1.2.3.4", "1.2.3.4/31")'
+js_true  <<< 'isInNetEx("1.2.3.4", "1.2.3.5/31")'
+#js_true  <<< 'isInNetEx("1.2.3.4", "212.10.75.33/0")'
+js_false <<< 'isInNetEx("1.2.3.4", "1.0.0.0/16")'
+js_false <<< 'isInNetEx("1.2.3.4", "1.2.3.5/32")'
+js_false <<< 'isInNetEx("1.2.3.4", "1.2.3.6/31")'
+
+# isInNetEx (IPv6)
+js_true  <<< 'isInNetEx("::", "2001:db8::1/0")'
+js_true  <<< 'isInNetEx("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "2001:db8::1/0")'
+js_true  <<< 'isInNetEx("2001:db8::", "2001:db8::1/33")'
+js_false <<< 'isInNetEx("2001:db8:8000::", "2001:db8::1/33")'
+js_true  <<< 'isInNetEx("2001:db8:7fff:ffff:ffff:ffff:ffff:ffff", "2001:db8::1/33")'
+js_false <<< 'isInNetEx("2001:db7:ffff:ffff:ffff:ffff:ffff:ffff", "2001:db8::1/33")'
 
 # dnsDomainLevels
 ok <<< 'r = dnsDomainLevels("foo"); return r == 0 ? "OK" : "KO -> " + r'
