@@ -321,6 +321,8 @@ static const char *pac_builtins_ex =
 "function isInNetEx4(ipaddr, prefix, prefix_len) {\n"
 "    if (prefix_len > 32) {\n"
 "        return false;\n"
+"    } else if (prefix_len == 0) {\n"
+"        return true;\n"
 "    }\n"
 "    var netmask = [];\n"
 "    for (var i = 1; i < 5; i++) {\n"
