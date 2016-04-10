@@ -226,18 +226,32 @@ print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
 static enum collect_status
 collect_mallocd_address(struct dns_collector *dc, const char *addr_buf)
 {
-  if (dc->all_ips) {
-    if (dc->mallocd_addresses == NULL) {
-      dc->mallocd_addresses = strdup(addr_buf);
-    } else {
-      dc->mallocd_addresses = concat_strings(dc->mallocd_addresses, ";");
-      dc->mallocd_addresses = concat_strings(dc->mallocd_addresses, addr_buf);
-    }
-    return COLLECT_MORE;  // it's ok to run again and get more results
-  } else {
+  if (!dc->all_ips) {
+    free(dc->mallocd_addresses);
     dc->mallocd_addresses = strdup(addr_buf);
     return COLLECT_DONE;  // we only need and want one result
   }
+
+  if (dc->mallocd_addresses == NULL) {
+    if ((dc->mallocd_addresses = strdup(addr_buf)) != NULL)
+      return COLLECT_MORE;  // it's ok to run again and get more results
+    else
+      return COLLECT_DONE;  // give up when OOM
+  }
+
+  const char **p = {";", addr_buf, NULL};
+  while (p++ != NULL) {
+    // Temporary pointer to avoid memory leaks on failed reallocs.
+    char *tmp = concat_strings(dc->mallocd_addresses, *p);
+    if (tmp == NULL) {
+      free(dc->mallocd_addresses);
+      dc->mallocd_addresses = NULL;
+      return COLLECT_DONE;  // give up when OOM
+    } else {
+      dc->mallocd_addresses = tmp;
+    }
+  }
+  return COLLECT_MORE;  // it's ok to run again and get more results
 }
 
 //------------------------------------------------------------------------------
@@ -435,10 +449,13 @@ pacparser_ares_init(void)
     char *p, *sp;
     p = strtok_r(dns_domains, ",", &sp);
     while (p != NULL) {
-      domains_list = realloc(domains_list, (i + 2) * sizeof(char **));
-      if (domains_list == NULL) {
+      // Temporary pointer to avoid memory leaks on failed reallocs.
+      char **tmp = realloc(domains_list, (i + 2) * sizeof(char **));
+      if (tmp == NULL) {
         print_err("Could not allocate memory for domains list.");
         FREE_AND_RETURN(0);
+      } else {
+        domains_list = tmp;
       }
       domains_list[i++] = p;
       p = strtok_r(NULL, ",", &sp);
