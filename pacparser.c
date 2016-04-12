@@ -287,7 +287,7 @@ collect_getaddrinfo_results(struct dns_collector *dc, struct addrinfo *ai)
   for (; ai != NULL; ai = ai->ai_next) {
     int gai_errno = getnameinfo(ai->ai_addr, ai->ai_addrlen, addr_buf,
                                 sizeof(addr_buf), NULL, 0, NI_NUMERICHOST);
-    if (gai_errno < 0) {
+    if (gai_errno != 0) {
       print_err("getnameinfo failed: %s", gai_strerror(gai_errno));
       return;
     }
