@@ -232,29 +232,26 @@ collect_mallocd_address(struct dns_collector *dc, const char *addr_buf)
 {
   if (!dc->all_ips) {
     free(dc->mallocd_addresses);
-    dc->mallocd_addresses = strdup(addr_buf);
-    // TODO(slattarini): we probably want to signal issues allocating
-    // memory to the caller...
+    if ((dc->mallocd_addresses = strdup(addr_buf)) == NULL)
+      print_err("memory allocation error");
     return COLLECT_DONE;  // we only need and want one result
   }
 
   if (dc->mallocd_addresses == NULL) {
-    if ((dc->mallocd_addresses = strdup(addr_buf)) != NULL)
+    if ((dc->mallocd_addresses = strdup(addr_buf)) != NULL) {
       return COLLECT_MORE;  // it's ok to run again and get more results
-    else
-      // TODO(slattarini): we probably want to signal the issue to the
-      // caller...
+    } else {
+      print_err("memory allocation error");
       return COLLECT_DONE;  // give up when OOM
+    }
   }
 
   const char *p[] = {";", addr_buf};
   int i;
   for (i = 0; i < 2; i++) {
     if (!append_to_mallocd_string(&dc->mallocd_addresses, p[i])) {
-      // just give up when OOM
-      // TODO(slattarini): we probably want to signal the issue to
-      // the caller...
-      return COLLECT_DONE;
+      print_err("memory allocation error");
+      return COLLECT_DONE;  // give up when OOM
     }
   }
   return COLLECT_MORE;  // it's ok to run again and get more results
