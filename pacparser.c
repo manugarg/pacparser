@@ -131,17 +131,22 @@ print_error(const char *prefix1, const char *prefix2, const char *fmt, ...)
         print_error("DEBUG: " __FILE__, __func__, __VA_ARGS__); \
     } while (0)
 
-static char *
-concat_strings(char *mallocd_str, const char *appended_str)
+int
+append_to_mallocd_string(char **mallocd_string_ptr, const char *appended_string)
 {
-  if (appended_str == NULL)
-    return mallocd_str;
+  if (appended_string == NULL)
+    return 1;  // no-op
 
-  char *mallocd_result;
-  int reallocd_size = strlen(mallocd_str) + strlen(appended_str) + 1;
-  if ((mallocd_result = realloc(mallocd_str, reallocd_size)) == NULL)
-    return NULL;
-  return strcat(mallocd_result, appended_str);
+  int reallocd_size = strlen(*mallocd_string_ptr) + strlen(appended_string) + 1;
+  // Temporary pointer to avoid memory leaks on failed reallocs.
+  char *tmp = realloc(*mallocd_string_ptr, reallocd_size);
+  if (tmp == NULL) {
+    return 0;  // fail
+  } else {
+    *mallocd_string_ptr = tmp;
+    strcat(*mallocd_string_ptr, appended_string);
+    return 1;  // success
+  }
 }
 
 // You must free the result if result is non-NULL.
@@ -228,6 +233,8 @@ collect_mallocd_address(struct dns_collector *dc, const char *addr_buf)
   if (!dc->all_ips) {
     free(dc->mallocd_addresses);
     dc->mallocd_addresses = strdup(addr_buf);
+    // TODO(slattarini): we probably want to signal issues allocating
+    // memory to the caller...
     return COLLECT_DONE;  // we only need and want one result
   }
 
@@ -235,20 +242,19 @@ collect_mallocd_address(struct dns_collector *dc, const char *addr_buf)
     if ((dc->mallocd_addresses = strdup(addr_buf)) != NULL)
       return COLLECT_MORE;  // it's ok to run again and get more results
     else
+      // TODO(slattarini): we probably want to signal the issue to the
+      // caller...
       return COLLECT_DONE;  // give up when OOM
   }
 
   const char *p[] = {";", addr_buf};
   int i;
   for (i = 0; i < 2; i++) {
-    // Temporary pointer to avoid memory leaks on failed reallocs.
-    char *tmp = concat_strings(dc->mallocd_addresses, p[i]);
-    if (tmp == NULL) {
-      free(dc->mallocd_addresses);
-      dc->mallocd_addresses = NULL;
-      return COLLECT_DONE;  // give up when OOM
-    } else {
-      dc->mallocd_addresses = tmp;
+    if (!append_to_mallocd_string(&dc->mallocd_addresses, p[i])) {
+      // just give up when OOM
+      // TODO(slattarini): we probably want to signal the issue to
+      // the caller...
+      return COLLECT_DONE;
     }
   }
   return COLLECT_MORE;  // it's ok to run again and get more results
