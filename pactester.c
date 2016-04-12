@@ -73,6 +73,7 @@ usage(const char *progname)
 char *
 get_host_from_url(const char *url)
 {
+  const char *original_url = url;
   char *host = NULL;
 
   // Move to first ':'
@@ -111,7 +112,7 @@ get_host_from_url(const char *url)
   return host;
 
 not_a_proper_url:
-  fprintf(stderr, __FILE__ ": Not a proper URL: %s\n", url);
+  fprintf(stderr, __FILE__ ": Not a proper URL: %s\n", original_url);
   free(host);
   return NULL;
 }
