@@ -30,14 +30,12 @@ void
 usage(const char *progname)
 {
   const static char *common_args =
-      "-p PAC-FILE [-e|-E] [-h HOST] [-c MY_IP] [-r DNS_RESOLVER_TYPE] "
-      "[-s DNS_SERVER_IP] [-d DNS_DOMAIN_LIST]";
+      "-p PAC-FILE {-u URL | -f URL-file} [-e|-E] [-h HOST] [-c MY_IP] "
+      "[-r DNS_RESOLVER_TYPE] [-s DNS_SERVER_IP] [-d DNS_DOMAIN_LIST]";
 
   fprintf(stderr, "\n"
 "Usage:\n"
 "  %s -u URL %s\n"
-"or:\n"
-"  %s -f URL-LIST %s\n"
 "\n"
 "Global flags:\n"
 "  -p pacfile   : PAC file to test (specify '-' to read from standard input).\n"
@@ -67,7 +65,7 @@ usage(const char *progname)
 "                 those extensions are enabled by default\n"
 "  -f urlsfile  : a file containing list of URLs to be tested\n"
 "  -v           : print version and exit\n",
-    progname, common_args, progname, common_args);
+    progname, common_args);
   exit(1);
 }
 
@@ -181,6 +179,10 @@ main(int argc, char* argv[])
   }
   if (!url && !urlsfile) {
     fprintf(stderr, __FILE__": You didn't specify a URL or URL-FILE\n");
+    usage(argv[0]);
+  }
+  if (url && urlsfile) {
+    fprintf(stderr, __FILE__": You can't specify both URL and URL-FILE\n");
     usage(argv[0]);
   }
 
