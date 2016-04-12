@@ -437,20 +437,24 @@ pacparser_ares_init(void)
   struct ares_options options;
   options.flags = ARES_FLAG_NOCHECKRESP;
 
-#define SAFE_RETURN(retval, deinit_ares) \
+  int done_ares_library_init = 0;
+  int done_ares_init_options = 0;
+
+#define CLEAN_AND_FAIL() \
   do { \
     free(domains_list); \
-    if (deinit_ares) { \
+    if (done_ares_init_options) \
       ares_destroy(global_channel); \
+    if (done_ares_library_init) \
       ares_library_cleanup(); \
-    } \
-    return (retval); \
+    return (0); \
   } while(0)
 
   if (ares_library_init(ARES_LIB_INIT_ALL) != ARES_SUCCESS) {
     print_err("Could not initialize the c-ares library.");
-    SAFE_RETURN(0, 0);
+    CLEAN_AND_FAIL();
   }
+  done_ares_library_init = 1;
 
   if (dns_domains) {
     int i = 0;
@@ -461,7 +465,7 @@ pacparser_ares_init(void)
       char **tmp = realloc(domains_list, (i + 2) * sizeof(char **));
       if (tmp == NULL) {
         print_err("Could not allocate memory for domains list.");
-        SAFE_RETURN(0, 0);
+        CLEAN_AND_FAIL();
       } else {
         domains_list = tmp;
       }
@@ -475,23 +479,22 @@ pacparser_ares_init(void)
     options.ndomains = i;
   }
 
-
   if (ares_init_options(&global_channel, &options, optmask) != ARES_SUCCESS) {
     print_err("Could not initialize c-ares options.");
-    SAFE_RETURN(0, 1);
+    CLEAN_AND_FAIL();
   }
+  done_ares_init_options = 1;
 
   if (dns_servers) {
     if (ares_set_servers_csv(global_channel, dns_servers) != ARES_SUCCESS) {
       print_err("Could not set c-ares DNS servers.");
-      SAFE_RETURN(0, 1);
+      CLEAN_AND_FAIL();
     }
   }
+#undef CLEAN_AND_FAIL
 
   ares_initialized = 1;
-  SAFE_RETURN(1, 0);
-
-#undef SAFE_RETURN
+  return 1;
 }
 
 static void
