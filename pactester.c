@@ -90,7 +90,7 @@ get_host_from_url(const char *url)
 
   // Host part starts from here.
   if ((host = strdup(url)) == NULL) {
-    perror("pactetser.c: Failed to allocate the memory for hostname");
+    perror(__FILE__": Failed to allocate the memory for hostname");
     return NULL;
   }
 
@@ -113,7 +113,7 @@ get_host_from_url(const char *url)
   return host;
 
 not_a_proper_url:
-  fprintf(stderr, "pactester.c: Not a proper URL: %s\n", url);
+  fprintf(stderr, __FILE__ ": Not a proper URL: %s\n", url);
   free(host);
   return NULL;
 }
@@ -176,11 +176,11 @@ main(int argc, char* argv[])
     }
 
   if (!pacfile) {
-    fprintf(stderr, "pactester.c: You didn't specify the PAC file\n");
+    fprintf(stderr, __FILE__": You didn't specify the PAC file\n");
     usage(argv[0]);
   }
   if (!url && !urlsfile) {
-    fprintf(stderr, "pactester.c: You didn't specify a URL or URL-FILE\n");
+    fprintf(stderr, __FILE__": You didn't specify a URL or URL-FILE\n");
     usage(argv[0]);
   }
 
@@ -188,12 +188,12 @@ main(int argc, char* argv[])
     usage(argv[0]);
 
   if (!pacparser_set_dns_servers(dns_servers)) {
-    fprintf(stderr, "pactester.c: pacparser_set_dns_servers() failed\n");
+    fprintf(stderr, __FILE__": pacparser_set_dns_servers() failed\n");
     return 1;
   }
 
   if (!pacparser_set_dns_domains(dns_domains)) {
-    fprintf(stderr, "pactester.c: pacparser_set_dns_domains() failed\n");
+    fprintf(stderr, __FILE__": pacparser_set_dns_domains() failed\n");
     return 1;
   }
 
@@ -204,7 +204,7 @@ main(int argc, char* argv[])
 
   // Initialize pacparser.
   if (!pacparser_init()) {
-      fprintf(stderr, "pactester.c: Could not initialize pacparser\n");
+      fprintf(stderr, __FILE__": Could not initialize pacparser\n");
       return 1;
   }
 
@@ -216,7 +216,7 @@ main(int argc, char* argv[])
 
     script = calloc(1, sizeof(char));
     if (script == NULL) {
-      perror("pactetser.c: Failed to allocate the memory for the script");
+      perror(__FILE__": Failed to allocate the memory for the script");
       return 1;
     }
 
@@ -226,14 +226,14 @@ main(int argc, char* argv[])
       char *old = script;
       script_size += strlen(buffer);
       if (script_size > PACMAX) {
-        fprintf(stderr, "pactester.c: Input file is too big. "
+        fprintf(stderr, __FILE__": Input file is too big. "
                 "Maximum allowed size in bytes is: %d\n", PACMAX);
         free(script);
         return 1;
       }
       script = realloc(script, script_size);
       if (script == NULL) {
-        perror("pactester.c: Failed to allocate the memory for the script");
+        perror(__FILE__": Failed to allocate the memory for the script");
         free(old);
         return 1;
       }
@@ -242,12 +242,12 @@ main(int argc, char* argv[])
 
     if (ferror(stdin)) {
       free(script);
-      perror("pactester.c: Error reading from stdin");
+      perror(__FILE__": Error reading from stdin");
       return 1;
     }
 
     if (!pacparser_parse_pac_string(script)) {
-      fprintf(stderr, "pactester.c: Could not parse the pac script: %s\n",
+      fprintf(stderr, __FILE__": Could not parse the pac script '%s'\n",
               script);
       free(script);
       pacparser_cleanup();
@@ -257,7 +257,7 @@ main(int argc, char* argv[])
   }
   else {
     if (!pacparser_parse_pac_file(pacfile)) {
-      fprintf(stderr, "pactester.c: Could not parse the pac file: %s\n",
+      fprintf(stderr, __FILE__": Could not parse the pac file: %s\n",
               pacfile);
       pacparser_cleanup();
       return 1;
@@ -283,7 +283,7 @@ main(int argc, char* argv[])
       free(h);
     }
     if (proxy == NULL) {
-      fprintf(stderr, "pactester.c: Problem in finding proxy for %s\n", url);
+      fprintf(stderr, __FILE__": Problem in finding proxy for %s\n", url);
       pacparser_cleanup();
       return 1;
     }
@@ -294,7 +294,7 @@ main(int argc, char* argv[])
     char line[LINEMAX];
     FILE *fp;
     if ((fp = fopen(urlsfile, "r")) == NULL) {
-      fprintf(stderr, "pactester.c: Could not open urlsfile: %s", urlsfile);
+      fprintf(stderr, __FILE__": Could not open urlsfile '%s'\n", urlsfile);
       pacparser_cleanup();
       return 1;
     }
@@ -320,7 +320,7 @@ main(int argc, char* argv[])
       proxy = pacparser_find_proxy(url, h);
       free(h);
       if (proxy == NULL) {
-        fprintf(stderr, "pactester.c: Problem in finding proxy for %s\n", url);
+        fprintf(stderr, __FILE__": Problem in finding proxy for %s\n", url);
         rc = 1; // will exit with error
         continue;
       }
