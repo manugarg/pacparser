@@ -108,7 +108,7 @@ js_false () { do_test_truth false "$@"; }
 
 declare_test_results_and_exit() {
   echo "${global_result}"
-  if [[ $global_result == PASS ]]; then
+  if [[ ${global_result} == PASS ]]; then
     exit 0
   else
     exit 1
