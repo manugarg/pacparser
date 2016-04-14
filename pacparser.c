@@ -408,25 +408,25 @@ callback_for_ares(void *arg, int status, int timeouts, struct hostent *host)
 static int
 ares_wait_for_all_queries(ares_channel channel)
 {
-   int nfds, count;
-   fd_set readers, writers;
-   struct timeval tv, *tvp;
+  int nfds, count;
+  fd_set readers, writers;
+  struct timeval tv, *tvp;
 
-   while (1) {
-     FD_ZERO(&readers);
-     FD_ZERO(&writers);
-     nfds = ares_fds(channel, &readers, &writers);
-     if (nfds == 0)
-       break;
-     tvp = ares_timeout(channel, NULL, &tv);
-     count = select(nfds, &readers, &writers, NULL, tvp);
-     if (count < 0 && errno != EINVAL) {
-       print_err("select() failed: %s", strerror(errno));
-       return 0;
-     }
-     ares_process(channel, &readers, &writers);
-   }
-   return 1;
+  while (1) {
+    FD_ZERO(&readers);
+    FD_ZERO(&writers);
+    nfds = ares_fds(channel, &readers, &writers);
+    if (nfds == 0)
+      break;
+    tvp = ares_timeout(channel, NULL, &tv);
+    count = select(nfds, &readers, &writers, NULL, tvp);
+    if (count < 0 && errno != EINVAL) {
+      print_err("select() failed: %s", strerror(errno));
+      return 0;
+    }
+    ares_process(channel, &readers, &writers);
+  }
+  return 1;
 }
 
 static int
@@ -622,9 +622,9 @@ pacparser_set_dns_resolver_variant(const char *dns_resolver_variant)
 static char *
 pacparser_resolve_host(const char *hostname, int all_ips)
 {
-  if (name == NULL || *name == '\0')
-    return NULL
-  return dns_resolver(name, all_ips);
+  if (hostname == NULL || *hostname == '\0')
+    return NULL;
+  return dns_resolver(hostname, all_ips);
 }
 
 static char *
