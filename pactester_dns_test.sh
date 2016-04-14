@@ -272,6 +272,19 @@ EOT
 
 fi # ${has_c_ares}
 
+# Empty hostname should not cause DNS queries, and should
+# resolve to null.
+
+ok -E <<EOT
+  var result = dnsResolve('')
+  return result == null ? 'OK' : 'KO -> ' + result;
+EOT
+
+ok -e <<EOT
+  var result = dnsResolveEx('')
+  return result == null ? 'OK' : 'KO -> ' + result;
+EOT
+
 #=== Results ===#
 
 declare_test_results_and_exit

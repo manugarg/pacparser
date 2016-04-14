@@ -595,28 +595,6 @@ pacparser_ares_cleanup(void)
 static pacparser_resolve_host_func dns_resolver = (
     &pacparser_resolve_host_getaddrinfo);
 
-static char *
-pacparser_get_my_ip_address(pacparser_resolve_host_func resolve_host_func,
-                            int all_ips)
-{
-  char *ipaddr;
-  // According to the gethostname(2) manpage, SUSv2  guarantees that
-  // "Host names are limited to 255 bytes".
-  char name[256];
-  if (gethostname(name, sizeof(name)) < 0 ||
-      (ipaddr = resolve_host_func(name, all_ips)) == NULL) {
-    ipaddr = strdup("127.0.0.1");
-  }
-  return ipaddr;
-}
-
-void
-pacparser_setmyip(const char *ip)
-{
-  free(myip);
-  myip = strdup(ip);
-}
-
 int
 pacparser_set_dns_resolver_variant(const char *dns_resolver_variant)
 {
@@ -641,6 +619,35 @@ pacparser_set_dns_resolver_variant(const char *dns_resolver_variant)
   }
 }
 
+static char *
+pacparser_resolve_host(const char *hostname, int all_ips)
+{
+  if (name == NULL || *name == '\0')
+    return NULL
+  return dns_resolver(name, all_ips);
+}
+
+static char *
+pacparser_get_my_ip_address(int all_ips)
+{
+  char *ipaddr;
+  // According to the gethostname(2) manpage, SUSv2  guarantees that
+  // "Host names are limited to 255 bytes".
+  char name[256];
+  if (gethostname(name, sizeof(name)) < 0 ||
+      (ipaddr = pacparser_resolve_host(name, all_ips)) == NULL) {
+    ipaddr = strdup("127.0.0.1");
+  }
+  return ipaddr;
+}
+
+void
+pacparser_setmyip(const char *ip)
+{
+  free(myip);
+  myip = strdup(ip);
+}
+
 // dnsResolve/dnsResolveEx in JS context; not available in core JavaScript.
 // Return javascript null if not able to resolve.
 
@@ -651,7 +658,7 @@ dns_resolve_js_internals(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
   char *name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
   char *ipaddr, *out;
 
-  if ((ipaddr = dns_resolver(name, all_ips)) == NULL) {
+  if ((ipaddr = pacparser_resolve_host(name, all_ips)) == NULL) {
     *rval = JSVAL_NULL;
     return JS_TRUE;
   }
@@ -689,7 +696,7 @@ my_ip_address_js_internals(JSContext *cx, JSObject *obj, uintN argc,
     // If "my" (client's) IP address is already set.
     ipaddr = strdup(myip);
   } else {
-    ipaddr = pacparser_get_my_ip_address(dns_resolver, all_ips);
+    ipaddr = pacparser_get_my_ip_address(all_ips);
   }
 
   out = JS_strdup(cx, ipaddr);
