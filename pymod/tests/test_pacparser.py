@@ -28,6 +28,13 @@ function findProxyForURL(url, host) {
       pacparser.cleanup()
     self.assertEqual(expected, got, msg)
 
+  def test_invalid_pac(self):
+    pacparser.init()
+    try:
+      self.assertRaises(pacparser.error, pacparser.parse_pac_string, '{')
+    finally:
+      pacparser.cleanup()
+
   def test_my_ip(self):
     self.do_test(
         'myIpAddress()',

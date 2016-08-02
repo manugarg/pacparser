@@ -39,6 +39,8 @@ DNS_NONE = "none"
 DNS_GETADDRINFO = "getaddrinfo"
 DNS_C_ARES = "c-ares"
 
+error = _pacparser.error
+
 
 class URLError(Exception):
   def __init__(self, url):
