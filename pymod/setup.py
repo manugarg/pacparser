@@ -25,38 +25,32 @@ Wrapper script around python module Makefiles. This script take care of
 identifying python setup and setting up some environment variables needed by
 Makefiles.
 """
-import sys
 import os
 
-from distutils import sysconfig
-from distutils.core import setup
-from distutils.core import Extension
+from setuptools import setup
+from setuptools import Extension
 
 def main():
-  # Use Makefile for windows. distutils doesn't work well with windows.
-  if sys.platform == 'win32':
-    pyVer = sysconfig.get_config_vars('VERSION')[0]
-    pyDLL = 'C:\windows\system32\python%s.dll' % pyVer
-    os.system('make -f Makefile.win32 %s PY_HOME="%s" PY_DLL="%s" PY_VER="%s"' %
-              (' '.join(sys.argv[1:]), sys.prefix, pyDLL, pyVer))
-    return
-
-  pacparser_module = Extension('_pacparser',
-                               include_dirs = ['../spidermonkey/js/src', '..'],
-                               sources = ['pacparser_py.c'],
-                               extra_objects = ['../pacparser.o', '../libjs.a'])
+  pacparser_module = Extension(
+      '_pacparser',
+      include_dirs = ['../spidermonkey/js/src', '..'],
+      sources = ['pacparser_py.c'],
+      extra_objects = ['../pacparser.o', '../libjs.a'],
+      extra_link_args = os.getenv("C_ARES_LDFLAGS", "").split(),
+  )
   setup (name = 'pacparser',
          version = '1',
          description = 'Pacparser package',
          author = 'Manu Garg',
          author_email = 'manugarg@gmail.com',
          url = 'http://github.com/pacparser/pacparser',
-         long_description = 'python library to parse proxy auto-config (PAC) '
-                           'files.',
+         long_description = 'python library to parse proxy auto-config '
+                            '(PAC) files.',
          license = 'LGPL',
          ext_package = 'pacparser',
          ext_modules = [pacparser_module],
-         py_modules = ['pacparser.__init__'])
+         packages = ['pacparser'],
+         test_suite = 'tests')
 
 if __name__ == '__main__':
   main()

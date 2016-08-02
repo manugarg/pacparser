@@ -8,16 +8,15 @@
 # pacparser is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
 # License as published by the Free Software Foundation; either
-# version 2.1 of the License, or (at your option) any later version.
-
+# version 3 of the License, or (at your option) any later version.
+#
 # pacparser is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # Lesser General Public License for more details.
-
+#
 # You should have received a copy of the GNU Lesser General Public
-# License along with this library; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
+# License along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
 Python module to parse pac files. Look at project's homepage
@@ -35,10 +34,19 @@ import sys
 
 _URL_REGEX = re.compile('^[^:]*:\/\/([^\/]+)')
 
+# Valid args for pacparser_set_dns_resolver_variant()
+DNS_NONE = "none"
+DNS_GETADDRINFO = "getaddrinfo"
+DNS_C_ARES = "c-ares"
+
+error = _pacparser.error
+
+
 class URLError(Exception):
   def __init__(self, url):
     super(URLError, self).__init__('URL: {} is not valid'.format(url))
     self.url = url
+
 
 def init():
   """
@@ -46,16 +54,18 @@ def init():
   """
   _pacparser.init()
 
+
 def parse_pac(pacfile):
   """
   (Deprecated) Same as parse_pac_file.
   """
   parse_pac_file(pacfile)
 
+
 def parse_pac_file(pacfile):
   """
-  Reads the pacfile and evaluates it in the Javascript engine created by
-  init().
+  Reads the pacfile and evaluates it in the Javascript engine
+  created by init().
   """
   try:
     with open(pacfile) as f:
@@ -64,11 +74,13 @@ def parse_pac_file(pacfile):
   except IOError:
     raise IOError('Could not read the pacfile: {}'.format(pacfile))
 
+
 def parse_pac_string(pac_script):
   """
   Evaluates pac_script in the Javascript engine created by init().
   """
   _pacparser.parse_pac_string(pac_script)
+
 
 def find_proxy(url, host=None):
   """
@@ -85,17 +97,20 @@ def find_proxy(url, host=None):
       raise URLError(url)
   return _pacparser.find_proxy(url, host)
 
+
 def version():
   """
   Returns the compiled pacparser version.
   """
   return _pacparser.version()
 
+
 def cleanup():
   """
   Destroys pacparser engine.
   """
   _pacparser.cleanup()
+
 
 def just_find_proxy(pacfile, url, host=None):
   """
@@ -107,9 +122,22 @@ def just_find_proxy(pacfile, url, host=None):
     raise IOError('Pac file does not exist: {}'.format(pacfile))
   init()
   parse_pac(pacfile)
-  proxy = find_proxy(url,host)
+  proxy = find_proxy(url, host)
   cleanup()
   return proxy
+
+
+def set_dns_resolver_variant(variant):
+  """
+  Set DNS resolver to use.
+
+  Valid values are those in the DNS_* module-level constants.
+  """
+  if variant in (DNS_NONE, DNS_GETADDRINFO, DNS_C_ARES):
+    _pacparser.set_dns_resolver_variant(variant)
+  else:
+    raise ValueError("invalid DNS resolver variant: '%s'" % variant)
+
 
 def setmyip(ip_address):
   """
@@ -117,9 +145,34 @@ def setmyip(ip_address):
   """
   _pacparser.setmyip(ip_address)
 
+
 def enable_microsoft_extensions():
   """
   Enables Microsoft PAC extensions (dnsResolveEx, isResolvableEx,
   myIpAddressEx).
   """
   _pacparser.enable_microsoft_extensions()
+
+
+def disable_microsoft_extensions():
+  """
+  Disables Microsoft PAC extensions (dnsResolveEx, isResolvableEx,
+  myIpAddressEx).
+  """
+  _pacparser.disable_microsoft_extensions()
+
+
+def set_dns_servers(ips):
+  """
+  Use the given DNS servers instead of relying on the ones defined
+  in the "nameserver" directive in /etc/resolv.conf.
+  """
+  _pacparser.set_dns_servers(ips)
+
+
+def set_dns_domains(domains):
+  """
+  Use the given DNS domains instead of relying on the ones defined
+  in the "search" directive in /etc/resolv.conf.
+  """
+  _pacparser.set_dns_domains(domains)

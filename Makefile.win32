@@ -30,9 +30,9 @@ CC=gcc
 
 all: pacparser.dll pacparser.lib pactester
 
-pacparser.o: pacparser.c pac_utils.h js.lib
+pacparser.o: pacparser.c pac_builtins.h js.lib
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
-	
+
 fdlibm.lib js.lib:
 	$(MAKE) -C spidermonkey -f Makefile.win32
 	copy spidermonkey\fdlibm.lib .

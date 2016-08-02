@@ -1,7 +1,7 @@
 // Copyright (C) 2007 Manu Garg.
 // Author: Manu Garg <manugarg@gmail.com>
 //
-// pac_utils.h defines some of the functions used by PAC files. This file is
+// pac_builtins.h defines some of the functions used by PAC files. This file is
 // packaged with pacparser source code and is required for compiling pacparser.
 // Please read README file included with this package for more information
 // about pacparser.
@@ -9,7 +9,7 @@
 // Note: This file is derived from "nsProxyAutoConfig.js" file that comes with
 // mozilla source code. Please check out the following for initial developer
 // and contributors:
-//http://lxr.mozilla.org/seamonkey/source/netwerk/base/src/nsProxyAutoConfig.js
+// http://lxr.mozilla.org/seamonkey/source/netwerk/base/src/nsProxyAutoConfig.js
 //
 // This file is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -22,18 +22,19 @@
 // Lesser General Public License for more details.
 
 // You should have received a copy of the GNU Lesser General Public
-// License along with this library; if not, write to the Free Software
-// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
-// USA
+// License along with this library; if not, see <http://www.gnu.org/licenses/>.
 
-static const char *pacUtils =
+// Common PAC files builtins.
+
+static const char *pac_builtins =
+
 "function dnsDomainIs(host, domain) {\n"
 "    return (host.length >= domain.length &&\n"
 "            host.substring(host.length - domain.length) == domain);\n"
 "}\n"
 
 "function dnsDomainLevels(host) {\n"
-"    return host.split('.').length-1;\n"
+"    return host.split('.').length - 1;\n"
 "}\n"
 
 "function convert_addr(ipchars) {\n"
@@ -51,7 +52,7 @@ static const char *pacUtils =
 "        ipaddr = dnsResolve(ipaddr);\n"
 "        if (ipaddr == null)\n"
 "            return false;\n"
-"    } else if (test[1] > 255 || test[2] > 255 || \n"
+"    } else if (test[1] > 255 || test[2] > 255 ||\n"
 "               test[3] > 255 || test[4] > 255) {\n"
 "        return false;    // not an IP address\n"
 "    }\n"
@@ -62,98 +63,12 @@ static const char *pacUtils =
 "    \n"
 "}\n"
 
-"function convert_addr6(ipchars) {\n"
-"    ipchars = ipchars.replace(/(^:|:$)/, '');\n"
-"    var fields = ipchars.split(':');\n"
-"    var diff = 8 - fields.length;\n"
-"    for (var i = 0; i < fields.length; i++) {\n"
-"        if (fields[i] == '') {\n"
-"            fields[i] = '0';\n"
-"            // inject 'diff' number of '0' elements here.\n"
-"            for (var j = 0; j < diff; j++) {\n"
-"                fields.splice(i++, 0, '0');\n"
-"            }\n"
-"            break;\n"
-"        }\n"
-"    }\n"
-"    var result = [];\n"
-"    for (var i = 0; i < fields.length; i++) {\n"
-"        result.push(parseInt(fields[i], 16));\n"
-"    }\n"
-"    return result;\n"
-"}\n"
-
-"function isInNetEx6(ipaddr, prefix, prefix_len) {\n"
-"    if (prefix_len > 128) {\n"
-"        return false;\n"
-"    }\n"
-"    prefix = convert_addr6(prefix);\n"
-"    ip = convert_addr6(ipaddr);\n"
-"    // Prefix match strategy:\n"
-"    //   Compare only prefix length bits between 'ipaddr' and 'prefix'\n"
-"    //   Match in the batches of 16-bit fields \n"
-"    prefix_rem = prefix_len % 16;\n"
-"    prefix_nfields = (prefix_len - prefix_rem) / 16;\n"
-"\n"
-"    for (var i = 0; i < prefix_nfields; i++) {\n"
-"        if (ip[i] != prefix[i]) {\n"
-"            return false;\n"
-"        }\n"
-"    }\n"
-"    if (prefix_rem > 0) {\n"
-"        // Compare remaining bits\n"
-"        prefix_bits = prefix[prefix_nfields] >> (16 - prefix_rem);\n"
-"        ip_bits = ip[prefix_nfields] >> (16 - prefix_rem);\n"
-"        if (ip_bits != prefix_bits) {\n"
-"            return false;\n"
-"        }\n"
-"    }\n"
-"    return true;\n"
-"}\n"
-
-"function isInNetEx4(ipaddr, prefix, prefix_len) {\n"
-"    if (prefix_len > 32) {\n"
-"        return false;\n"
-"    }\n"
-"    var netmask = [];\n"
-"    for (var i = 1; i < 5; i++) {\n"
-"        var shift_len = 8 * i - prefix_len;\n"
-"        if (shift_len <= 0) {\n"
-"            netmask.push(255)\n"
-"        } else {\n"
-"            netmask.push((0xff >> shift_len) << shift_len);\n"
-"        }\n"
-"    }\n"
-"    return isInNet(ipaddr, prefix, netmask.join('.'));\n"
-"}\n"
-
-"function isInNetEx(ipaddr, prefix) {\n"
-"    prefix_a = prefix.split('/');\n"
-"    if (prefix_a.length != 2) {\n"
-"        return false;\n"
-"    }\n"
-"    var test = /^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$/.test(ipaddr);\n"
-"    if (!test) {\n"
-"        return isInNetEx6(ipaddr, prefix_a[0], prefix_a[1]);\n"
-"    } else {\n"
-"        return isInNetEx4(ipaddr, prefix_a[0], prefix_a[1]);\n"
-"    }\n"
-"}\n"
-
 "function isPlainHostName(host) {\n"
 "    return (host.search('\\\\.') == -1);\n"
 "}\n"
 
 "function isResolvable(host) {\n"
-"    var ip = dnsResolve(host);\n"
-"    return (ip != null);\n"
-"}\n"
-
-"if (typeof(dnsResolveEx) == \"function\") {\n"
-  "function isResolvableEx(host) {\n"
-  "    var ip = dnsResolveEx(host);\n"
-  "    return (ip != null);\n"
-  "}\n"
+"    return (dnsResolve(host) != null);\n"
 "}\n"
 
 "function localHostOrDomainIs(host, hostdom) {\n"
@@ -169,9 +84,30 @@ static const char *pacUtils =
 "   return newRe.test(url);\n"
 "}\n"
 
-"var wdays = {SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6};\n"
+"var wdays = {"
+"  SUN: 0,"
+"  MON: 1,"
+"  TUE: 2,"
+"  WED: 3,"
+"  THU: 4,"
+"  FRI: 5,"
+"  SAT: 6"
+"};\n"
 
-"var months = {JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11};\n"
+"var months = {"
+"  JAN: 0,"
+"  FEB: 1,"
+"  MAR: 2,"
+"  APR: 3,"
+"  MAY: 4,"
+"  JUN: 5,"
+"  JUL: 6,"
+"  AUG: 7,"
+"  SEP: 8,"
+"  OCT: 9,"
+"  NOV: 10,"
+"  DEC: 11"
+"};\n"
 
 "function weekdayRange() {\n"
 "    function getDay(weekday) {\n"
@@ -218,13 +154,14 @@ static const char *pacUtils =
 "    if (argc == 1) {\n"
 "        var tmp = parseInt(arguments[0]);\n"
 "        if (isNaN(tmp)) {\n"
-"            return ((isGMT ? date.getUTCMonth() : date.getMonth()) ==\n"
-"getMonth(arguments[0]));\n"
+"            return ((isGMT ? date.getUTCMonth() :\n"
+"                     date.getMonth()) == getMonth(arguments[0]));\n"
 "        } else if (tmp < 32) {\n"
-"            return ((isGMT ? date.getUTCDate() : date.getDate()) == tmp);\n"
+"            return ((isGMT ? date.getUTCDate() :\n"
+"                     date.getDate()) == tmp);\n"
 "        } else { \n"
-"            return ((isGMT ? date.getUTCFullYear() : date.getFullYear()) ==\n"
-"tmp);\n"
+"            return ((isGMT ? date.getUTCFullYear() :\n"
+"                    date.getFullYear()) == tmp);\n"
 "        }\n"
 "    }\n"
 "    var year = date.getFullYear();\n"
@@ -326,47 +263,100 @@ static const char *pacUtils =
 "}\n"
 
 "function findProxyForURL(url, host) {\n"
+"    return FindProxyForURL(url, host);\n"
+"}\n";
+
+// Builtins enabled by Microsoft extensions.
+
+static const char *pac_builtins_ex =
+
+"function convert_addr6(ipchars) {\n"
+"    ipchars = ipchars.replace(/(^:|:$)/, '');\n"
+"    var fields = ipchars.split(':');\n"
+"    var diff = 8 - fields.length;\n"
+"    for (var i = 0; i < fields.length; i++) {\n"
+"        if (fields[i] == '') {\n"
+"            fields[i] = '0';\n"
+"            // inject 'diff' number of '0' elements here.\n"
+"            for (var j = 0; j < diff; j++) {\n"
+"                fields.splice(i++, 0, '0');\n"
+"            }\n"
+"            break;\n"
+"        }\n"
+"    }\n"
+"    var result = [];\n"
+"    for (var i = 0; i < fields.length; i++) {\n"
+"        result.push(parseInt(fields[i], 16));\n"
+"    }\n"
+"    return result;\n"
+"}\n"
+
+"function isInNetEx6(ipaddr, prefix, prefix_len) {\n"
+"    if (prefix_len > 128) {\n"
+"        return false;\n"
+"    }\n"
+"    prefix = convert_addr6(prefix);\n"
+"    ip = convert_addr6(ipaddr);\n"
+"    // Prefix match strategy:\n"
+"    //   Compare only prefix length bits between 'ipaddr' and 'prefix'\n"
+"    //   Match in the batches of 16-bit fields \n"
+"    prefix_rem = prefix_len % 16;\n"
+"    prefix_nfields = (prefix_len - prefix_rem) / 16;\n"
+"    for (var i = 0; i < prefix_nfields; i++) {\n"
+"        if (ip[i] != prefix[i]) {\n"
+"            return false;\n"
+"        }\n"
+"    }\n"
+"    if (prefix_rem > 0) {\n"
+"        // Compare remaining bits\n"
+"        prefix_bits = prefix[prefix_nfields] >> (16 - prefix_rem);\n"
+"        ip_bits = ip[prefix_nfields] >> (16 - prefix_rem);\n"
+"        if (ip_bits != prefix_bits) {\n"
+"            return false;\n"
+"        }\n"
+"    }\n"
+"    return true;\n"
+"}\n"
+
+"function isInNetEx4(ipaddr, prefix, prefix_len) {\n"
+"    if (prefix_len > 32) {\n"
+"        return false;\n"
+"    } else if (prefix_len == 0) {\n"
+"        return true;\n"
+"    }\n"
+"    var netmask = [];\n"
+"    for (var i = 1; i < 5; i++) {\n"
+"        var shift_len = 8 * i - prefix_len;\n"
+"        if (shift_len <= 0) {\n"
+"            netmask.push(255)\n"
+"        } else {\n"
+"            netmask.push((0xff >> shift_len) << shift_len);\n"
+"        }\n"
+"    }\n"
+"    return isInNet(ipaddr, prefix, netmask.join('.'));\n"
+"}\n"
+
+"function isInNetEx(ipaddr, prefix) {\n"
+"    prefix_a = prefix.split('/');\n"
+"    if (prefix_a.length != 2) {\n"
+"        return false;\n"
+"    }\n"
+"    var test = /^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$/.test(ipaddr);\n"
+"    if (!test) {\n"
+"        return isInNetEx6(ipaddr, prefix_a[0], prefix_a[1]);\n"
+"    } else {\n"
+"        return isInNetEx4(ipaddr, prefix_a[0], prefix_a[1]);\n"
+"    }\n"
+"}\n"
+
+"function isResolvableEx(host) {\n"
+"    return (dnsResolveEx(host) != null);\n"
+"}\n"
+
+"function findProxyForURL(url, host) {\n"
 "    if (typeof FindProxyForURLEx == 'function') {\n"
 "        return FindProxyForURLEx(url, host);\n"
 "    } else {\n"
 "        return FindProxyForURL(url, host);\n"
 "    }\n"
 "}\n";
-
-
-// You must free the result if result is non-NULL.
-char *str_replace(const char *orig, char *rep, char *with) {
-    char *tmporig = malloc(strlen(orig) + 1); // Copy of orig that we work with
-    tmporig = strcpy(tmporig, orig);
-
-    char *result;  // the return string
-    char *ins;     // the next insert point
-    char *tmp;     // varies
-    int count;     // number of replacements
-    int len_front; // distance between rep and end of last rep
-    int len_rep  = strlen(rep);
-    int len_with = strlen(with);
-
-    // Get the count of replacements
-    ins = tmporig;
-    for (count = 0; (tmp = strstr(ins, rep)); ++count) {
-        ins = tmp + len_rep;
-    }
-
-    tmp = result = malloc(strlen(tmporig) + (len_with - len_rep) * count + 1);
-
-    // first time through the loop, all the variable are set correctly
-    // from here on,
-    //    tmp points to the end of the result string
-    //    ins points to the next occurrence of rep in tmporig
-    //    tmporig points to the remainder of tmporig after "end of rep"
-    while (count--) {
-        ins = strstr(tmporig, rep);
-        len_front = ins - tmporig;
-        tmp = strncpy(tmp, tmporig, len_front) + len_front;
-        tmp = strcpy(tmp, with) + len_with;
-        tmporig += len_front + len_rep; // move to next "end of rep"
-    }
-    strcpy(tmp, tmporig);
-    return result;
-}

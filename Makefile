@@ -22,13 +22,45 @@
 # packaging script.
 -include version.mk
 
-VERSION ?= $(shell git describe --always --tags --candidate=100)
-
+BASH ?= bash
 PREFIX ?= /usr
+VERSION ?= $(shell git describe --always --tags --candidate=100)
 OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 
 LIBRARY_NAME = libpacparser
 LIB_VER = 1
+
+PYTHON ?= python
+
+LDFLAGS =
+CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
+
+# NOTICE(slattarini): in an ideal world, we would autonconfiscate the
+# pacparser build system and turn these definition into automatically
+# populated ones (via ./configure); however, given the current status of
+# the build system, compounded by the fact that we use a bundled package
+# (SpiderMonkey) which is not autoconfiscated and mostly incompatible with
+# several autotools conventions, we take the easier albeit suboptimal
+# solution.
+ENABLE_C_ARES ?= auto
+ifeq "$(ENABLE_C_ARES)" "auto"
+  ENABLE_C_ARES := $(shell pkg-config --exists libcares && echo yes || echo no)
+  $(info ENABLE_C_ARES was undefined; autodetected to "$(ENABLE_C_ARES)")
+  ifeq "$(ENABLE_C_ARES)" "yes"
+    C_ARES_CFLAGS := $(shell pkg-config --cflags libcares)
+    C_ARES_LDFLAGS := $(shell pkg-config --libs libcares)
+    C_ARES_LDFLAGS += -Wl,-rpath
+    C_ARES_LDFLAGS += -Wl,$(shell pkg-config --variable=libdir libcares)
+  endif
+endif
+ifeq "$(ENABLE_C_ARES)" "yes"
+  C_ARES_CFLAGS += -DHAVE_C_ARES
+else
+  $(warning c-ares (http://c-ares.haxx.se) library not found or disabled)
+  $(warning Some DNS-related features will be unavailable)
+endif
+CFLAGS += $(C_ARES_CFLAGS)
+LDFLAGS += $(C_ARES_LDFLAGS)
 
 # This Makefile should at least work on Linux and Mac OS X. It should work on
 # most other types of Unix systems too, but I have not put any conscious effort
@@ -55,12 +87,6 @@ ifeq ($(OS_ARCH),Darwin)
   endif
 endif
 
-CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
-
-ifndef PYTHON
-  PYTHON = python
-endif
-
 # Spidermonkey library.
 CFLAGS += -Ispidermonkey/js/src
 
@@ -70,12 +96,13 @@ LIB_PREFIX = $(PREFIX)/lib
 INC_PREFIX = $(PREFIX)/include
 BIN_PREFIX = $(PREFIX)/bin
 MAN_PREFIX = $(PREFIX)/share/man
+DOC_PREFIX = $(PREFIX)/share/doc
 
-.PHONY: clean pymod install-pymod
-all: testpactester
+.PHONY: all docs pymod install-pymod install test pymod-test clean pymod-clean
+all: pactester
 
-spidermonkey/js/src: spidermonkey/js-?.?.?.tar.gz
-	tar xzvf spidermonkey/js-?.?.?.tar.gz -C spidermonkey
+spidermonkey/js/src: spidermonkey/js.tar.gz
+	tar xzvf $< -C spidermonkey
 	sed -i -e 's:\(shell uname -s | sed /\\ /s//_/\):\1 | sed s,GNU.*,Linux,:g' spidermonkey/js/src/config.mk
 
 jsapi_buildstamp: spidermonkey/js/src
@@ -85,25 +112,42 @@ jsapi_buildstamp: spidermonkey/js/src
 libjs.a: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" "$(MAKE)" jslib
 
-pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
-	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
-	touch pymod/pacparser_o_buildstamp
+%.o: %.c
+	$(CC) $(CFLAGS) $(SHFLAGS) -c $< -o $@
 
-$(LIBRARY): pacparser.o libjs.a
-	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a -lm
+pacparser.o: pac_builtins.h pacparser_utils.h pacparser.h jsapi_buildstamp
+pactester.o: pacparser.h pacparser_utils.h
+
+# Also used for the python module, below.
+LIBRARY_DEPS = pacparser.o libjs.a
+
+$(LIBRARY): $(LIBRARY_DEPS)
+	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lm
 
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
-pactester: pactester.c pacparser.h $(LIBRARY_LINK)
-	$(CC) $(CFLAGS) $(LDFLAGS) pactester.c -o pactester -lpacparser -L. -I.
+pactester: pactester.o $(LIBRARY_LINK) $(LIBRARY_DEPS)
+	$(CC) $(CFLAGS) $< -o $@ -lpacparser $(LDFLAGS) -L. -I.
 
-testpactester: pactester
-	echo "Running tests for pactester."
-	NO_INTERNET=$(NO_INTERNET) ../tests/runtests.sh
+test: pactester
+	@set -u -e; st=0; \
+	 export PACTESTER="$$(pwd)/$<"; \
+	 (set -x && $(BASH) pactester_nointernet_test.sh) || st=1; \
+	 tst=pactester_dns_test.sh; \
+	 if [ -n '$(NO_INTERNET)' ]; then \
+	   echo "Skipping test $${tst}"; \
+	   exit $${st}; \
+	 fi; \
+	 args=$$(test -z '$(NO_IPV6)' && printf '%s\n' '--ipv6'); \
+	 (set -x && $(BASH) $${tst} $${args}) || st=1; \
+	 if [ '$(ENABLE_C_ARES)' = 'yes' ]; then \
+	   (set -x && $(BASH) $${tst} $${args} --c-ares) || st=1; \
+	 fi; \
+	 exit $${st}
 
 docs:
-	../tools/generatedocs.sh
+	tools/generatedocs.sh
 
 install: all
 	install -d $(LIB_PREFIX) $(INC_PREFIX) $(BIN_PREFIX)
@@ -113,26 +157,33 @@ install: all
 	install -m 644 pacparser.h $(INC_PREFIX)/pacparser.h
 	# install pactester manpages
 	install -d $(MAN_PREFIX)/man1/
-	(test -d ../docs && install -m 644 ../docs/man/man1/*.1 $(MAN_PREFIX)/man1/) || true
+	(test -d docs && install -m 644 docs/man/man1/*.1 $(MAN_PREFIX)/man1/) || true
 	# install pacparser manpages
 	install -d $(MAN_PREFIX)/man3/
-	(test -d ../docs && install -m 644 ../docs/man/man3/*.3 $(MAN_PREFIX)/man3/) || true
+	(test -d docs && install -m 644 docs/man/man3/*.3 $(MAN_PREFIX)/man3/) || true
 	# install html docs
 	install -d $(PREFIX)/share/doc/pacparser/html/
-	(test -d ../docs/html && install -m 644 ../docs/html/* $(PREFIX)/share/doc/pacparser/html/) || true
+	(test -d docs/html && install -m 644 docs/html/* $(PREFIX)/share/doc/pacparser/html/) || true
 	# install examples
 	install -d $(PREFIX)/share/doc/pacparser/examples/
-	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc//pacparser/examples/) || true
+	(test -d examples && install -m 644 examples/* $(PREFIX)/share/doc/pacparser/examples/) || true
 
-# Targets to build python module
-pymod: pacparser.o pacparser.h libjs.a
-	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
-	$(PYTHON) ../tests/runtests.py
+pymod: all
+	cd pymod && python setup.py clean --all
+	cd pymod && C_ARES_LDFLAGS='$(C_ARES_LDFLAGS)' ARCHFLAGS="" $(PYTHON) setup.py build
+
+pymod-test: pymod
+	cd pymod && ENABLE_C_ARES='$(ENABLE_C_ARES)' $(PYTHON) setup.py test
 
 install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
-clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
+pymod-clean:
 	cd pymod && python setup.py clean --all
+	cd pymod && rm -rf pacparser.egg-info
+	cd pymod && rm -f $$(find -name '*.py[co]')
+
+clean: pymod-clean
+	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a *.o pactester jsapi_buildstamp
+	rm -f pac.js.tmp stdout.tmp stderr.tmp
 	cd spidermonkey && "$(MAKE)" clean
