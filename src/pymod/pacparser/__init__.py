@@ -33,7 +33,7 @@ import os
 import re
 import sys
 
-_URL_REGEX = re.compile('^[^:]*:\/\/([^\/]+)')
+_URL_REGEX = re.compile('^[^:]*:\/\/([^\/:]+)')
 
 class URLError(Exception):
   def __init__(self, url):
