@@ -43,6 +43,7 @@ SHFLAGS = -fPIC
 SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=__va_copy
 
 ifeq ($(OS_ARCH),Darwin)
+  PREFIX = /usr/local
   MAC_MINOR_VERSION := $(shell sw_vers -productVersion | cut -d. -f2)
   MAC_GT_5 := $(shell [ $(MAC_MINOR_VERSION) -le 5 ] && echo false)
   SO_SUFFIX = dylib
