@@ -33,9 +33,7 @@ from setuptools import setup
 from distutils.core import Extension
 
 def main():
-  pacparser_version = os.environ['PACPARSER_VERSION']
-  if not pacparser_version:
-    pacparser_version = '1.0.0'
+  pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
 
   # Use Makefile for windows. distutils doesn't work well with windows.
   if sys.platform == 'win32':
