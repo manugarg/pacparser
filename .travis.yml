@@ -1,3 +1,5 @@
 language: c
 
-script: make -C src
+script:
+- make -C src
+- make -C src pymod
