@@ -127,6 +127,7 @@ install: all
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h libjs.a
+	cp libjs.a pacparser.o pymod/
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
 	$(PYTHON) ../tests/runtests.py
 

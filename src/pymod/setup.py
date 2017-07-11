@@ -29,10 +29,14 @@ import sys
 import os
 
 from distutils import sysconfig
-from distutils.core import setup
+from setuptools import setup
 from distutils.core import Extension
 
 def main():
+  pacparser_version = os.environ['PACPARSER_VERSION']
+  if not pacparser_version:
+    pacparser_version = '1.0.0'
+
   # Use Makefile for windows. distutils doesn't work well with windows.
   if sys.platform == 'win32':
     pyVer = sysconfig.get_config_vars('VERSION')[0]
@@ -44,15 +48,16 @@ def main():
   pacparser_module = Extension('_pacparser',
                                include_dirs = ['../spidermonkey/js/src', '..'],
                                sources = ['pacparser_py.c'],
-                               extra_objects = ['../pacparser.o', '../libjs.a'])
+                               extra_objects = ['pacparser.o', 'libjs.a'])
   setup (name = 'pacparser',
-         version = '1',
+         version = pacparser_version,
          description = 'Pacparser package',
          author = 'Manu Garg',
          author_email = 'manugarg@gmail.com',
          url = 'http://github.com/pacparser/pacparser',
          long_description = 'python library to parse proxy auto-config (PAC) '
-                           'files.',
+                            'files.',
+         package_data = {'': ['pacparser.o', 'libjs.a']},
          license = 'LGPL',
          ext_package = 'pacparser',
          ext_modules = [pacparser_module],
