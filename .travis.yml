@@ -1,5 +1,3 @@
 language: c
 
-install: true
-
 script: make -C src
