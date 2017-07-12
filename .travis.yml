@@ -20,5 +20,8 @@ deploy:
  user: $PYPI_USER
  password: $PYPI_PASS
  distributions: "$DIST"
+ skip_upload_docs: true
+ edge:
+  branch: twine-user-install
  on:
   tags: true
