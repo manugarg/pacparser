@@ -5,7 +5,10 @@ matrix:
  - os: osx
    env: DIST="sdist bdist_wheel"
 
-language: c
+language: python
+env:
+ global:
+ - PACPARSER_VERSION=${TRAVIS_TAG}
 
 script:
 - make -C src
@@ -21,7 +24,5 @@ deploy:
  password: $PYPI_PASS
  distributions: "$DIST"
  skip_upload_docs: true
- edge:
-  branch: twine-user-install
  on:
   tags: true
