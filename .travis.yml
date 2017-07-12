@@ -11,7 +11,11 @@ script:
 - make -C src
 - make -C src pymod
 
+before_deploy:
+- mv src/pymod/* .
+
 deploy:
+ skip_cleanup: true
  provider: pypi
  user: $PYPI_USER
  password: $PYPI_PASS
