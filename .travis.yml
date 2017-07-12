@@ -1,9 +1,20 @@
-os:
-- linux
-- osx
+matrix:
+ include:
+ - os: linux
+   env: DIST="sdist"
+ - os: osx
+   env: DIST="sdist bdist_wheel"
 
 language: c
 
 script:
 - make -C src
 - make -C src pymod
+
+deploy:
+ provider: pypi
+ user: $PYPI_USER
+ password: $PYPI_PASS
+ distributions: "$DIST"
+ on:
+  tags: true
