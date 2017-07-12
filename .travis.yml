@@ -2,10 +2,11 @@ matrix:
  include:
  - os: linux
    env: DIST="sdist"
+   language: python
  - os: osx
    env: DIST="sdist bdist_wheel"
+   language: generic
 
-language: python
 env:
  global:
  - PACPARSER_VERSION=${TRAVIS_TAG}
