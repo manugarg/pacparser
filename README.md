@@ -1,4 +1,6 @@
-##[pacparser](http://pacparser.github.io)
+[![Build Status](https://travis-ci.org/pacparser/pacparser.svg?branch=master)](https://travis-ci.org/pacparser/pacparser)
+
+# [Pacparser](http://pacparser.github.io)
 ***[pacparser.github.io](http://pacparser.github.io)***
 
 pacparser is a library to parse proxy auto-config (PAC) files. Proxy auto-config
