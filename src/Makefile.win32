@@ -33,12 +33,11 @@ all: pacparser.dll pacparser.lib pactester
 pacparser.o: pacparser.c pac_utils.h js.lib
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
 	
-fdlibm.lib js.lib:
+js.lib:
 	$(MAKE) -C spidermonkey -f Makefile.win32
-	copy spidermonkey\fdlibm.lib .
 	copy spidermonkey\js.lib .
 
-pacparser.dll: pacparser.o fdlibm.lib js.lib
+pacparser.dll: pacparser.o js.lib
 	$(CC) -shared -o pacparser.dll \
 	-Wl,--output-def,pacparser.def \
 	-Wl,--out-implib,libpacparser.a \

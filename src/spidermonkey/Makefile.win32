@@ -50,8 +50,8 @@ js\src\jsautokw.h:
 ifeq ($(wildcard js),)
 	$(error JS source directory not found. Extract $(wildcard js-*.tar.gz) tarball using tool of your choice. Possible options are 7z, WinRAR, WinZip.)
 endif
-	$(CC) -o jskwgen js\src\jskwgen.c
-	jskwgen > js\src\jsautokw.h
+	$(CC) -o jskwgen js/src/jskwgen.c
+	jskwgen > js/src/jsautokw.h
 	rm jskwgen.exe
 	
 js.lib: js\src\jsautokw.h $(JS_OBJECTS)
