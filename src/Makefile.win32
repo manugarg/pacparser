@@ -65,7 +65,8 @@ dist: pacparser.dll pactester
 	if exist ..\docs\html xcopy ..\docs\html dist\docs
 
 # Targets to build python module
-pymod: pacparser.h pacparser.dll
+pymod: pacparser.h pacparser.dll pacparser.o js.lib
+	cp pacparser.o js.lib pymod/
 	cd pymod && py setup.py build
 	cd .. && py tests\runtests.py
 
