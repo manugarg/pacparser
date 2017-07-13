@@ -1,25 +1,6 @@
 # Project: fdlibm
 
 CC = gcc.exe
-FDLIBM_SRCDIR = js/src/fdlibm
-
-FDLIBM_OBJECTS= \
-$(FDLIBM_SRCDIR)/w_sqrt.o \
-$(FDLIBM_SRCDIR)/e_pow.o \
-$(FDLIBM_SRCDIR)/e_sqrt.o \
-$(FDLIBM_SRCDIR)/k_standard.o \
-$(FDLIBM_SRCDIR)/s_atan.o \
-$(FDLIBM_SRCDIR)/s_finite.o \
-$(FDLIBM_SRCDIR)/s_isnan.o \
-$(FDLIBM_SRCDIR)/s_matherr.o \
-$(FDLIBM_SRCDIR)/s_rint.o \
-$(FDLIBM_SRCDIR)/s_scalbn.o \
-$(FDLIBM_SRCDIR)/w_atan2.o \
-$(FDLIBM_SRCDIR)/e_atan2.o \
-$(FDLIBM_SRCDIR)/s_fabs.o \
-$(FDLIBM_SRCDIR)/s_copysign.o \
-$(FDLIBM_SRCDIR)/w_pow.o \
-$(FDLIBM_SRCDIR)/s_lib_version.o
 
 JS_SRCDIR = js/src
 JS_OBJECTS = \
@@ -59,11 +40,9 @@ JS_OBJECTS = \
     $(JS_SRCDIR)/jsxdrapi.o \
     $(JS_SRCDIR)/prmjtime.o
 
-CFLAGS =  -D_IEEE_LIBM -DEXPORT_JS_API -DWIN32 -D_MINGW -D_WINDOWS -DXP_WIN -s --include C:\MinGW\mingw32\include\float.h
+CFLAGS =  -D_IEEE_LIBM -DEXPORT_JS_API -DWIN32 -D_MINGW -D_WINDOWS -DXP_WIN -s
 
-all: js.lib fdlibm.lib
-
-.c.o: $(CC) -c $(CFLAGS) -o $@ $(FDLIBM_SRCDIR)/$*.c
+all: js.lib
 
 .c.o: $(CC) -c $(CFLAGS) -o $@ $(JS_SRCDIR)/$*.c
 
@@ -75,10 +54,6 @@ endif
 	jskwgen > js\src\jsautokw.h
 	rm jskwgen.exe
 	
-fdlibm.lib: js $(FDLIBM_OBJECTS)
-	ar r fdlibm.lib $(FDLIBM_OBJECTS)
-	ranlib fdlibm.lib
-	
 js.lib: js\src\jsautokw.h $(JS_OBJECTS)
 	ar r js.lib $(JS_OBJECTS)
 	ranlib js.lib
@@ -86,5 +61,4 @@ js.lib: js\src\jsautokw.h $(JS_OBJECTS)
 clean:
 	rm js\src\*.o
 	rm js\src\jsautokw.h
-	rm js\src\fdlibm\*.o
 	rm *.lib
