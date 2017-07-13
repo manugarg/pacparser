@@ -10,12 +10,19 @@ install:
 build_script:
 - cmd: >-
     COPY C:\MinGW\bin\mingw32-make.exe C:\MinGW\bin\make.exe
+
     SET PATH=%PATH%;C:\MinGW\bin;%CD%\src\spidermonkey\
+    
     "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall" x86
+
     make -C src -f Makefile.win32
+
     cp src\pacparser.o src\js.lib src\pymod\
+
     cd src\pymod
+
     %PYTHON%\python.exe setup.py build -c mingw32
+
     %PYTHON%\python setup.py bdist_wheel
 
 artifacts:
