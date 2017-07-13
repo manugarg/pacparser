@@ -59,7 +59,7 @@ JS_OBJECTS = \
     $(JS_SRCDIR)/jsxdrapi.o \
     $(JS_SRCDIR)/prmjtime.o
 
-CFLAGS =  -D_IEEE_LIBM -DEXPORT_JS_API -DWIN32 -D_MINGW -D_WINDOWS -DXP_WIN -s
+CFLAGS =  -D_IEEE_LIBM -DEXPORT_JS_API -DWIN32 -D_MINGW -D_WINDOWS -DXP_WIN -s -isystem /mingw/include
 
 all: js.lib fdlibm.lib
 
