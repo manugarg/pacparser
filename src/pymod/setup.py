@@ -37,7 +37,7 @@ def main():
 
   extra_objects = ['pacparser.o', 'libjs.a']
   libraries = []
-  extra_link_args = ['-static-libgcc']
+  extra_link_args = []
   if sys.platform == 'win32':
     extra_objects = ['pacparser.o', 'js.lib']
     libraries = ['ws2_32']
