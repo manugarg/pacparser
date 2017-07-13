@@ -1,7 +1,6 @@
 environment:
   matrix:
     - PYTHON: "C:\\Python27"
-    - PYTHON: "C:\\Python36"
 
 install:
   # We need wheel installed to build wheels
@@ -12,7 +11,7 @@ build_script:
     COPY C:\MinGW\bin\mingw32-make.exe C:\MinGW\bin\make.exe
 
     SET PATH=%PATH%;C:\MinGW\bin;%CD%\src\spidermonkey\
-    
+
     "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall" x86
 
     make -C src -f Makefile.win32
