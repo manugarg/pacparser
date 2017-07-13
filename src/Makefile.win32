@@ -35,7 +35,7 @@ pacparser.o: pacparser.c pac_utils.h js.lib
 	
 js.lib:
 	$(MAKE) -C spidermonkey -f Makefile.win32
-	copy spidermonkey\js.lib .
+	cp spidermonkey/js.lib .
 
 pacparser.dll: pacparser.o js.lib
 	$(CC) -shared -o pacparser.dll \
