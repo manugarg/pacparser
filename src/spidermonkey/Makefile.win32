@@ -73,7 +73,7 @@ ifeq ($(wildcard js),)
 endif
 	$(CC) -o jskwgen js\src\jskwgen.c
 	jskwgen > js\src\jsautokw.h
-	del jskwgen.exe
+	rm jskwgen.exe
 	
 fdlibm.lib: js $(FDLIBM_OBJECTS)
 	ar r fdlibm.lib $(FDLIBM_OBJECTS)
@@ -84,7 +84,7 @@ js.lib: js\src\jsautokw.h $(JS_OBJECTS)
 	ranlib js.lib
 
 clean:
-	del js\src\*.o
-	del js\src\jsautokw.h
-	del js\src\fdlibm\*.o
-	del *.lib
+	rm js\src\*.o
+	rm js\src\jsautokw.h
+	rm js\src\fdlibm\*.o
+	rm *.lib
