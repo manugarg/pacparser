@@ -59,7 +59,7 @@ JS_OBJECTS = \
     $(JS_SRCDIR)/jsxdrapi.o \
     $(JS_SRCDIR)/prmjtime.o
 
-CFLAGS =  -D_IEEE_LIBM -DEXPORT_JS_API -DWIN32 -D_MINGW -D_WINDOWS -DXP_WIN -s -isystem /mingw/include
+CFLAGS =  -D_IEEE_LIBM -DEXPORT_JS_API -DWIN32 -D_MINGW -D_WINDOWS -DXP_WIN -s --include C:\MinGW\mingw32\include\float.h
 
 all: js.lib fdlibm.lib
 
