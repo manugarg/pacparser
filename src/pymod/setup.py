@@ -35,15 +35,7 @@ from distutils.core import Extension
 def main():
   pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
 
-  # Use Makefile for windows. distutils doesn't work well with windows.
-  if sys.platform == 'win32':
-    pyVer = sysconfig.get_config_vars('VERSION')[0]
-    pyDLL = 'C:\windows\system32\python%s.dll' % pyVer
-    os.system('make -f Makefile.win32 %s PY_HOME="%s" PY_DLL="%s" PY_VER="%s"' %
-              (' '.join(sys.argv[1:]), sys.prefix, pyDLL, pyVer))
-    return
-
-  pacparser_module = Extension('_pacparser',
+ pacparser_module = Extension('_pacparser',
                                include_dirs = ['../spidermonkey/js/src', '..'],
                                sources = ['pacparser_py.c'],
                                extra_objects = ['pacparser.o', 'libjs.a'])
