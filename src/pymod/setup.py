@@ -35,7 +35,7 @@ from distutils.core import Extension
 def main():
   pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
 
- pacparser_module = Extension('_pacparser',
+  pacparser_module = Extension('_pacparser',
                                include_dirs = ['../spidermonkey/js/src', '..'],
                                sources = ['pacparser_py.c'],
                                extra_objects = ['pacparser.o', 'libjs.a'])
