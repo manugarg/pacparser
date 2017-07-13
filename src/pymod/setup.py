@@ -37,14 +37,17 @@ def main():
 
   extra_objects = ['pacparser.o', 'libjs.a']
   libraries = []
+  extra_link_args = ['-static-libgcc']
   if sys.platform == 'win32':
     extra_objects = ['pacparser.o', 'js.lib']
     libraries = ['ws2_32']
+    extra_link_args = ['-static-libgcc']
 
   pacparser_module = Extension('_pacparser',
                                include_dirs = ['../spidermonkey/js/src', '..'],
                                sources = ['pacparser_py.c'],
                                libraries = libraries,
+                               extra_link_args = extra_link_args,
                                extra_objects = extra_objects)
   setup (name = 'pacparser',
          version = pacparser_version,
