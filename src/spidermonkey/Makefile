@@ -40,4 +40,3 @@ js-buildstamp:
 
 clean:
 	rm -rf js-buildstamp
-	rm -rf js
