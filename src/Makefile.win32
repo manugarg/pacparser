@@ -66,7 +66,7 @@ dist: pacparser.dll pactester
 
 # Targets to build python module
 pymod: pacparser.h pacparser.dll
-	cd pymod && py setup.py dist
+	cd pymod && py setup.py build
 	cd .. && py tests\runtests.py
 
 pymod2: pacparser.h pacparser.dll
