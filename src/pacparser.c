@@ -32,10 +32,6 @@
 #endif
 
 #ifdef _WIN32
-#ifdef __MINGW32__
-// MinGW enables definition of getaddrinfo et al only if WINVER >= 0x0501.
-#define WINVER 0x0501
-#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #endif

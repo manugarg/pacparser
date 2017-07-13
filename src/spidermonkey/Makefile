@@ -40,3 +40,4 @@ js-buildstamp:
 
 clean:
 	rm -rf js-buildstamp
+	rm js/src/*.o

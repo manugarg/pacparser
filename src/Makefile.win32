@@ -23,7 +23,7 @@
 -include version.mk
 
 LIB_VER=1
-CFLAGS=-g -DXP_WIN -DVERSION=$(VERSION) -Ispidermonkey/js/src -Wall
+CFLAGS=-g -DXP_WIN -DWINVER=0x0501 -DVERSION=$(VERSION) -Ispidermonkey/js/src -Wall
 CC=gcc
 
 .PHONY: clean pymod install-pymod
@@ -32,7 +32,7 @@ all: pacparser.dll pacparser.lib pactester
 
 pacparser.o: pacparser.c pac_utils.h js.lib
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
-	
+
 js.lib:
 	$(MAKE) -C spidermonkey -f Makefile.win32
 	cp spidermonkey/js.lib .
