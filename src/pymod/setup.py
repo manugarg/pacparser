@@ -29,8 +29,8 @@ import sys
 import os
 
 from distutils import sysconfig
-from setuptools import setup
 from distutils.core import Extension
+from setuptools import setup
 
 def main():
   pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
@@ -41,7 +41,10 @@ def main():
   if sys.platform == 'win32':
     extra_objects = ['pacparser.o', 'js.lib']
     libraries = ['ws2_32']
-    extra_link_args = ['-static-libgcc']
+    if 'mingw32' in sys.argv or '--compiler=mingw32' in sys.argv:
+      extra_link_args = ['-static-libgcc']
+    else:
+      extra_objects.append('libgcc.a')
 
   pacparser_module = Extension('_pacparser',
                                include_dirs = ['../spidermonkey/js/src', '..'],
