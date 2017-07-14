@@ -29,8 +29,8 @@ import sys
 import os
 
 from distutils import sysconfig
-from distutils.core import Extension
 from setuptools import setup
+from distutils.core import Extension
 
 def main():
   pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
