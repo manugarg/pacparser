@@ -44,7 +44,7 @@ def main():
     if 'mingw32' in sys.argv or '--compiler=mingw32' in sys.argv:
       extra_link_args = ['-static-libgcc']
     else:
-      extra_objects.append('libgcc.a')
+      extra_objects.extend(['libgcc.a', 'legacy_stdio_definitions.lib'])
 
   pacparser_module = Extension('_pacparser',
                                include_dirs = ['../spidermonkey/js/src', '..'],
