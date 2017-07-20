@@ -97,7 +97,7 @@ pactester: pactester.c pacparser.h $(LIBRARY_LINK)
 
 testpactester: pactester
 	echo "Running tests for pactester."
-	NO_INTERNET=$(NO_INTERNET) ../tests/runtests.sh
+	NO_INTERNET=$(NO_INTERNET) /bin/sh ../tests/runtests.sh
 
 docs:
 	../tools/generatedocs.sh
