@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 pushd $(dirname $0) > /dev/null; script_dir=$PWD; popd > /dev/null
 
