@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # workaround for missing pushd and popd
 pushd . >/dev/null 2>&1 || alias pushd='POPDIRS="$PWD
