@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# workaround for missing pushd and popd
+pushd . >/dev/null 2>&1 || alias pushd='POPDIRS="$PWD
+$DIRS"; cd'
+popd >/dev/null 2>&1 || alias popd='POPLINE=`echo "\$POPDIRS" | sed -ne '1p'`;[ "$POPLINE" != "" ] && cd "$POPLINE";POPDIRS=`echo "\$POPDIRS" | sed -e '1d'`'
+
 pushd $(dirname $0) > /dev/null; script_dir=$PWD; popd > /dev/null
 
 pactester=$script_dir/../src/pactester
