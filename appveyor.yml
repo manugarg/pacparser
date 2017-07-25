@@ -11,11 +11,23 @@ build_script:
     COPY C:\MinGW\bin\mingw32-make.exe C:\MinGW\bin\make.exe
 
     SET PATH=%PATH%;C:\MinGW\bin;%CD%\src\spidermonkey\
+    
+    SET PACPARSER_VERSION=%APPVEYOR_REPO_TAG_NAME%
 
     "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall" x86
 
     make -C src -f Makefile.win32
-
+    
+    mkdir dist
+    
+    cp src\pacparser.dll src\pacparser.h src\pacparser.lib src\pactester.exe dist
+    
+    cp README.md dist\README.md
+    
+    cp COPYING dist\COPYING.txt
+    
+    cp INSTALL dist\INSTALL.txt
+ 
     cp src\pacparser.o src\js.lib src\pymod\
 
     cd src\pymod
