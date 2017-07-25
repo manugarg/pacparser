@@ -39,3 +39,6 @@ build_script:
 artifacts:
 - path: src\pymod\dist\*
   name: python-dist
+- path: dist\*
+  name: dist
+  type: zip
