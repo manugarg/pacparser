@@ -1,0 +1,10 @@
+Metadata-Version: 1.0
+Name: pacparser
+Version: 1.3.7
+Summary: Pacparser package
+Home-page: http://github.com/pacparser/pacparser
+Author: Manu Garg
+Author-email: manugarg@gmail.com
+License: LGPL
+Description: python library to parse proxy auto-config (PAC) files.
+Platform: UNKNOWN
