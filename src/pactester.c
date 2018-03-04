@@ -130,12 +130,16 @@ int main(int argc, char* argv[])
     fprintf(stderr, "pactester.c: You didn't specify the URL\n");
     usage(argv[0]);
   }
+  
+  fprintf(stderr, "Flags parsed\n");
 
   // Initialize pacparser.
   if (!pacparser_init()) {
       fprintf(stderr, "pactester.c: Could not initialize pacparser\n");
       return 1;
   }
+
+  fprintf(stderr, "Pacparser initialized\n");
 
   // Read pacfile from stdin.
   if (STREQ("-", pacfile)) {
@@ -194,8 +198,13 @@ int main(int argc, char* argv[])
     }
   }
 
+  fprintf(stderr, "Pac file parsed\n");
+
+
   if (client_ip)
     pacparser_setmyip(client_ip);
+
+  fprintf(stderr, "Client IP set\n");
 
   char *proxy;
 
@@ -215,8 +224,8 @@ int main(int argc, char* argv[])
       return 1;
     }
     printf("%s\n", proxy);
+    fprintf(stderr, "find proxy called\n");
   }
-
   else if (urlslist) {
     char line[LINEMAX];
     FILE *fp;
