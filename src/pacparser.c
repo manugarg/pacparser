@@ -379,7 +379,9 @@ pacparser_parse_pac_file(const char *pacfile)
     return 0;
   }
 
+  fprintf(stderr, "Read the pac file\n");
   int result = pacparser_parse_pac_string(script);
+  fprintf(stderr, "Parsed the read string\n");
   if (script != NULL) free(script);
 
   if (_debug()) {
