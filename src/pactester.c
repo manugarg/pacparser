@@ -130,13 +130,15 @@ int main(int argc, char* argv[])
     fprintf(stderr, "pactester.c: You didn't specify the URL\n");
     usage(argv[0]);
   }
-
+  
+  printf("Flags parsed\n")
   // Initialize pacparser.
   if (!pacparser_init()) {
       fprintf(stderr, "pactester.c: Could not initialize pacparser\n");
       return 1;
   }
 
+  printf("Pacparser initialized\n")
   // Read pacfile from stdin.
   if (STREQ("-", pacfile)) {
     char *script;
