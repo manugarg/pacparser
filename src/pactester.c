@@ -131,7 +131,7 @@ int main(int argc, char* argv[])
     usage(argv[0]);
   }
   
-  printf("Flags parsed\n");
+  fprintf(stderr, "Flags parsed\n");
 
   // Initialize pacparser.
   if (!pacparser_init()) {
@@ -139,8 +139,8 @@ int main(int argc, char* argv[])
       return 1;
   }
 
-  printf("Pacparser initialized\n");
-  
+  fprintf(stderr, "Pacparser initialized\n");
+
   // Read pacfile from stdin.
   if (STREQ("-", pacfile)) {
     char *script;
