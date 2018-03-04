@@ -84,6 +84,8 @@ read_file_into_str(const char *filename)
   int file_size;
   FILE *fptr;
   int records_read;
+
+  fprintf(stderr, "Trying to read file\n");
   if (!(fptr = fopen(filename, "r"))) goto error1;
   if ((fseek(fptr, 0L, SEEK_END) != 0)) goto error2;
   if (!(file_size=ftell(fptr))) goto error2;
@@ -95,6 +97,7 @@ read_file_into_str(const char *filename)
   }
   str[records_read] = '\0';
   fclose(fptr);
+  fprintf(stderr, "Read file. Returning\n");
   return str;
 error2:
   fclose(fptr);
