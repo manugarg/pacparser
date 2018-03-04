@@ -32,6 +32,10 @@ while read line
     test ! -z $NO_INTERNET && \
       test "${comment/INTERNET_REQUIRED/}" != "${comment}" && \
       continue
+    # Disable IPv6 tests on travis Mac OS X.
+    test "$TRAVIS_OS_NAME" == "osx" && \
+      test "${comment/IPV6_REQUIRED/}" != "${comment}" && \
+      continue
     params=${line%%|*}
     expected_result=${line##*|}
     result=$($pactester -p $pacfile $params)

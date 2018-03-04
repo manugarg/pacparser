@@ -1,5 +1,5 @@
 # Command Line Parameters|Expected Result
--c 3ffe:8311:ffff:1:0:0:0:0 -u http://www.somehost.com|3ffe:8311:ffff
+-c 3ffe:8311:ffff:1:0:0:0:0 -u http://www.somehost.com|3ffe:8311:ffff  # IPV6_REQUIRED
 -c 0.0.0.0 -u http://www.google.co.in|END-OF-SCRIPT
 -u http://host1|plainhost/.manugarg.com
 -u http://www1.manugarg.com|plainhost/.manugarg.com
