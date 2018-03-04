@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/pacparser/pacparser.svg?branch=master)](https://travis-ci.org/pacparser/pacparser)
+[![Build Status](https://travis-ci.org/manugarg/pacparser.svg?branch=master)](https://travis-ci.org/manugarg/pacparser)
 [![Build status](https://ci.appveyor.com/api/projects/status/uvct988e0jx991x3?svg=true)](https://ci.appveyor.com/project/manugarg/pacparser)
 
 # [Pacparser](http://pacparser.github.io)
