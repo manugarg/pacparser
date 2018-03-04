@@ -198,8 +198,13 @@ int main(int argc, char* argv[])
     }
   }
 
+  fprintf(stderr, "Pac file parsed\n");
+
+
   if (client_ip)
     pacparser_setmyip(client_ip);
+
+  fprintf(stderr, "Client IP set\n");
 
   char *proxy;
 
@@ -219,8 +224,8 @@ int main(int argc, char* argv[])
       return 1;
     }
     printf("%s\n", proxy);
+    fprintf(stderr, "find proxy called\n");
   }
-
   else if (urlslist) {
     char line[LINEMAX];
     FILE *fp;
