@@ -132,5 +132,5 @@ install-pymod: pymod
 
 clean:
 	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
-	cd pymod && python setup.py clean --all
+	cd pymod && $(PYTHON) setup.py clean --all
 	cd spidermonkey && "$(MAKE)" clean
