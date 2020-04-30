@@ -73,7 +73,7 @@ BIN_PREFIX = $(PREFIX)/bin
 MAN_PREFIX = $(PREFIX)/share/man
 
 .PHONY: clean pymod install-pymod
-all: testpactester
+all: pactester.c pacparser.h $(LIBRARY_LINK)
 
 jsapi_buildstamp: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" "$(MAKE)" jsapi

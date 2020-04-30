@@ -1,0 +1,6 @@
+{
+    "rust-client.channel": "stable",
+    "editor.formatOnSave": true,
+    "files.insertFinalNewline": true,
+    "files.trimTrailingWhitespace": true
+}
