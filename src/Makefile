@@ -49,7 +49,7 @@ ifeq ($(OS_ARCH),Darwin)
   SO_SUFFIX = dylib
   LIBRARY = $(LIBRARY_NAME).$(LIB_VER).$(SO_SUFFIX)
   MKSHLIB = $(CC) -dynamiclib -framework System
-  LIB_OPTS = -install_name $(PREFIX)/lib/$(notdir $@)
+  LIB_OPTS = -install_name $(PREFIX)/$(notdir $@)
   SHFLAGS =
   ifeq ($(MAC_GT_5),false)
     SMCFLAGS =
@@ -73,7 +73,7 @@ BIN_PREFIX = $(PREFIX)/bin
 MAN_PREFIX = $(PREFIX)/share/man
 
 .PHONY: clean pymod install-pymod
-all: pactester.c pacparser.h $(LIBRARY_LINK)
+all: $(LIBRARY_LINK)
 
 jsapi_buildstamp: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" "$(MAKE)" jsapi
@@ -86,7 +86,10 @@ pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
-$(LIBRARY): pacparser.o libjs.a
+libpacparser.a: pacparser.o
+	$(AR) rc libpacparser.a pacparser.o
+
+$(LIBRARY): pacparser.o libjs.a libpacparser.a
 	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a -lm
 
 $(LIBRARY_LINK): $(LIBRARY)

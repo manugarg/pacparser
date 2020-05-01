@@ -3,9 +3,18 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rustc-link-search=native=./libs");
-    println!("cargo:rustc-link-lib=pacparser");
+    println!("cargo:rustc-link-lib=static=pacparser");
+    println!("cargo:rustc-link-lib=static=js");
     let bindings = bindgen::Builder::default()
-        .header("includes.h")
+        .header("includes/pacparser.h")
+        .header("includes/pac_utils.h")
+        .derive_default(true)
+        .derive_debug(true)
+        .derive_eq(true)
+        .whitelist_function("pacparser_cleanup")
+        .whitelist_function("pacparser_find_proxy")
+        .whitelist_function("pacparser_init")
+        .whitelist_function("pacparser_parse_pac_string")
         .generate()
         .unwrap();
 

@@ -25,6 +25,7 @@ tools/packages
 *buildstamp
 src/spidermonkey/js
 src/pactester
-
+src/pactester.dSYM
 # OS specific files
 .DS_Store
+
