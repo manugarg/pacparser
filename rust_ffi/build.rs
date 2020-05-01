@@ -7,7 +7,6 @@ fn main() {
     println!("cargo:rustc-link-lib=static=js");
     let bindings = bindgen::Builder::default()
         .header("includes/pacparser.h")
-        .header("includes/pac_utils.h")
         .derive_default(true)
         .derive_debug(true)
         .derive_eq(true)

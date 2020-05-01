@@ -1,8 +1,7 @@
 
 
 LIBS = ./libs/libpacparser.a ./libs/libjs.a
-HEADERS = ./includes/pacparser.h ./includes/pac_utils.h
-
+HEADERS = ./includes/pacparser.h
 
 
 clean:
@@ -14,7 +13,6 @@ clean:
 d:
 	mkdir -p ./libs ./includes
 
-
 $(LIBS): d $(HEADERS)
 	make -C ../src
 	cp ../src/libpacparser.a ./libs/
@@ -22,8 +20,6 @@ $(LIBS): d $(HEADERS)
 
 $(HEADERS):
 	cp ../src/pacparser.h ./includes/
-	cp ../src/pac_utils.h ./includes/
-
 
 build: $(LIBS)
 	cargo build
@@ -32,4 +28,7 @@ release: $(LIBS)
 	cargo build --release
 
 test: $(LIBS)
-	cargo test
+	cargo test -- --nocapture
+
+lint:
+	cargo clippy --all-targets --all-features -- -D warnings
