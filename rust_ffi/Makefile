@@ -6,8 +6,8 @@ HEADER = pacparser.h
 MFILE = Makefile
 
 ifeq ($(OS),Windows_NT)
-	PACPARSER = ./libs/pacparser.lib
-	JS = ./libs/lib.lib
+	PACPARSER = pacparser.lib
+	JS = js.lib
 	MFILE = Makefile.win32
 endif
 
@@ -24,21 +24,25 @@ d:
 	@pwsh -Command "if (!(Test-Path ./includes)){New-Item -ItemType Directory -Path ./includes}"
 
 
-$(PACPARSER): d $(HEADER)
+$(PACPARSER): d ./includes/$(HEADER)
 	make -C ../src  -f ../src/$(MFILE) staticlib
-	cp ../src/$(PACPARSER) ./libs/$(JS)
-	cp ../src/$(JS) ./libs/$(JS)
+	@pwsh -Command "Copy-Item ../src/$(PACPARSER) ./libs/$(PACPARSER)"
+	@pwsh -Command "Copy-Item ../src/$(JS) ./libs/$(PACPARJSSER)"
 
-$(HEADER):
-	cp ../src/$(HEADER) ./includes/$(HEADER)
+./includes/$(HEADER):
+	@pwsh -Command "Copy-Item ../src/$(HEADER) ./includes/$(HEADER)"
 
-build: $(PACPARSER) $(JS)
+
+pacparser: $(PACPARSER)
+
+
+build:
 	cargo build
 
-release:  $(PACPARSER) $(JS)
+release:  $(PACPARSER)
 	cargo build --release
 
-test:  $(PACPARSER) $(JS)
+test:  $(PACPARSER)
 	cargo test -- --nocapture
 
 lint:
