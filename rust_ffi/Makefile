@@ -1,33 +1,44 @@
 
 
-LIBS = ./libs/libpacparser.a ./libs/libjs.a
-HEADERS = ./includes/pacparser.h
+PACPARSER = libpacparser.a
+JS = libjs.a
+HEADER = pacparser.h
+MFILE = Makefile
+
+ifeq ($(OS),Windows_NT)
+	PACPARSER = ./libs/pacparser.lib
+	JS = ./libs/lib.lib
+	MFILE = Makefile.win32
+endif
 
 
 clean:
-	rm -rf ./libs ./includes ./src/bindings.rs
+	@pwsh -Command "if(Test-Path ./includes){Remove-Item -Recurse -Force ./includes}"
+	@pwsh -Command "if(Test-Path ./src/bindings.rs){Remove-Item -Recurse -Force ./src/bindings.rs}"
+	@pwsh -Command "if(Test-Path ./libs){Remove-Item -Recurse -Force ./libs}"
 	cargo clean
-
-	make clean -C ../src
+	make -C ../src -f ../src/$(MFILE) clean
 
 d:
-	mkdir -p ./libs ./includes
+	@pwsh -Command "if (!(Test-Path ./libs)){New-Item -ItemType Directory -Path ./libs}"
+	@pwsh -Command "if (!(Test-Path ./includes)){New-Item -ItemType Directory -Path ./includes}"
 
-$(LIBS): d $(HEADERS)
-	make -C ../src
-	cp ../src/libpacparser.a ./libs/
-	cp ../src/libjs.a ./libs/
 
-$(HEADERS):
-	cp ../src/pacparser.h ./includes/
+$(PACPARSER): d $(HEADER)
+	make -C ../src  -f ../src/$(MFILE) staticlib
+	cp ../src/$(PACPARSER) ./libs/$(JS)
+	cp ../src/$(JS) ./libs/$(JS)
 
-build: $(LIBS)
+$(HEADER):
+	cp ../src/$(HEADER) ./includes/$(HEADER)
+
+build: $(PACPARSER) $(JS)
 	cargo build
 
-release: $(LIBS)
+release:  $(PACPARSER) $(JS)
 	cargo build --release
 
-test: $(LIBS)
+test:  $(PACPARSER) $(JS)
 	cargo test -- --nocapture
 
 lint:

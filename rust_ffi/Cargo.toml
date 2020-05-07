@@ -16,3 +16,6 @@ bindgen = "0.53.2"
 
 [lib]
 name = "pacparser"
+
+[[bin]]
+name = "pacparser"

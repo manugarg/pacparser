@@ -33,7 +33,7 @@ from setuptools import setup
 from distutils.core import Extension
 
 def main():
-  pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
+  pacparser_version = os.environ.get('PACPARSER_VERSION', '1.3.7')
 
   extra_objects = ['pacparser.o', 'libjs.a']
   libraries = []

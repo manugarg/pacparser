@@ -7,6 +7,7 @@ use bindings::{
 use std::ffi::{CStr, CString};
 use url::Url;
 
+#[derive(Debug)]
 pub struct PacParser {}
 
 impl PacParser {

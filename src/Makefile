@@ -86,7 +86,7 @@ pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
-libpacparser.a: pacparser.o
+staticlib: pacparser.o
 	$(AR) rc libpacparser.a pacparser.o
 
 $(LIBRARY): pacparser.o libjs.a libpacparser.a

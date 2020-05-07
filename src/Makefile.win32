@@ -44,6 +44,9 @@ pacparser.dll: pacparser.o js.lib
 	-Wl,--export-all-symbols \
 	pacparser.o -ljs -L. -lws2_32
 
+staticlib: pacparser.o
+	lib pacparser.o
+
 pacparser.lib: pacparser.dll pacparser.def
 	lib /machine:i386 /def:pacparser.def
 
