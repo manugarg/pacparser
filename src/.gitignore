@@ -1,3 +1,7 @@
 dist/
 pacparser.def
 pacparser.exp
+
+# Libraries
+*.lib
+*.a
