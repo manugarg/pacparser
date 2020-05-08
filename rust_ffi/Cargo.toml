@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 url = "2.1.1"
-clap = { git = "https://github.com/clap-rs/clap" }
+clap = { git = "https://github.com/clap-rs/clap", revision = "9d03c8497ce17486e31b19fecbe5bec97ac82d09" }
 
 [build-dependencies]
 bindgen = "0.53.2"

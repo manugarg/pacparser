@@ -115,7 +115,7 @@ dependencies = [
 [[package]]
 name = "clap"
 version = "3.0.0-beta.1"
-source = "git+https://github.com/clap-rs/clap#99e862945e7f582877842efff3146d27404fc912"
+source = "git+https://github.com/clap-rs/clap#9d03c8497ce17486e31b19fecbe5bec97ac82d09"
 dependencies = [
  "atty",
  "bitflags",
@@ -133,7 +133,7 @@ dependencies = [
 [[package]]
 name = "clap_derive"
 version = "3.0.0-beta.1"
-source = "git+https://github.com/clap-rs/clap#99e862945e7f582877842efff3146d27404fc912"
+source = "git+https://github.com/clap-rs/clap#9d03c8497ce17486e31b19fecbe5bec97ac82d09"
 dependencies = [
  "heck",
  "proc-macro-error",
@@ -269,9 +269,9 @@ dependencies = [
 
 [[package]]
 name = "os_str_bytes"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aad937e768e4bd31ddf5f56ce5d1fa7d2e18d84d2aae49d2c45c65aa1cadba0"
+checksum = "ced912e1439b63a8172b943887c33373f226a4a9cfab95d09c0e3c44851d04d4"
 
 [[package]]
 name = "pacparser"
@@ -322,9 +322,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.10"
+version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df246d292ff63439fea9bc8c0a270bed0e390d5ebd4db4ba15aba81111b5abe3"
+checksum = "8872cf6f48eee44265156c111456a700ab3483686b3f96df4cf5481c89157319"
 dependencies = [
  "unicode-xid",
 ]
@@ -337,9 +337,9 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
 name = "quote"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bdc6c187c65bca4260c9011c9e3132efe4909da44726bad24cf7572ae338d7f"
+checksum = "4c1f4b0efa5fc5e8ceb705136bfee52cfdb6a4e3509f770b478cd6ed434232a7"
 dependencies = [
  "proc-macro2",
 ]
@@ -394,9 +394,9 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "syn"
-version = "1.0.18"
+version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "410a7488c0a728c7ceb4ad59b9567eb4053d02e8cc7f5c0e0eeeb39518369213"
+checksum = "e8e5aa70697bb26ee62214ae3288465ecec0000f05182f039b477001f08f5ae7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -490,9 +490,9 @@ dependencies = [
 
 [[package]]
 name = "vec_map"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05c78687fb1a80548ae3250346c3db86a80a7cdd77bda190189f2d0a0987c81a"
+checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 
 [[package]]
 name = "version_check"
