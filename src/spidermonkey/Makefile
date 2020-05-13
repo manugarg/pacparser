@@ -21,10 +21,8 @@
 # Include config.mk to get the variable $(OBJDIR).
 # We need to create $(OBJDIR) first to be able to build libjs.a alone.
 
-ifneq ($(MAKECMDGOALS),clean)
-  DEPTH = js/src
-  include js/src/config.mk
-endif
+DEPTH = js/src
+include js/src/config.mk
 
 jsapi: js-buildstamp
 
@@ -40,4 +38,4 @@ js-buildstamp:
 
 clean:
 	rm -rf js-buildstamp
-	rm js/src/*.o
+	test -n "$(OBJDIR)" && rm -rf js/src/$(OBJDIR)
