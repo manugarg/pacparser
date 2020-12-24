@@ -44,15 +44,19 @@ SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=__va_copy
 
 ifeq ($(OS_ARCH),Darwin)
   PREFIX = /usr/local
-  MAC_MINOR_VERSION := $(shell sw_vers -productVersion | cut -d. -f2)
-  MAC_GT_5 := $(shell [ $(MAC_MINOR_VERSION) -le 5 ] && echo false)
+  MAC_MAJOR_VERSION := $(shell sw_vers -productVersion | cut -d. -f1)
+  MAC_GT_OS11 := $(shell [ $(MAC_MAJOR_VERSION) -le 10 ] && echo false)
   SO_SUFFIX = dylib
   LIBRARY = $(LIBRARY_NAME).$(LIB_VER).$(SO_SUFFIX)
   MKSHLIB = $(CC) -dynamiclib -framework System
   LIB_OPTS = -install_name $(PREFIX)/lib/$(notdir $@)
   SHFLAGS =
-  ifeq ($(MAC_GT_5),false)
-    SMCFLAGS =
+  ifeq ($(MAC_GT_OS11),false)
+    MAC_MINOR_VERSION := $(shell sw_vers -productVersion | cut -d. -f2)
+    MAC_GT_10_5 := $(shell [ $(MAC_MINOR_VERSION) -le 5 ] && echo false)
+    ifeq ($(MAC_GT_10_5),false)
+      SMCFLAGS =
+    endif
   endif
 endif
 
