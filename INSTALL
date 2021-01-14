@@ -58,7 +58,7 @@ http://code.google.com/p/pacparser/wiki/LinkingOnVisualStudio.
   -------------
 To install pacparser python module (available only for Python 2.7 right now),
 download package pacparser-python27-v.v.v-win32.zip and extract it somewhere
-on your system. To install the module in you PYTHONPATH, simply run install.py
+on your system. To install the module in your PYTHONPATH, simply run install.py
 that comes with the compiled binaries.
 
 If it fails for some reason, simply copy "pacparser" sub-directory to
