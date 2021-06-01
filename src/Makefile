@@ -80,11 +80,11 @@ MAN_PREFIX = $(PREFIX)/share/man
 all: testpactester
 
 jsapi_buildstamp: spidermonkey/js/src
-	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" "$(MAKE)" jsapi
+	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jsapi
 	touch jsapi_buildstamp
 
 libjs.a: spidermonkey/js/src
-	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" "$(MAKE)" jslib
+	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jslib
 
 pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
@@ -137,4 +137,4 @@ install-pymod: pymod
 clean:
 	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
 	cd pymod && $(PYTHON) setup.py clean --all
-	cd spidermonkey && "$(MAKE)" clean
+	cd spidermonkey && $(MAKE) clean
