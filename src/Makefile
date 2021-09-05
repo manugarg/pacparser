@@ -40,7 +40,7 @@ A_SUFFIX = a
 LIBRARY = $(LIBRARY_NAME).$(SO_SUFFIX).$(LIB_VER)
 STATIC_LIBRARY = $(LIBRARY_NAME).$(A_SUFFIX)
 MKSHLIB = $(CC) -shared
-MKSTLIB = $(AR) -crs 
+MKSTLIB = $(AR) -rs
 LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
 SHFLAGS = -fPIC
 SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=__va_copy
@@ -101,13 +101,17 @@ $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
 $(STATIC_LIBRARY): pacparser.o libjs.a
-	$(MKSTLIB) $(STATIC_LIBRARY) pacparser.o libjs.a
+	# This feels like a very hacky way to do this and it probably is a bit wasteful in size
+	# Copy libjs.a (which pacparser has a few dependencies on)
+	cp libjs.a $(STATIC_LIBRARY)
+	# Add the pacparser object to it to create libpacparser.a
+	$(MKSTLIB) $(STATIC_LIBRARY) pacparser.o
 
 pactester: pactester.c pacparser.h $(LIBRARY_LINK)
 	$(CC) $(CFLAGS) $(LDFLAGS) pactester.c -o pactester -lpacparser -L. -I.
 
 pactester-static: pactester.c pacparser.h $(STATIC_LIBRARY)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(STFLAGS) pactester.c -o pactester-static -l:$(STATIC_LIBRARY) -l:libjs.a -L. -I. -lm
+	$(CC) $(CFLAGS) $(LDFLAGS) $(STFLAGS) pactester.c -o pactester-static -l:$(STATIC_LIBRARY) -L. -I. -lm
 
 testpactester: pactester pactester-static
 	echo "Running tests for pactester."
