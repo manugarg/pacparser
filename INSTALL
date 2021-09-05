@@ -8,12 +8,29 @@ You can also get the latest source code from github (git) repository by
 following instructions at:
   https://github.com/pacparser/pacparser
 
-* pacparser C library and pactester:
+* pacparser C shared library and pactester:
   ----------------------------------
   Compiling and installing pacparser is as easy as running the following
   commands:
      => make -C src
      => sudo make -C src install
+
+* pacparser C static library and statically linked pactester:
+  ----------------------------------
+  Compiling and installing pacparser is as easy as running the following
+  commands:
+     => make -C src
+     => sudo make -C src install
+  
+  WARN: You may experience run-time problems when using a **statically linked** pactester
+        executable that was built with a glibc toolchain. This is due to the way that glibc
+        implements certain (specific) libc functions. For pactester, this seems to be limited
+        to the getaddrinfo() function, but several functions that work with the /etc/nsswitch.conf
+        seem to be problematic. For this reason, if you would like to produce statically linked
+        executable with pacparser (or any other non-trivial application/library, for that matter) you
+        should use a toolchain with a portable C library designed specifically for static linking, such
+        as musl-libc (https://www.musl-libc.org)
+
 
 * pacparser python module:
   ------------------------------------------------
