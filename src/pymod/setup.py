@@ -72,7 +72,7 @@ def main(patched_func):
   pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
   python_home = os.path.dirname(sys.executable)
 
-  extra_objects = ['pacparser.o', 'libjs.a']
+  extra_objects = ['../pacparser.o', '../spidermonkey/libjs.a']
   libraries = []
   extra_link_args = []
   if sys.platform == 'win32':
