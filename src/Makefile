@@ -96,10 +96,10 @@ $(LIBRARY): pacparser.o libjs.a
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
-pactester: pactester.c pacparser.h $(LIBRARY_LINK)
-	$(CC) $(CFLAGS) $(LDFLAGS) pactester.c -o pactester -lpacparser -L. -I.
+pactester: pactester.c pacparser.h pacparser.o libjs.a
+	$(CC) $(CFLAGS) $(LDFLAGS) pactester.c pacparser.o libjs.a -o pactester -lm -L. -I.
 
-testpactester: pactester
+testpactester: pactester $(LIBRARY_LINK)
 	echo "Running tests for pactester."
 	NO_INTERNET=$(NO_INTERNET) ../tests/runtests.sh
 
