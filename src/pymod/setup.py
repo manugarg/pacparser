@@ -59,20 +59,22 @@ class DistCmd(distutils.cmd.Command):
     sys.path.insert(0, pacparser_module_path)
     import pacparser
     pp_ver = pacparser.version()
-    
+
+    mach = platform.machine().lower()
+    if mach == 'x86_64':
+      mach = 'amd64'
     dist = 'pacparser-python%s-%s-%s-%s' % (
-      py_ver.replace('.',''), pp_ver, platform.system(), platform.machine())
-    dist = dist.lower()
+      py_ver.replace('.',''), pp_ver, platform.system().lower(), mach)
     os.mkdir(dist)
     shutil.copytree(os.path.join(pacparser_module_path, 'pacparser'), dist+'/pacparser')
-  
+
 
 @patch('distutils.cygwinccompiler.get_msvcr')
 def main(patched_func):
   pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
   python_home = os.path.dirname(sys.executable)
 
-  extra_objects = ['pacparser.o', 'libjs.a']
+  extra_objects = ['../pacparser.o', '../spidermonkey/libjs.a']
   libraries = []
   extra_link_args = []
   if sys.platform == 'win32':

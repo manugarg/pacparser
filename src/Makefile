@@ -83,21 +83,21 @@ jsapi_buildstamp: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jsapi
 	touch jsapi_buildstamp
 
-libjs.a: spidermonkey/js/src
+spidermonkey/libjs.a: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jslib
 
 pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
-$(LIBRARY): pacparser.o libjs.a
-	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o libjs.a -lm
+$(LIBRARY): pacparser.o spidermonkey/libjs.a
+	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o spidermonkey/libjs.a -lm
 
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
-pactester: pactester.c pacparser.h pacparser.o libjs.a
-	$(CC) $(CFLAGS) $(LDFLAGS) pactester.c pacparser.o libjs.a -o pactester -lm -L. -I.
+pactester: pactester.c pacparser.h pacparser.o spidermonkey/libjs.a
+	$(CC) $(CFLAGS) $(LDFLAGS) pactester.c pacparser.o spidermonkey/libjs.a -o pactester -lm -L. -I.
 
 testpactester: pactester $(LIBRARY_LINK)
 	echo "Running tests for pactester."
@@ -126,15 +126,19 @@ install: all
 	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc//pacparser/examples/) || true
 
 # Targets to build python module
-pymod: pacparser.o pacparser.h libjs.a
-	cp libjs.a pacparser.o pymod/
+pymod: pacparser.o pacparser.h spidermonkey/libjs.a
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
+	$(PYTHON) ../tests/runtests.py
+
+pymod-dist: pacparser.o pacparser.h spidermonkey/libjs.a
+	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
+	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py dist
 	$(PYTHON) ../tests/runtests.py
 
 install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
 clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) libjs.a pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
+	rm -f $(LIBRARY_LINK) $(LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
 	cd pymod && $(PYTHON) setup.py clean --all
 	cd spidermonkey && $(MAKE) clean

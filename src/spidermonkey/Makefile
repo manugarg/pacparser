@@ -28,7 +28,7 @@ jsapi: js-buildstamp
 
 jslib: js-buildstamp
 	cd js/src
-	find . -name "libjs.a" -exec cp {} .. \;
+	find . -name "libjs.a" -exec cp {} . \;
 
 js-buildstamp:
 	mkdir -p js/src/$(OBJDIR)
@@ -37,5 +37,5 @@ js-buildstamp:
 	touch js-buildstamp
 
 clean:
-	rm -rf js-buildstamp
 	rm -rf js/src/$(OBJDIR)
+	rm -f libjs.a js-buildstamp
