@@ -25,12 +25,47 @@ Wrapper script around python module Makefiles. This script take care of
 identifying python setup and setting up some environment variables needed by
 Makefiles.
 """
-import sys
+import glob
 import os
+import platform
+import shutil
+import sys
 
 from unittest.mock import patch
 import distutils
 from setuptools import setup, Extension
+
+import distutils.cmd
+
+class DistCmd(distutils.cmd.Command):
+  """Build pacparser python distribution."""
+
+  description = 'Build pacparser python distribution.'
+  user_options = []
+
+  def initialize_options(self):
+    pass
+
+  def finalize_options(self):
+    pass
+
+  def run(self):
+    setup_dir = os.path.dirname(os.path.join(os.getcwd(), sys.argv[0]))
+    py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
+    pp_ver = os.environ.get('PACPARSER_VERSION', '1.0.0')
+
+    pacparser_module_path = glob.glob(
+      os.path.join(setup_dir, 'build', 'lib*%s' % py_ver))[0]
+    sys.path.insert(0, pacparser_module_path)
+    import pacparser
+    pp_ver = pacparser.version()
+    
+    dist = 'pacparser-python%s-%s-%s-%s' % (
+      py_ver.replace('.',''), pp_ver, platform.system(), platform.machine())
+    dist = dist.lower()
+    os.mkdir(dist)
+    shutil.copytree(os.path.join(pacparser_module_path, 'pacparser'), dist+'/pacparser')
+  
 
 @patch('distutils.cygwinccompiler.get_msvcr')
 def main(patched_func):
@@ -53,7 +88,11 @@ def main(patched_func):
                                libraries = libraries,
                                extra_link_args = extra_link_args,
                                extra_objects = extra_objects)
-  setup (name = 'pacparser',
+  setup (
+        cmdclass={
+            'dist': DistCmd,
+        },
+        name = 'pacparser',
          version = pacparser_version,
          description = 'Pacparser package',
          author = 'Manu Garg',

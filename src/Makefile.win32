@@ -61,8 +61,8 @@ pacparser.dll: pacparser.o spidermonkey/js.lib
 pacparser.lib: pacparser.dll pacparser.def
 	lib /machine:i386 /def:pacparser.def
 
-pactester: pactester.c pacparser.h pacparser.dll
-	$(CC) pactester.c -o pactester -lpacparser -L. -I.
+pactester: pactester.c pacparser.h pacparser.o
+	$(CC) pactester.c pacparser.o -o pactester -ljs -Lspidermonkey -lws2_32
 
 dist: pacparser.dll pactester pacparser.lib
 	if exist dist rmdir /s /q dist
@@ -83,21 +83,12 @@ pymod: pacparser.h pacparser.dll pacparser.o js.lib
 	cd pymod && $(PYTHON) setup.py build --compiler=mingw32
 	cd .. && $(PYTHON) tests/runtests.py
 
-pymod37: pacparser.h pacparser.dll
-	cd pymod && py -3.7 setup.py  build --compiler=mingw32
-	cd .. && py -3.7 tests\runtests.py
+pymod-%: pacparser.h pacparser.dll pacparser.o js.lib
+	cd pymod && py -$* setup.py  build --compiler=mingw32
+	cd .. && py -$* tests\runtests.py
 
-pymod38: pacparser.h pacparser.dll
-	cd pymod && py -3.8 setup.py  build --compiler=mingw32
-	cd .. && py -3.8 tests\runtests.py
-
-pymod39: pacparser.h pacparser.dll
-	cd pymod && py -3.9 setup.py  build --compiler=mingw32
-	cd .. && py -3.9 tests\runtests.py
-
-pymod310: pacparser.h pacparser.dll
-	cd pymod && py -3.10 setup.py  build --compiler=mingw32
-	cd .. && py -3.10 tests\runtests.py
+pymod-dist-%:
+	cd pymod && py -$* setup.py dist
 
 clean:
 	$(RM) pacparser.dll *.lib pacparser.def pacparser.exp pacparser.o pactester.exe libpacparser.a
