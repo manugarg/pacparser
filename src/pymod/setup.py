@@ -28,11 +28,14 @@ Makefiles.
 import sys
 import os
 
-from setuptools import setup
-from distutils.core import Extension
+from unittest.mock import patch
+import distutils
+from setuptools import setup, Extension
 
-def main():
+@patch('distutils.cygwinccompiler.get_msvcr')
+def main(patched_func):
   pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
+  python_home = os.path.dirname(sys.executable)
 
   extra_objects = ['pacparser.o', 'libjs.a']
   libraries = []
@@ -40,10 +43,9 @@ def main():
   if sys.platform == 'win32':
     extra_objects = ['../pacparser.o', '../spidermonkey/js.lib']
     libraries = ['ws2_32']
-    if 'mingw32' in sys.argv or '--compiler=mingw32' in sys.argv:
-      extra_link_args = ['-static-libgcc']
-    else:
-      extra_objects.extend(['libgcc.a', 'legacy_stdio_definitions.lib'])
+    # python_home has vcruntime140.dll
+    patched_func.return_value =  ['vcruntime140']
+    extra_link_args = ['-static-libgcc', '-L'+python_home]
 
   pacparser_module = Extension('_pacparser',
                                include_dirs = ['../spidermonkey/js/src', '..'],
