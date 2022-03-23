@@ -104,10 +104,11 @@ void pacparser_cleanup(void);
 
 /// @brief Sets my IP address.
 /// @param ip Custom IP address.
+/// @returns 1 on success and 0 on error.
 ///
 /// Sets my IP address to a custom value. This is the IP address returned by
 /// myIpAddress() javascript function.
-void pacparser_setmyip(const char *ip                 // Custom IP address.
+int pacparser_setmyip(const char *ip                 // Custom IP address.
                        );
 
 /// @brief Type definition for pacparser_error_printer.
