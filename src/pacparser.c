@@ -261,7 +261,7 @@ int
 pacparser_setmyip(const char *ip)
 {
   if (strlen(ip) > INET6_ADDRSTRLEN) {
-    fprintf(stderr, "IP too long: %s\n", ip);
+    fprintf(stderr, "pacparser_setmyip: IP too long: %s\n", ip);
     return 0;
   }
 
