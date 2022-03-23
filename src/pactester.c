@@ -195,7 +195,11 @@ int main(int argc, char* argv[])
   }
 
   if (client_ip)
-    pacparser_setmyip(client_ip);
+    if (!pacparser_setmyip(client_ip)) {
+      fprintf(stderr, "pactester.c: Error setting client IP\n");
+      pacparser_cleanup();
+      return 1;
+    }
 
   char *proxy;
 

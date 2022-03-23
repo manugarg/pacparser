@@ -257,11 +257,17 @@ static JSClass global_class = {
 };
 
 // Set my (client's) IP address to a custom value.
-void
+int
 pacparser_setmyip(const char *ip)
 {
+  if (strlen(ip) > INET6_ADDRSTRLEN) {
+    fprintf(stderr, "IP too long: %s\n", ip);
+    return 0;
+  }
+
   myip = malloc(strlen(ip) +1);         // Allocate space just to be sure.
   strcpy(myip, ip);
+  return 1;
 }
 
 // Decprecated: This function doesn't do anything.
