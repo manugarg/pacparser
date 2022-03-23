@@ -79,7 +79,7 @@ def find_proxy(url, host=None):
     m = _URL_REGEX.match(url)
     if not m:
       raise URLError(url)
-    if len(m.groups()) is 1:
+    if len(m.groups()) == 1:
       host = m.groups()[0]
     else:
       raise URLError(url)

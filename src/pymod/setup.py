@@ -1,4 +1,4 @@
-# Copyright (C) 2007 Manu Garg.
+# Copyright (C) 2007-2022 Manu Garg.
 # Author: Manu Garg <manugarg@gmail.com>
 #
 # pacparser is a library that provides methods to parse proxy auto-config
@@ -28,7 +28,6 @@ Makefiles.
 import sys
 import os
 
-from distutils import sysconfig
 from setuptools import setup
 from distutils.core import Extension
 
@@ -39,7 +38,7 @@ def main():
   libraries = []
   extra_link_args = []
   if sys.platform == 'win32':
-    extra_objects = ['pacparser.o', 'js.lib']
+    extra_objects = ['../pacparser.o', '../spidermonkey/js.lib']
     libraries = ['ws2_32']
     if 'mingw32' in sys.argv or '--compiler=mingw32' in sys.argv:
       extra_link_args = ['-static-libgcc']

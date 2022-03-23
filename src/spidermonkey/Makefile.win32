@@ -1,8 +1,23 @@
 # Project: fdlibm
 
+ifeq ($(OS),Windows_NT) 
+RM = del /Q /F
+CP = copy /Y
+ifdef ComSpec
+SHELL := $(ComSpec)
+endif
+ifdef COMSPEC
+SHELL := $(COMSPEC)
+endif
+else
+RM = rm -rf
+CP = cp -f
+endif
+
 CC = gcc.exe
 
 JS_SRCDIR = js/src
+
 JS_OBJECTS = \
     $(JS_SRCDIR)/jsapi.o \
     $(JS_SRCDIR)/jsarena.o \
@@ -44,21 +59,22 @@ CFLAGS =  -D_IEEE_LIBM -DEXPORT_JS_API -DWIN32 -D_MINGW -D_WINDOWS -DXP_WIN -s
 
 all: js.lib
 
-.c.o: $(CC) -c $(CFLAGS) -o $@ $(JS_SRCDIR)/$*.c
+%.o: %.c js/src/jsautokw.h
+	$(CC) -c $(CFLAGS) -o $@ $<
 
-js\src\jsautokw.h:
+js/src/jsautokw.h:
 ifeq ($(wildcard js),)
 	$(error JS source directory not found. Extract $(wildcard js-*.tar.gz) tarball using tool of your choice. Possible options are 7z, WinRAR, WinZip.)
 endif
 	$(CC) -o jskwgen js/src/jskwgen.c
 	jskwgen > js/src/jsautokw.h
-	rm jskwgen.exe
+	$(RM) jskwgen.exe
 	
-js.lib: js\src\jsautokw.h $(JS_OBJECTS)
+js.lib: $(JS_OBJECTS)
 	ar r js.lib $(JS_OBJECTS)
 	ranlib js.lib
 
 clean:
-	rm js\src\*.o
-	rm js\src\jsautokw.h
-	rm *.lib
+	$(RM) js\src\*.o
+	$(RM) js\src\jsautokw.h
+	$(RM) *.lib
