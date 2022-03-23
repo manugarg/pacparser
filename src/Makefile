@@ -126,12 +126,14 @@ install: all
 	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc//pacparser/examples/) || true
 
 # Targets to build python module
-pymod: pacparser.o pacparser.h libjs.a
+pymod: pacparser.o pacparser.h spidermonkey/libjs.a
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
 	$(PYTHON) ../tests/runtests.py
 
-pymod-dist: pacparser.o pacparser.h libjs.a
+pymod-dist: pacparser.o pacparser.h spidermonkey/libjs.a
+	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py dist
+	$(PYTHON) ../tests/runtests.py
 
 install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
