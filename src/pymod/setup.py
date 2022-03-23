@@ -34,7 +34,6 @@ from setuptools import setup, Extension
 
 @patch('distutils.cygwinccompiler.get_msvcr')
 def main(patched_func):
-  patched_func.return_value =  ['vcruntime140']
   pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
   python_home = os.path.dirname(sys.executable)
 
@@ -44,6 +43,8 @@ def main(patched_func):
   if sys.platform == 'win32':
     extra_objects = ['../pacparser.o', '../spidermonkey/js.lib']
     libraries = ['ws2_32']
+    # python_home has vcruntime140.dll
+    patched_func.return_value =  ['vcruntime140']
     extra_link_args = ['-static-libgcc', '-L'+python_home]
 
   pacparser_module = Extension('_pacparser',
