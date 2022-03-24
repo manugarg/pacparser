@@ -28,6 +28,7 @@ Makefiles.
 import glob
 import os
 import platform
+import re
 import shutil
 import sys
 
@@ -36,6 +37,32 @@ import distutils
 from setuptools import setup, Extension
 
 import distutils.cmd
+
+def build_dir():
+  return os.path.join(os.path.dirname(os.path.join(os.getcwd(), sys.argv[0])), 'build')
+
+def module_path():
+  py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
+  return glob.glob(os.path.join(build_dir(), 'lib*%s' % py_ver))[0]
+
+
+def pacparser_version(pacparser_module_path=''):
+  if not os.path.exists(build_dir()):
+    return '1.0.0'
+
+  if not pacparser_module_path:
+    pacparser_module_path = module_path()
+
+  print(pacparser_module_path)
+  sys.path.insert(0, pacparser_module_path)
+  import pacparser
+  ver = pacparser.version()
+  # Strip first 'v' and last part from git provided versions.
+  # For example, v1.3.8-12-g231 becomes v1.3.8-12.
+  ver = re.sub(r'^v?([\d]+\.[\d]+\.[\d]+(-[\d]+)).*$', '\\1', ver)
+  # 1.3.8-12 becomes 1.3.8.dev12
+  return ver.replace('-', '.dev')
+
 
 class DistCmd(distutils.cmd.Command):
   """Build pacparser python distribution."""
@@ -50,28 +77,26 @@ class DistCmd(distutils.cmd.Command):
     pass
 
   def run(self):
-    setup_dir = os.path.dirname(os.path.join(os.getcwd(), sys.argv[0]))
     py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
-    pp_ver = os.environ.get('PACPARSER_VERSION', '1.0.0')
-
-    pacparser_module_path = glob.glob(
-      os.path.join(setup_dir, 'build', 'lib*%s' % py_ver))[0]
-    sys.path.insert(0, pacparser_module_path)
-    import pacparser
-    pp_ver = pacparser.version()
+    pacparser_module_path = module_path()
+    pp_ver = pacparser_version(pacparser_module_path)
 
     mach = platform.machine().lower()
     if mach == 'x86_64':
       mach = 'amd64'
     dist = 'pacparser-python%s-%s-%s-%s' % (
       py_ver.replace('.',''), pp_ver, platform.system().lower(), mach)
+
+    if os.path.exists(dist):
+      shutil.rmtree(dist)
     os.mkdir(dist)
-    shutil.copytree(os.path.join(pacparser_module_path, 'pacparser'), dist+'/pacparser')
+    shutil.copytree(os.path.join(pacparser_module_path, 'pacparser'),
+                    dist+'/pacparser',
+                    ignore=shutil.ignore_patterns('*pycache*'))
 
 
 @patch('distutils.cygwinccompiler.get_msvcr')
 def main(patched_func):
-  pacparser_version = os.environ.get('PACPARSER_VERSION', '1.0.0')
   python_home = os.path.dirname(sys.executable)
 
   extra_objects = ['../pacparser.o', '../spidermonkey/libjs.a']
@@ -95,18 +120,18 @@ def main(patched_func):
             'dist': DistCmd,
         },
         name = 'pacparser',
-         version = pacparser_version,
-         description = 'Pacparser package',
-         author = 'Manu Garg',
-         author_email = 'manugarg@gmail.com',
-         url = 'http://github.com/pacparser/pacparser',
-         long_description = 'python library to parse proxy auto-config (PAC) '
-                            'files.',
-         package_data = {'': ['pacparser.o', 'libjs.a']},
-         license = 'LGPL',
-         ext_package = 'pacparser',
-         ext_modules = [pacparser_module],
-         py_modules = ['pacparser.__init__'])
+        version = pacparser_version(),
+        description = 'Pacparser package',
+        author = 'Manu Garg',
+        author_email = 'manugarg@gmail.com',
+        url = 'http://github.com/manugarg/pacparser',
+        long_description = ('python library to parse proxy auto-config (PAC) '
+                            'files.'),
+        package_data = {'': ['pacparser.o', 'libjs.a']},
+        license = 'LGPL',
+        ext_package = 'pacparser',
+        ext_modules = [pacparser_module],
+        py_modules = ['pacparser.__init__'])
 
 if __name__ == '__main__':
   main()
