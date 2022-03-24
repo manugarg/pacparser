@@ -24,7 +24,6 @@
 
 VERSION ?= $(shell git describe --always --tags --candidate=100)
 
-PREFIX ?= /usr
 OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
 
 LIBRARY_NAME = libpacparser
@@ -43,7 +42,7 @@ SHFLAGS = -fPIC
 SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=__va_copy
 
 ifeq ($(OS_ARCH),Darwin)
-  PREFIX = /usr/local
+  PREFIX ?= /usr/local
   MAC_MAJOR_VERSION := $(shell sw_vers -productVersion | cut -d. -f1)
   MAC_GT_OS11 := $(shell [ $(MAC_MAJOR_VERSION) -le 10 ] && echo false)
   SO_SUFFIX = dylib
@@ -60,6 +59,7 @@ ifeq ($(OS_ARCH),Darwin)
   endif
 endif
 
+PREFIX ?= /usr
 CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
 
 ifndef PYTHON
@@ -140,5 +140,6 @@ install-pymod: pymod
 
 clean:
 	rm -f $(LIBRARY_LINK) $(LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
+	rm -rf dist
 	cd pymod && $(PYTHON) setup.py clean --all
 	cd spidermonkey && $(MAKE) clean

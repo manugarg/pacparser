@@ -28,8 +28,8 @@ jobs:
     - name: make non-windows dist
       if:  ${{ matrix.os != 'windows-latest' }}
       run: |
-        DESTDIR=dist make -C src install
-        mv src/dist/usr/* src/dist/; rmdir src/dist/usr; ls -R src/dist
+        DESTDIR=dist PREFIX= make -C src install
+        ls -R src/dist
 
     - name: make windows dist
       if:  ${{ matrix.os == 'windows-latest' }}
@@ -51,7 +51,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    
+      with:
+        fetch-depth: 0
+
     - name: Set up Python
       uses: actions/setup-python@v3
       with:
