@@ -85,8 +85,7 @@ pymod: pacparser.h pacparser.dll pacparser.o js.lib
 	cd .. && $(PYTHON) tests/runtests.py
 
 pymod-dist: pacparser.h pacparser.dll pacparser.o js.lib
-	cd pymod && $(PYTHON) setup.py build --compiler=mingw32
-	$(PYTHON) setup.py dist
+	cd pymod && $(PYTHON) setup.py build --compiler=mingw32 && $(PYTHON) setup.py dist
 	cd .. && $(PYTHON) tests/runtests.py
 
 pymod-%: pacparser.h pacparser.dll pacparser.o js.lib
