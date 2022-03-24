@@ -36,10 +36,12 @@ RM = rm -rf
 CP = cp -f
 endif
 
+VERSION ?= $(shell git describe --always --tags --candidate=100)
+
 LIB_VER=1
 CFLAGS=-g -DXP_WIN -DWINVER=0x0501 -DVERSION=$(VERSION) -Ispidermonkey/js/src -Wall
 CC=gcc
-PYTHON:=python
+PYTHON ?= python
 
 .PHONY: clean pymod install-pymod
 
