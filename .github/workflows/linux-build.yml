@@ -1,0 +1,18 @@
+name: Linux Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: make
+      run: make -C src
+    - name: make dist
+      run: |
+        DESTDIR=dist make -C src install
+        cd dist; mv usr/* .; rmdir usr; ls; cd ..
