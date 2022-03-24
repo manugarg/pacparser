@@ -2,6 +2,7 @@ name: Linux Build
 
 on:
   push:
+    branches: [ master ]
   pull_request:
 
 jobs:
@@ -15,4 +16,4 @@ jobs:
     - name: make dist
       run: |
         DESTDIR=dist make -C src install
-        cd dist; mv usr/* .; rmdir usr; ls; cd ..
+        cd src/dist; mv usr/* .; rmdir usr; ls; cd ../..
