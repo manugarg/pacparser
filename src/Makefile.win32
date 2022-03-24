@@ -1,4 +1,4 @@
-# Copyright (C) 2007 Manu Garg.
+# Copyright (C) 2007-2022 Manu Garg.
 # Author: Manu Garg <manugarg@gmail.com>
 #
 # Makefile for pacparser. Please read README file included with this package
@@ -82,6 +82,10 @@ dist: pacparser.dll pactester pacparser.def
 # Targets to build python module
 pymod: pacparser.h pacparser.dll pacparser.o js.lib
 	cd pymod && $(PYTHON) setup.py build --compiler=mingw32
+	cd .. && $(PYTHON) tests/runtests.py
+
+pymod-dist: pacparser.h pacparser.dll pacparser.o js.lib
+	cd pymod && $(PYTHON) setup.py build --compiler=mingw32 && $(PYTHON) setup.py dist
 	cd .. && $(PYTHON) tests/runtests.py
 
 pymod-%: pacparser.h pacparser.dll pacparser.o js.lib
