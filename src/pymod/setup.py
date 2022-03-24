@@ -30,6 +30,7 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 import sys
 
 from unittest.mock import patch
@@ -38,30 +39,40 @@ from setuptools import setup, Extension
 
 import distutils.cmd
 
-def build_dir():
-  return os.path.join(os.path.dirname(os.path.join(os.getcwd(), sys.argv[0])), 'build')
+def setup_dir():
+  return os.path.dirname(os.path.join(os.getcwd(), sys.argv[0]))
 
 def module_path():
   py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
-  return glob.glob(os.path.join(build_dir(), 'lib*%s' % py_ver))[0]
+  return glob.glob(os.path.join(setup_dir(), 'build', 'lib*%s' % py_ver))[0]
 
 
-def pacparser_version(pacparser_module_path=''):
-  if not os.path.exists(build_dir()):
-    return '1.0.0'
-
-  if not pacparser_module_path:
-    pacparser_module_path = module_path()
-
-  print(pacparser_module_path)
-  sys.path.insert(0, pacparser_module_path)
-  import pacparser
-  ver = pacparser.version()
+def sanitize_version(ver):
+  ver = ver.strip()
   # Strip first 'v' and last part from git provided versions.
   # For example, v1.3.8-12-g231 becomes v1.3.8-12.
   ver = re.sub(r'^v?([\d]+\.[\d]+\.[\d]+(-[\d]+)).*$', '\\1', ver)
   # 1.3.8-12 becomes 1.3.8.dev12
   return ver.replace('-', '.dev')
+
+def git_version():
+  return sanitize_version(subprocess.check_output(
+    'git describe --always --tags --candidate=100'.split(' '),
+    text=True
+  ))
+
+def pacparser_version():
+  if subprocess.call('git rev-parse --git-dir'.split(' '),
+                     stderr=subprocess.DEVNULL) == 0:
+    return git_version()
+
+  # Check if we have version.mk. It's added in the manual release tarball.
+  version_file = os.path.join(setup_dir(), '..', 'version.mk')
+  if os.path.exists(version_file):
+    with open(version_file) as f:
+      return sanitize_version(f.read().replace('VERSION=',''))
+
+  return os.environ.get('PACPARSER_VERION', '1.0.0')
 
 
 class DistCmd(distutils.cmd.Command):
@@ -78,8 +89,7 @@ class DistCmd(distutils.cmd.Command):
 
   def run(self):
     py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
-    pacparser_module_path = module_path()
-    pp_ver = pacparser_version(pacparser_module_path)
+    pp_ver = pacparser_version()
 
     mach = platform.machine().lower()
     if mach == 'x86_64':
@@ -90,7 +100,7 @@ class DistCmd(distutils.cmd.Command):
     if os.path.exists(dist):
       shutil.rmtree(dist)
     os.mkdir(dist)
-    shutil.copytree(os.path.join(pacparser_module_path, 'pacparser'),
+    shutil.copytree(os.path.join(module_path(), 'pacparser'),
                     dist+'/pacparser',
                     ignore=shutil.ignore_patterns('*pycache*'))
 
@@ -127,7 +137,6 @@ def main(patched_func):
         url = 'http://github.com/manugarg/pacparser',
         long_description = ('python library to parse proxy auto-config (PAC) '
                             'files.'),
-        package_data = {'': ['pacparser.o', 'libjs.a']},
         license = 'LGPL',
         ext_package = 'pacparser',
         ext_modules = [pacparser_module],

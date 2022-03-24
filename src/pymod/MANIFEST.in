@@ -1,4 +1,2 @@
-include pacparser.o
-include libjs.a
 include pacparser_py.c
 include pacparser/*
