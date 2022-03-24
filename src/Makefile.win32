@@ -64,13 +64,14 @@ pacparser.lib: pacparser.dll pacparser.def
 pactester: pactester.c pacparser.h pacparser.o
 	$(CC) pactester.c pacparser.o -o pactester -ljs -Lspidermonkey -lws2_32
 
-dist: pacparser.dll pactester pacparser.lib
+dist: pacparser.dll pactester pacparser.def
 	if exist dist rmdir /s /q dist
 	mkdir dist
-	copy pacparser.dll dist
-	copy pacparser.h dist
-	copy pactester.exe dist
-	$(CP) pacparser.lib dist
+	$(CP) pacparser.dll dist
+	$(CP) pacparser.h dist
+	$(CP) pactester.exe dist
+	$(CP) pacparser.def dist
+	if exist pacparser.lib $(CP) pacparser.lib dist
 	$(CP) ..\README.md dist\README.txt
 	$(CP) ..\COPYING dist\COPYING.txt
 	$(CP) ..\INSTALL dist\INSTALL.txt
