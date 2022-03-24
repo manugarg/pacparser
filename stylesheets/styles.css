@@ -2,13 +2,14 @@
 
 body {
   padding:50px;
-  font:16px/1.5 sans-serif;
-  color:#222;
+  font:14px/1.5 "Lucida Grande", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 400;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  color:#111;
+  color:#222;
   margin:0 0 20px;
+  display: inline-block;
 }
 
 p, ul, ol, table, pre, dl {
@@ -39,12 +40,13 @@ a {
 
 a small {
   font-size:11px;
+  color:#777;
   margin-top:-0.6em;
   display:block;
 }
 
 .wrapper {
-  width:1200px;
+  width:860px;
   margin:0 auto;
 }
 
@@ -99,6 +101,14 @@ header {
   position:fixed;
 }
 
+header img {
+  padding: 3px 5px 3px 3px;
+}
+
+header h1 {
+  vertical-align: top;
+}
+
 header ul {
   list-style:none;
   height:40px;
@@ -129,6 +139,7 @@ header li {
 header ul a {
   line-height:1;
   font-size:11px;
+  color:#999;
   display:block;
   text-align:center;
   padding-top:6px;
@@ -136,8 +147,33 @@ header ul a {
 }
 
 strong {
-  color:#122;
+  color:#222;
   font-weight:700;
+}
+
+header button {
+  width:150px;
+  height:40px;
+  font-size:12px;
+  font-weight: bold;
+  text-align: center;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.1);
+  text-transform: uppercase;
+    
+  background: #4d7bd6;
+  border-radius: 2px;
+  border: 1px solid #2d53af;
+  cursor: pointer;
+  color: #fff;
+  padding: 0 4px 0 4px;
+  box-shadow: 0 2px 0 0 rgba(255,255,255,.06) inset,0 2px 3px 0 rgba(0,0,0,.2);
+  outline: 0;
+  background: -moz-linear-gradient(top, #5689db 0%, #4d7bd6 100%);
+  background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#5689db), color-stop(100%,#4d7bd6));
+  background: -webkit-linear-gradient(to bottom, #5689db 0%,#4d7bd6 100%);
+  background: -o-linear-gradient(top, #5689db 0%,#4d7bd6 100%);
+  background: -ms-linear-gradient(top, #5689db 0%,#4d7bd6 100%);
+  background: linear-gradient(to bottom, #5689db, #4d7bd6);
 }
 
 header ul li + li {
