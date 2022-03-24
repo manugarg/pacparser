@@ -2,13 +2,12 @@
 
 body {
   padding:50px;
-  font:14px/1.5 Lato, "Helvetica Neue", Helvetica, Arial, sans-serif;
-  color:#777;
-  font-weight:300;
+  font:16px/1.5 sans-serif;
+  color:#222;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  color:#222;
+  color:#111;
   margin:0 0 20px;
 }
 
@@ -40,13 +39,12 @@ a {
 
 a small {
   font-size:11px;
-  color:#777;
   margin-top:-0.6em;
   display:block;
 }
 
 .wrapper {
-  width:860px;
+  width:1200px;
   margin:0 auto;
 }
 
@@ -131,7 +129,6 @@ header li {
 header ul a {
   line-height:1;
   font-size:11px;
-  color:#999;
   display:block;
   text-align:center;
   padding-top:6px;
@@ -139,7 +136,7 @@ header ul a {
 }
 
 strong {
-  color:#222;
+  color:#122;
   font-weight:700;
 }
 
