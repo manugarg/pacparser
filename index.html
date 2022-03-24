@@ -41,22 +41,21 @@ introduce a lot of possibilities. Please look at the wikipedia entry for Proxy
 auto-config (<a href="http://en.wikipedia.org/wiki/Proxy_auto-config">http://en.wikipedia.org/wiki/Proxy_auto-config</a>) for more
 information.</p>
 
-<p>Needless to say, PAC files are now a widely accepted method for proxy
-configuration management and companies all over are using them in corporate
-environment. Almost all popular web browsers support PAC files. The idea behind
-pacparser is to make it easy to add this PAC file parsing capability to any
-program (C and python supported right now). It comes as a shared C library and
-a python module which can be used to make any C or python program PAC scripts
-intelligent. Some very useful targets could be popular web software like wget,
-curl and python-urllib.</p>
+<p>Needless to say, PAC files are now a widely used method for proxy
+configuration management, and most companies rely on them to configure HTTP
+routing for their employees. Almost all popular web browsers support PAC files.
+The idea behind pacparser is to make it easy to add this PAC file parsing
+capability to any program (C and python supported right now). It comes as a 
+shared C library and a python module which can be used to make any C or
+python program PAC scripts aware.</p>
 
 <h3>
 <a id="implementation" class="anchor" href="#implementation" aria-hidden="true"><span class="octicon octicon-link"></span></a>Implementation</h3>
 
-<p>pacparser makes use of Mozilla's JavaScript interpreter SpiderMonkey to parse
-PAC files (which are nothing but javascripts). Apart from that, proxy
+<p>Pacparser makes use of the Mozilla's JavaScript interpreter SpiderMonkey to
+parse PAC files (which are nothing but javascripts). Apart from that, proxy
 auto-config standard assumes availability of some functions which are not
-part of standard JavaScript. pacparser uses Mozilla's PAC implementation to
+part of the standard JavaScript. Pacparser uses Mozilla's PAC implementation to
 define all these functions except couple of dns functions which are defined by
 pacparser itself. As a result, pacparser is as close to standard as it gets :)</p>
 
