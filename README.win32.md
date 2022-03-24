@@ -4,47 +4,41 @@ directory.
 
 Building pacparser on Windows:
 -----------------------------
-For compiling pacparser on Windows, you'll need MinGW (www.mingw.org) tools.
+For compiling pacparser on Windows, you'll need MinGW64 (www.msys2.org) tools.
 
 Detailed Instructions:
 ----------------------
 
 Set up tools:
 
-1.  Install MinGW. Download the automated installer from here:
-    http://sourceforge.net/projects/mingw/files/
-    Running this installer lets you select what component you want to install.
-    Default options (C-compiler and MinGW Development Toolkit) should work
-    fine.
+1.  Install MinGW64 tools through msys2. Download the automated installer from here:
+    https://github.com/msys2/msys2-installer/releases
 
-2.  Rename mingw32-make.exe to make.exe.
-      rename C:\MinGW\bin\mingw32-make.exe C:\MinGW\bin\make.exe
+1.  Rename mingw32-make.exe to make.exe.
+      rename C:\msys64\mingw64\bin\mingw32-make.exe C:\msys64\mingw64\bin\make.exe
 
-3.  Add your MinGW directory's bin (C:\MinGW\bin) to your system path variable.
+1.  Add your MinGW directory's bin (C:\msys64\mingw64\bin) to your system path variable.
 
-4.  Install 7-zip to extract .tar.gz files, if you don't have an equivalent
-    program already.
-    http://www.7-zip.org/download.html
-
-5.  Install latest python. You'll need it to build python module.
+1.  Install latest python. You'll need it to build python module.
     http://www.python.org/getit/
 
-======== Done setting up tools ==========
+    ======== Done setting up tools ==========
 
-6.  Now download pacparser source code tarball from
-    https://github.com/pacparser/pacparser/releases and extract it somewhere,
+1.  Now download pacparser source code tarball from
+    https://github.com/manugarg/pacparser/releases and extract it somewhere,
     say C:\workspace.
 
-7.  Now extract the spidermonekey source tarball, js-*.tar.gz, located at
-    src\spidermonkey\js-*.tar.gz inside the pacparser source directory.
-
-8.  Compile pacparser and create ditribution.
+1.  Compile pacparser and create ditribution.
       cd C:\workspace\pacparser-*
       make -C src -f Makefile.win32 dist
 
-9. Compile pacparser python module and copy required files to a directory
+1. Compile pacparser python module and copy required files to a directory
     (dist).
-      make -C src -f Makefile.win32 pymod
+      make -C src -f Makefile.win32 pymod-$(PYVER)
+
+1. Compile pacparser python module and copy required files to a directory
+    (dist).
+      make -C src -f Makefile.win32 pymod-dist-$(PYVER)
 
 Using pacparser on Windows:
 --------------------------
@@ -53,7 +47,7 @@ Using pacparser on Windows:
 Make sure that you have pacparser.dll in the sytem path somewhere
 (current directory would do just fine for testing purpose).
   Change to your program's directory:
-  =>  cd c:\workspace\pacparser-1.2.1\examples
+  =>  cd c:\workspace\pacparser-1.3.8\examples
   Copy pacparser.dll here and compile your program:
   => gcc -o pactest pactest.c -lpacparser -L.
   Run your program:
@@ -66,7 +60,7 @@ Install pacparser python module by running install.py in the distribution
 folder. You'll then be able to use pacparser python module in the following
 manner:
 
-  => C:\python25\python
+  => python
   >>> import pacparser
   >>> pacparser.init()
   >>> pacparser.parse_pac('examples/wpad.dat')
