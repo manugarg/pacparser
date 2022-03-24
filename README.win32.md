@@ -6,8 +6,6 @@ Building pacparser on Windows:
 -----------------------------
 For compiling pacparser on Windows, you'll need mingw64 tools, best downloaded from [msys2](http://www.msys2.org).
 
-## Detailed Instructions
-
 *  Install MinGW64 tools through [msys2](
     https://github.com/msys2/msys2-installer/releases).
 
@@ -50,8 +48,10 @@ Make sure that you have pacparser.dll in the sytem path somewhere
 ```
   Change to your program's directory:
   =>  cd c:\workspace\pacparser-1.3.8\examples
+  
   Copy pacparser.dll here and compile your program:
   => gcc -o pactest pactest.c -lpacparser -L.
+  
   Run your program:
   => pactest wpad.dat http://www.google.com www.google.com
   'PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT'
