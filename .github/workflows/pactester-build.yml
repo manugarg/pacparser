@@ -68,4 +68,4 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
-        path: src/pymod/python-pacparser*
+        path: src/pymod/pacparser-python*
