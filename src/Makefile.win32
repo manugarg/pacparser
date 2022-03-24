@@ -76,7 +76,7 @@ dist: pacparser.dll pactester pacparser.def
 	$(CP) ..\COPYING dist\COPYING.txt
 	$(CP) ..\INSTALL dist\INSTALL.txt
 	mkdir dist\docs
-	$(CP) ..\README.win32 dist\docs
+	$(CP) ..\README.win32.md dist\docs
 	if exist ..\docs\html xcopy ..\docs\html dist\docs
 
 # Targets to build python module
