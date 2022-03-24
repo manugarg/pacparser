@@ -32,7 +32,7 @@ jobs:
     - name: make windows dist
       if:  ${{ matrix.os == 'windows-latest' }}
       run: |
-        DESTDIR=dist make -C src -f Makefile.win32 dist
+        make -C src -f Makefile.win32 dist
 
     - name: Upload dist
       if:  ${{ matrix.os != 'windows-latest' }}
