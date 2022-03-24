@@ -1,4 +1,4 @@
-name: Linux Build
+name: Build Pactester and Pacparser (C Lib)
 
 on:
   push:
