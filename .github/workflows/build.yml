@@ -3,6 +3,8 @@ name: Build Pacparser
 on:
   push:
     branches: [ master ]
+    paths:
+      - 'src/**'
   pull_request:
 
 jobs:
