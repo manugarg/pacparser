@@ -73,3 +73,10 @@ jobs:
       with:
         name: pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
         path: src/pymod/pacparser-python*
+        
+    - name: Publish package to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI }}
+        packages_dir: src/pymod/dist
