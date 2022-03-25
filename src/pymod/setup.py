@@ -72,7 +72,7 @@ def pacparser_version():
     with open(version_file) as f:
       return sanitize_version(f.read().replace('VERSION=',''))
 
-  return os.environ.get('PACPARSER_VERION', '1.0.0')
+  return sanitize_version(os.environ.get('PACPARSER_VERSION', '1.0.0'))
 
 
 class DistCmd(distutils.cmd.Command):
