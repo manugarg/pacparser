@@ -73,10 +73,14 @@ jobs:
       with:
         name: pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
         path: src/pymod/pacparser-python*
+
+    - name: Build pypi sdist
+      if:  ${{ (matrix.os == 'ubuntu-latest') &&  (matrix.python-version == '3.10') }}
+      run: cd src/pymod && python setup.py bdist
         
-    - name: Build pypi dist
+    - name: Build pypi bdist
       if:  ${{ matrix.os == 'ubuntu-latest' }}
-      run: cd src/pymod && python setup.py sdist bdist
+      run: cd src/pymod && python setup.py bdist
 
     - name: Publish package to PyPI
       if:  ${{ matrix.os == 'ubuntu-latest' }}
