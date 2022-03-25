@@ -78,9 +78,9 @@ jobs:
       if:  ${{ (matrix.os == 'ubuntu-latest') &&  (matrix.python-version == '3.10') }}
       run: cd src/pymod && python setup.py bdist
         
-    - name: Build pypi bdist
+    - name: Build pypi bdist_wheel
       if:  ${{ matrix.os == 'ubuntu-latest' }}
-      run: cd src/pymod && python setup.py bdist
+      run: cd src/pymod && python setup.py bdist_wheel
 
     - name: Publish package to PyPI
       if:  ${{ matrix.os == 'ubuntu-latest' }}
