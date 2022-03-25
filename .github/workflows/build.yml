@@ -77,7 +77,6 @@ jobs:
     - name: Build wheel non-linux
       if:  ${{ matrix.os != 'ubuntu-latest' }}
       run: |
-        rm -rf src/pymod/dist
         python -m pip install wheel
         cd src/pymod && python setup.py bdist_wheel
         
