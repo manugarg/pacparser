@@ -85,6 +85,9 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Set env
+      run: echo "PACPARSER_VERSION=$(git describe --always --tags --candidate=100)" >> $GITHUB_ENV
+  
     - name: Set up Python
       uses: actions/setup-python@v3
         
@@ -104,7 +107,7 @@ jobs:
       if:  ${{ matrix.os == 'ubuntu-latest' }}
       run: |
         cp src/spidermonkey/libjs.a src/pacparser.o src/pacparser.h src/pymod
-        cd src/pymod && python -m cibuildwheel
+        cd src/pymod && python -m cibuildwheel --output-dir dist
       env:
         CIBW_BUILD: "cp{37,38,39,310}-manylinux*64"
 
