@@ -77,8 +77,9 @@ jobs:
     - name: Build wheel non-linux
       if:  ${{ matrix.os != 'ubuntu-latest' }}
       run: |
+        rm -rf src/pymod/dist
         python -m pip install wheel
-        cd src/pymod && python setup.py sdist bdist_wheel && cd -
+        cd src/pymod && python setup.py sdist bdist_wheel
         
     - name: Publish package to PyPI
       env:
@@ -86,6 +87,7 @@ jobs:
         TWINE_PASSWORD: ${{ secrets.PYPI }}
       run: |
         python -m pip install twine
+        ls -R .
         twine upload src/pymod/dist/*
         
   build-linux-wheels:
