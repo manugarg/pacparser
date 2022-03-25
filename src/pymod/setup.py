@@ -72,7 +72,7 @@ def pacparser_version():
     with open(version_file) as f:
       return sanitize_version(f.read().replace('VERSION=',''))
 
-  return os.environ.get('PACPARSER_VERION', '1.0.0')
+  return sanitize_version(os.environ.get('PACPARSER_VERSION', '1.0.0'))
 
 
 class DistCmd(distutils.cmd.Command):
@@ -109,7 +109,17 @@ class DistCmd(distutils.cmd.Command):
 def main(patched_func):
   python_home = os.path.dirname(sys.executable)
 
-  extra_objects = ['../pacparser.o', '../spidermonkey/libjs.a']
+  extra_objects = []
+  obj_search_path = {
+    'pacparser.o': ['..', '.'],
+    'libjs.a': ['../spidermonkey', '.'],
+  }
+  for obj, paths in obj_search_path.items():
+    for path in paths:
+      if os.path.exists(os.path.join(path, obj)):
+        extra_objects.append(os.path.join(path, obj))
+        break
+
   libraries = []
   extra_link_args = []
   if sys.platform == 'win32':
@@ -120,7 +130,7 @@ def main(patched_func):
     extra_link_args = ['-static-libgcc', '-L'+python_home]
 
   pacparser_module = Extension('_pacparser',
-                               include_dirs = ['../spidermonkey/js/src', '..'],
+                               include_dirs = ['..'],
                                sources = ['pacparser_py.c'],
                                libraries = libraries,
                                extra_link_args = extra_link_args,

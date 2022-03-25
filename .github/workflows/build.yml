@@ -73,3 +73,58 @@ jobs:
       with:
         name: pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
         path: src/pymod/pacparser-python*
+
+    - name: Build wheel non-linux
+      if:  ${{ matrix.os != 'ubuntu-latest' }}
+      run: |
+        python -m pip install wheel
+        cd src/pymod && python setup.py bdist_wheel
+        
+    - name: Publish package to PyPI (non-linux)
+      if:  ${{ matrix.os != 'ubuntu-latest' }}
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI }}
+      run: |
+        python -m pip install twine
+        ls -R .
+        twine upload src/pymod/dist/*
+        
+  build-linux-wheels:
+    runs-on: 'ubuntu-latest'
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Set env
+      run: echo "PACPARSER_VERSION=$(git describe --always --tags --candidate=100)" >> $GITHUB_ENV
+  
+    - name: Set up Python
+      uses: actions/setup-python@v3
+        
+    - name: make
+      run: make -C src pymod
+      
+    - name: Build sdist
+      run: cd src/pymod && python setup.py sdist
+      
+    - name: Install cibuildwheel and twine
+      run: python -m pip install cibuildwheel twine
+
+    - name: Build wheel using cibuildwheel
+      run: |
+        cp src/spidermonkey/libjs.a src/pacparser.o src/pacparser.h src/pymod
+        cd src/pymod && python -m cibuildwheel --output-dir dist
+      env:
+        CIBW_BUILD: "cp{37,38,39,310}-manylinux*64"
+        CIBW_ENVIRONMENT: "PACPARSER_VERSION=${{ env.PACPARSER_VERSION }}"
+
+    - name: Publish package to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI }}
+      run: |
+        twine upload src/pymod/dist/*
+        
