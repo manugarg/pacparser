@@ -1,12 +1,18 @@
+You can download the latest pacparser source code tarball and pre-built binaries
+from:
+  https://github.com/manugarg/pacparser/releases
+
+For Python module, you can use pip as well:
+  pip install pacparser==1.3.8.dev15
+
+Compile From Source:
+###################
+
 On Unix-like Systems:
-####################
+====================
 
-You can download latest pacparser source code tarball from:
-  https://github.com/pacparser/pacparser/releases
-
-You can also get the latest source code from github (git) repository by
-following instructions at:
-  https://github.com/pacparser/pacparser
+Get the latest source code from github (git) repository by following instructions at:
+  https://github.com/manugarg/pacparser
 
 * pacparser C library and pactester:
   ----------------------------------
@@ -21,7 +27,7 @@ following instructions at:
     => make -C src pymod
     => sudo make -C src install-pymod
 
-  If it failed with runtests.py when building on non interconnected hosts like this;
+  If it failed while running runtests.py like this;
   ```
     File "../tests/runtests.py", line 79, in runtests
     raise Exception('Tests failed. Got "%s", expected "%s"' % (result, expected_result))
@@ -33,39 +39,6 @@ following instructions at:
   ```
   
 On Win-32 Systems:
-#################
-
-Binary Distribution:
-===================
-
-Compiled packages for win32 systems can be downloaded from:
-https://github.com/pacparser/pacparser/releases
-
-* C Library and pactester:
-  -----------------------
-To install pacparser C library and pactester, download package
-"pacparser-v.v.v-win32.zip" and extract it somewhere on your machine. It will
-create a directory - "pacparser-v.v.v". Copy pacparser.dll and pactester.exe
-binaries to somewhere on the system where system can find them (e.g. to the
-directories that are already in system path like C:\Windows) or simply add
-pacparser directory to the system path.
-
-You'll need pacparser.lib to link in pacparser on Visual Studio/C++. On mingw,
-you can directly link with pacparser.dll. Here are the detailed instructions to link in pacparser on Visual Studio:
-http://code.google.com/p/pacparser/wiki/LinkingOnVisualStudio.
-
-* Python Module
-  -------------
-To install pacparser python module (available only for Python 2.7 right now),
-download package pacparser-python27-v.v.v-win32.zip and extract it somewhere
-on your system. To install the module in your PYTHONPATH, simply run install.py
-that comes with the compiled binaries.
-
-If it fails for some reason, simply copy "pacparser" sub-directory to
-C:\Python27\Lib\site-packages\ and you are done.
-
-Compiling from Source Code:
-==========================
-
+=================
 Compiling pacparser for Windows is a rather involved process and is documented
 in detail in README.win32 file included with this package.
