@@ -75,9 +75,11 @@ jobs:
         path: src/pymod/pacparser-python*
         
     - name: Build pypi dist
+      if:  ${{ matrix.os == 'ubuntu-latest' }}
       run: cd src/pymod && python setup.py sdist bdist
 
     - name: Publish package to PyPI
+      if:  ${{ matrix.os == 'ubuntu-latest' }}
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         user: __token__
