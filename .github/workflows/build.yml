@@ -77,7 +77,7 @@ jobs:
   build-wheels:
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -99,18 +99,25 @@ jobs:
       if:  ${{ matrix.os == 'windows-latest' }}
       run: make -C src -f Makefile.win32 pymod
 
-    - name: Install cibuildwheel
-      run: |
-        python -m pip install cibuildwheel
-          
-    - name: Build wheel
+    - name: Build wheel using cibuildwheel
       if:  ${{ matrix.os == 'ubuntu-latest' }}
       run: |
         cp src/spidermonkey/libjs.a src/pacparser.o src/pacparser.h src/pymod
+        python -m pip install cibuildwheel
         cd src/pymod && python -m cibuildwheel --output-dir dist
       env:
         CIBW_BUILD: "cp{37,38,39,310}-manylinux*64"
 
+    - name: Build wheel non-linux
+      if:  ${{ matrix.os != 'ubuntu-latest' }}
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI }}
+      run: |
+        python -m pip install wheel twine
+        cd src/pymod && python setup.py sdist bdist_wheel && cd -
+        twine upload src/pymod/dist/*
+        
     - name: Publish package to PyPI
       if:  ${{ matrix.os == 'ubuntu-latest' }}
       uses: pypa/gh-action-pypi-publish@release/v1
@@ -118,3 +125,4 @@ jobs:
         user: __token__
         password: ${{ secrets.PYPI }}
         packages_dir: src/pymod/dist
+        
