@@ -112,7 +112,7 @@ jobs:
             - 'src/**'
 
     - name: Publish package to PyPI (non-linux)
-      if:  ${{ (matrix.os != 'ubuntu-latest') && (steps.changes.outputs.src == 'true') }}
+      if:  ${{ (matrix.os != 'ubuntu-latest') && (steps.changes.outputs.src == 'true') && (github.event_name != 'pull_request') }}
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI }}
@@ -168,7 +168,7 @@ jobs:
             - 'src/**'
 
     - name: Publish package to PyPI
-      if:  ${{ steps.changes.outputs.src == 'true' }}
+      if:  ${{ steps.changes.outputs.src == 'true' && (github.event_name != 'pull_request') }}
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI }}
