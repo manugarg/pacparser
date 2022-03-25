@@ -104,8 +104,15 @@ jobs:
         python -m pip install wheel
         cd src/pymod && python setup.py bdist_wheel
         
+    - uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          src:
+            - 'src/**'
+
     - name: Publish package to PyPI (non-linux)
-      if:  ${{ matrix.os != 'ubuntu-latest' }}
+      if:  ${{ (matrix.os != 'ubuntu-latest') && (steps.changes.outputs.src == 'true') }}
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI }}
@@ -152,8 +159,16 @@ jobs:
       env:
         CIBW_BUILD: "cp{37,38,39,310}-manylinux*64"
         CIBW_ENVIRONMENT: "PACPARSER_VERSION=${{ env.PACPARSER_VERSION }}"
+        
+    - uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          src:
+            - 'src/**'
 
     - name: Publish package to PyPI
+      if:  ${{ steps.changes.outputs.src == 'true' }}
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI }}
