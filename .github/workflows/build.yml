@@ -7,6 +7,11 @@ on:
       - 'src/**'
       - '.github/workflows/build.yml'
   pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to run workflow for'
+        required: true
 
 jobs:
   build:
@@ -17,8 +22,16 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+      if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
       with:
         fetch-depth: 0
+
+    - name: Check out code for workflow_dispatch
+      if: ${{ contains(github.event_name, 'workflow_dispatch') }}
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+        ref: ${{ github.event.inputs.tag }}
 
     - name: make non-windows
       if:  ${{ matrix.os != 'windows-latest' }}
@@ -54,8 +67,16 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+      if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
       with:
         fetch-depth: 0
+
+    - name: Check out code for workflow_dispatch
+      if: ${{ contains(github.event_name, 'workflow_dispatch') }}
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+        ref: ${{ github.event.inputs.tag }}
 
     - name: Set up Python
       uses: actions/setup-python@v3
@@ -98,8 +119,16 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+      if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
       with:
         fetch-depth: 0
+
+    - name: Check out code for workflow_dispatch
+      if: ${{ contains(github.event_name, 'workflow_dispatch') }}
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+        ref: ${{ github.event.inputs.tag }}
 
     - name: Set env
       run: echo "PACPARSER_VERSION=$(git describe --always --tags --candidate=100)" >> $GITHUB_ENV
