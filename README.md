@@ -1,7 +1,7 @@
 [![Build Status](https://github.com/manugarg/pacparser/actions/workflows/build.yml/badge.svg)](https://github.com/manugarg/pacparser/actions/workflows/build.yml)
 
 # [Pacparser](http://pacparser.manugarg.com)
-***[pacparser.manugarg.com](http://http://pacparser.manugarg.com)***
+***[pacparser.manugarg.com](http://pacparser.manugarg.com)***
 
 Pacparser is a library to parse proxy auto-config (PAC) files. Proxy auto-config
 files are a vastly used proxy configuration method these days. Web browsers can
