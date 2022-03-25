@@ -80,7 +80,9 @@ jobs:
         
     - name: Build pypi bdist_wheel
       if:  ${{ matrix.os == 'ubuntu-latest' }}
-      run: cd src/pymod && python setup.py bdist_wheel
+      run: |
+        pip install wheel
+        cd src/pymod && python setup.py bdist_wheel
 
     - name: Publish package to PyPI
       if:  ${{ matrix.os == 'ubuntu-latest' }}
