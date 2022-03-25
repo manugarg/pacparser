@@ -1,4 +1,5 @@
 [![Build Status](https://github.com/manugarg/pacparser/actions/workflows/build.yml/badge.svg)](https://github.com/manugarg/pacparser/actions/workflows/build.yml)
+[![PyPI version](https://badge.fury.io/py/pacparser.svg)](https://badge.fury.io/py/pacparser)
 
 # [Pacparser](http://pacparser.manugarg.com)
 ***[pacparser.manugarg.com](http://pacparser.manugarg.com)***
@@ -85,5 +86,5 @@ Debian), Mac OS X and Win32 systems.
 #### Homepage
 http://pacparser.manugarg.com
 
-Author: Manu Garg <manugarg@gmail.com>  
+Author: [Manu Garg](http://github.com/manugarg)
 
