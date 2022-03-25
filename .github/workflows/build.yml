@@ -91,3 +91,45 @@ jobs:
         user: __token__
         password: ${{ secrets.PYPI }}
         packages_dir: src/pymod/dist
+        
+  build-wheels:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v3
+        
+    - name: make non-windows
+      if:  ${{ matrix.os != 'windows-latest' }}
+      run: make -C src pymod
+
+    - name: make windows
+      if:  ${{ matrix.os == 'windows-latest' }}
+      run: make -C src -f Makefile.win32 pymod
+
+    - name: Install cibuildwheel
+      run: |
+        python -m pip install cibuildwheel
+          
+    - name: Build wheel
+      if:  ${{ matrix.os == 'ubuntu-latest' }}
+      run: |
+        cp spidermonkey/libjs.a pacparser.o src/pymod
+        cd src/pymod && python -m cibuildwheel --output-dir wheelhouse
+        env:
+          CIBW_BUILD: "{cp37,cp38,cp39,cp310}-manylinux*64
+
+    - name: Publish package to PyPI
+      if:  ${{ matrix.os == 'ubuntu-latest' }}
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI }}
+        packages_dir: src/pymod/wheelhouse
