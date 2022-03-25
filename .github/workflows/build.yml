@@ -79,7 +79,7 @@ jobs:
       run: |
         rm -rf src/pymod/dist
         python -m pip install wheel
-        cd src/pymod && python setup.py sdist bdist_wheel
+        cd src/pymod && python setup.py bdist_wheel
         
     - name: Publish package to PyPI (non-linux)
       if:  ${{ matrix.os != 'ubuntu-latest' }}
@@ -107,6 +107,9 @@ jobs:
         
     - name: make
       run: make -C src pymod
+      
+    - name: Build sdist
+      run: cd src/pymod && python setup.py sdist
       
     - name: Install cibuildwheel and twine
       run: python -m pip install cibuildwheel twine
