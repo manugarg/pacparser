@@ -336,9 +336,6 @@ static const char *pacUtils =
 
 // You must free the result if result is non-NULL.
 char *str_replace(const char *orig, char *rep, char *with) {
-    char *tmporig = malloc(strlen(orig) + 1); // Copy of orig that we work with
-    tmporig = strcpy(tmporig, orig);
-
     char *result;  // the return string
     char *ins;     // the next insert point
     char *tmp;     // varies
@@ -348,25 +345,27 @@ char *str_replace(const char *orig, char *rep, char *with) {
     int len_with = strlen(with);
 
     // Get the count of replacements
-    ins = tmporig;
+    ins = orig;
     for (count = 0; (tmp = strstr(ins, rep)); ++count) {
         ins = tmp + len_rep;
     }
 
-    tmp = result = malloc(strlen(tmporig) + (len_with - len_rep) * count + 1);
+    tmp = result = malloc(strlen(orig) + (len_with - len_rep) * count + 1);
 
     // first time through the loop, all the variable are set correctly
     // from here on,
     //    tmp points to the end of the result string
-    //    ins points to the next occurrence of rep in tmporig
-    //    tmporig points to the remainder of tmporig after "end of rep"
+    //    ins points to the next occurrence of rep in orig
+    //    orig points to the remainder of orig after "end of rep"
     while (count--) {
-        ins = strstr(tmporig, rep);
-        len_front = ins - tmporig;
-        tmp = strncpy(tmp, tmporig, len_front) + len_front;
+        ins = strstr(orig, rep);
+        len_front = ins - orig;
+        tmp = strncpy(tmp, orig, len_front) + len_front;
         tmp = strcpy(tmp, with) + len_with;
-        tmporig += len_front + len_rep; // move to next "end of rep"
+        orig += len_front + len_rep; // move to next "end of rep"
     }
-    strcpy(tmp, tmporig);
+
+    // Copy the remaining string.
+    strcpy(tmp, orig);
     return result;
 }
