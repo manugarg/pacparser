@@ -1,9 +1,13 @@
-You can download the latest pacparser source code tarball and pre-built binaries
-from:
-  https://github.com/manugarg/pacparser/releases
+For Python module, it's recommended to use "pip" for the installation:
+  pip install pacparser
+  pip install pacparser==1.3.8.dev15 (specific version)
 
-For Python module, you can use pip as well:
-  pip install pacparser==1.3.8.dev15
+For other pre-built binaries, download them from:
+  https://github.com/manugarg/pacparser/releases
+  
+You can also download the latest binaries from the Github actions artifacts:
+  https://github.com/manugarg/pacparser/actions
+
 
 Compile From Source:
 ###################
