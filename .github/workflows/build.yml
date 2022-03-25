@@ -104,7 +104,7 @@ jobs:
       if:  ${{ matrix.os == 'ubuntu-latest' }}
       run: |
         cp src/spidermonkey/libjs.a src/pacparser.o src/pacparser.h src/pymod
-        cd src/pymod && python -m cibuildwheel --output-dir wheelhouse
+        cd src/pymod && python -m cibuildwheel
         env:
           CIBW_BUILD: "{cp37,cp38,cp39,cp310}-manylinux*64
 
@@ -114,4 +114,4 @@ jobs:
       with:
         user: __token__
         password: ${{ secrets.PYPI }}
-        packages_dir: src/pymod/wheelhouse
+        packages_dir: src/pymod/dist
