@@ -74,6 +74,9 @@ jobs:
         name: pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
         path: src/pymod/pacparser-python*
         
+    - name: Build pypi dist
+      run: cd src/pymod && python setup.py sdist bdist
+
     - name: Publish package to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
