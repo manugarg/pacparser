@@ -105,8 +105,8 @@ jobs:
       run: |
         cp src/spidermonkey/libjs.a src/pacparser.o src/pacparser.h src/pymod
         cd src/pymod && python -m cibuildwheel
-        env:
-          CIBW_BUILD: "cp37-manylinux*64 cp38-manylinux*64 cp39-manylinux*64 cp310-manylinux*64"
+      env:
+        CIBW_BUILD: "cp{37,38,39,310}-manylinux*64"
 
     - name: Publish package to PyPI
       if:  ${{ matrix.os == 'ubuntu-latest' }}
