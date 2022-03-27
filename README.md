@@ -28,7 +28,22 @@ define all these functions except couple of dns functions which are defined by
 pacparser itself. As a result, pacparser is as close to standard as it gets :)
 
 ### Install
-Please see 'INSTALL' in the root directory of the package.
+
+For Python module, you can use pip. Pre-built module is available for `64-bit Linux,
+Windows, MacOS-Intel, and MacOS-ARM`, for Python `3.7, 3.8, 3.9, and 3.10`.
+```
+python -m pip install pacparser
+python -m pip install pacparser==1.3.8.dev15 (specific version)
+```
+
+For other pre-built binaries, download them from the project's [releases](
+  https://github.com/manugarg/pacparser/releases) page.
+  
+You can also download the latest binaries from the [Github actions](
+  https://github.com/manugarg/pacparser/actions) artifcacts.
+
+See [INSTALL](https://github.com/manugarg/pacparser/blob/master/INSTALL) for how
+to compile pacparser from the source.
 
 ### How to use it?
 Pacparser comes as a shared library (`libpacparser.so` on Linux, `libpacparser.dylib`
