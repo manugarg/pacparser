@@ -9,6 +9,11 @@ function FindProxyForURL(url, host) {
       !localHostOrDomainIs(host, "www.manugarg.com"))
     return "plainhost/.manugarg.com";
 
+  // Test single quote handling in URL.
+  if (/.*%27.*/.test(url)) {
+    return "URLHasQuotes";
+  }
+
   // Return externaldomain if host matches .*\.externaldomain\.com
   if (/.*\.externaldomain\.com/.test(host))
     return "externaldomain";

@@ -3,6 +3,7 @@
 -c 0.0.0.0 -u http://www.google.co.in|END-OF-SCRIPT
 -u http://host1|plainhost/.manugarg.com
 -u http://www1.manugarg.com|plainhost/.manugarg.com
+-u http://www.manugarg.org/test'o'rama|URLHasQuotes
 -u http://manugarg.externaldomain.com|externaldomain
 -u http://www.google.com|isResolvable	 # INTERNET_REQUIRED
 -u http://www.notresolvabledomainXXX.com|isNotResolvable
