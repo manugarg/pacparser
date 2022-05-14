@@ -26,10 +26,20 @@ import os
 import sys
 
 def runtests(pacfile, testdata, tests_dir):
-  py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
+  ver = '.'.join([str(x) for x in sys.version_info[0:2]])
+  py_ver = [ver, ver.replace('.', '')]
   try:
-    pacparser_module_path = glob.glob(os.path.join(
-      tests_dir, '..', 'src', 'pymod', 'build', 'lib*%s' % py_ver))[0]
+    module_path = glob.glob(os.path.join(
+      tests_dir, '..', 'src', 'pymod', 'build', 'lib*'))
+    module_found = False
+    for module in module_path:
+      for version in py_ver:
+        if module.endswith(version):
+          module_found = True
+          break
+      if module_found:
+        pacparser_module_path = module
+        break
   except Exception:
     raise Exception('Tests failed. Could not determine pacparser path.')
   if 'DEBUG' in os.environ: print('Pacparser module path: %s' %
