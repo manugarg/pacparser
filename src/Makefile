@@ -60,14 +60,14 @@ ifeq ($(OS_ARCH),Darwin)
 endif
 
 PREFIX ?= /usr
-CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
+MAINT_CFLAGS := -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
 
 ifndef PYTHON
   PYTHON = python
 endif
 
 # Spidermonkey library.
-CFLAGS += -Ispidermonkey/js/src
+MAINT_CFLAGS += -Ispidermonkey/js/src
 
 LIBRARY_LINK = $(LIBRARY_NAME).$(SO_SUFFIX)
 PREFIX := $(DESTDIR)$(PREFIX)
@@ -87,17 +87,17 @@ spidermonkey/libjs.a: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jslib
 
 pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
-	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
+	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
 $(LIBRARY): pacparser.o spidermonkey/libjs.a
-	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o spidermonkey/libjs.a -lm
+	$(MKSHLIB) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o spidermonkey/libjs.a -lm
 
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
 pactester: pactester.c pacparser.h pacparser.o spidermonkey/libjs.a
-	$(CC) $(CFLAGS) $(LDFLAGS) pactester.c pacparser.o spidermonkey/libjs.a -o pactester -lm -L. -I.
+	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) pactester.c pacparser.o spidermonkey/libjs.a -o pactester -lm -L. -I.
 
 testpactester: pactester $(LIBRARY_LINK)
 	echo "Running tests for pactester."
