@@ -74,6 +74,7 @@ PREFIX := $(DESTDIR)$(PREFIX)
 LIB_PREFIX = $(PREFIX)/lib
 INC_PREFIX = $(PREFIX)/include
 BIN_PREFIX = $(PREFIX)/bin
+DOC_PREFIX = $(PREFIX)/share/doc/pacparser
 MAN_PREFIX = $(PREFIX)/share/man
 
 .PHONY: clean pymod install-pymod
@@ -119,11 +120,11 @@ install: all
 	install -d $(MAN_PREFIX)/man3/
 	(test -d ../docs && install -m 644 ../docs/man/man3/*.3 $(MAN_PREFIX)/man3/) || true
 	# install html docs
-	install -d $(PREFIX)/share/doc/pacparser/html/
-	(test -d ../docs/html && install -m 644 ../docs/html/* $(PREFIX)/share/doc/pacparser/html/) || true
+	install -d $(DOC_PREFIX)/html/
+	(test -d ../docs/html && install -m 644 ../docs/html/* $(DOC_PREFIX)/html/) || true
 	# install examples
-	install -d $(PREFIX)/share/doc/pacparser/examples/
-	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc//pacparser/examples/) || true
+	install -d $(DOC_PREFIX)/examples/
+	(test -d ../examples && install -m 644 ../examples/* $(DOC_PREFIX)/examples/) || true
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h spidermonkey/libjs.a
