@@ -44,8 +44,19 @@ def setup_dir():
 
 def module_path():
   py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
-  return glob.glob(os.path.join(setup_dir(), 'build', 'lib*%s' % py_ver))[0]
+  print('Python version: %s' % py_ver)
+  
+  builddir = os.path.join(setup_dir(), 'build')
+  print('Build dir: %s' % builddir)
+  print(os.listdir(builddir))
+  
+  path = glob.glob(os.path.join(builddir, 'lib*%s*' % py_ver))
+  if len(path) != 0:
+    return path[0]
 
+  # Newer python versions sometimes use dot-less notation for python version.
+  path = glob.glob(os.path.join(builddir, 'lib*%s*' % py_ver.replace('.', '')))
+  return path[0]
 
 def sanitize_version(ver):
   ver = ver.strip()
