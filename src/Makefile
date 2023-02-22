@@ -60,20 +60,21 @@ ifeq ($(OS_ARCH),Darwin)
 endif
 
 PREFIX ?= /usr
-CFLAGS = -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
+MAINT_CFLAGS := -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
 
 ifndef PYTHON
   PYTHON = python
 endif
 
 # Spidermonkey library.
-CFLAGS += -Ispidermonkey/js/src
+MAINT_CFLAGS += -Ispidermonkey/js/src
 
 LIBRARY_LINK = $(LIBRARY_NAME).$(SO_SUFFIX)
 PREFIX := $(DESTDIR)$(PREFIX)
 LIB_PREFIX = $(PREFIX)/lib
 INC_PREFIX = $(PREFIX)/include
 BIN_PREFIX = $(PREFIX)/bin
+DOC_PREFIX = $(PREFIX)/share/doc/pacparser
 MAN_PREFIX = $(PREFIX)/share/man
 
 .PHONY: clean pymod install-pymod
@@ -87,17 +88,17 @@ spidermonkey/libjs.a: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jslib
 
 pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
-	$(CC) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
+	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
 $(LIBRARY): pacparser.o spidermonkey/libjs.a
-	$(MKSHLIB) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o spidermonkey/libjs.a -lm
+	$(MKSHLIB) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o spidermonkey/libjs.a -lm
 
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
 pactester: pactester.c pacparser.h pacparser.o spidermonkey/libjs.a
-	$(CC) $(CFLAGS) $(LDFLAGS) pactester.c pacparser.o spidermonkey/libjs.a -o pactester -lm -L. -I.
+	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) pactester.c pacparser.o spidermonkey/libjs.a -o pactester -lm -L. -I.
 
 testpactester: pactester $(LIBRARY_LINK)
 	echo "Running tests for pactester."
@@ -119,11 +120,11 @@ install: all
 	install -d $(MAN_PREFIX)/man3/
 	(test -d ../docs && install -m 644 ../docs/man/man3/*.3 $(MAN_PREFIX)/man3/) || true
 	# install html docs
-	install -d $(PREFIX)/share/doc/pacparser/html/
-	(test -d ../docs/html && install -m 644 ../docs/html/* $(PREFIX)/share/doc/pacparser/html/) || true
+	install -d $(DOC_PREFIX)/html/
+	(test -d ../docs/html && install -m 644 ../docs/html/* $(DOC_PREFIX)/html/) || true
 	# install examples
-	install -d $(PREFIX)/share/doc/pacparser/examples/
-	(test -d ../examples && install -m 644 ../examples/* $(PREFIX)/share/doc//pacparser/examples/) || true
+	install -d $(DOC_PREFIX)/examples/
+	(test -d ../examples && install -m 644 ../examples/* $(DOC_PREFIX)/examples/) || true
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h spidermonkey/libjs.a
