@@ -62,7 +62,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.7', '3.8', '3.9', '3.10']
+        python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -157,7 +157,7 @@ jobs:
         cp src/spidermonkey/libjs.a src/pacparser.o src/pacparser.h src/pymod
         cd src/pymod && python -m cibuildwheel --output-dir dist
       env:
-        CIBW_BUILD: "cp{37,38,39,310}-manylinux*64"
+        CIBW_BUILD: "cp{37,38,39,310,311}-manylinux*64"
         CIBW_ENVIRONMENT: "PACPARSER_VERSION=${{ env.PACPARSER_VERSION }}"
         
     - uses: dorny/paths-filter@v2
