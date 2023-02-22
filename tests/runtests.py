@@ -25,11 +25,18 @@ import glob
 import os
 import sys
 
+def module_path():
+  py_ver = '*'.join([str(x) for x in sys.version_info[0:2]])
+  
+  builddir = os.path.join(tests_dir, '..', 'src', 'pymod', 'build')
+  print('Build dir: %s', builddir)
+  print(os.listdir(builddir))
+  
+  return glob.glob(os.path.join(builddir, 'lib*%s' % py_ver))[0]
+  
 def runtests(pacfile, testdata, tests_dir):
-  py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
   try:
-    pacparser_module_path = glob.glob(os.path.join(
-      tests_dir, '..', 'src', 'pymod', 'build', 'lib*%s' % py_ver))[0]
+    pacparser_module_path = module_path()
   except Exception:
     raise Exception('Tests failed. Could not determine pacparser path.')
   if 'DEBUG' in os.environ: print('Pacparser module path: %s' %
