@@ -89,11 +89,15 @@ read_file_into_str(const char *filename)
   if (!(file_size=ftell(fptr))) goto error2;
   if ((fseek(fptr, 0L, SEEK_SET) != 0)) goto error2;
   if (!(str = (char*) malloc(file_size+1))) goto error2;
-  if (!(records_read=fread(str, 1, file_size, fptr))) {
+
+  // Read the file into the string
+  size_t bytes_read = fread(str, 1, file_size, fptr);
+  if (bytes_read != file_size) {
     free(str);
     goto error2;
   }
-  str[records_read] = '\0';
+
+  str[file_size] = '\0';
   fclose(fptr);
   return str;
 error2:
