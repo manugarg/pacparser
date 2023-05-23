@@ -28,3 +28,9 @@ src/pactester
 
 # OS specific files
 .DS_Store
+
+# build
+**build
+
+# Sonar scanner
+.scannerwork
