@@ -162,7 +162,7 @@ int main(int argc, char* argv[])
         fprintf(stderr, "Input file is too big. Maximum allowed size is: %d",
                 PACMAX);
         free(script);
-        return 1;
+        exit(1);
       }
       script = realloc(script, script_size);
       if (script == NULL) {
@@ -184,7 +184,7 @@ int main(int argc, char* argv[])
               script);
       free(script);
       pacparser_cleanup();
-      return 1;
+      exit(1);
     }
     free(script);
   }
@@ -193,7 +193,7 @@ int main(int argc, char* argv[])
       fprintf(stderr, "pactester.c: Could not parse the pac file: %s\n",
               pacfile);
       pacparser_cleanup();
-      return 1;
+      exit(1);
     }
   }
 
@@ -201,7 +201,7 @@ int main(int argc, char* argv[])
     if (!pacparser_setmyip(client_ip)) {
       fprintf(stderr, "pactester.c: Error setting client IP\n");
       pacparser_cleanup();
-      return 1;
+      exit(1);
     }
 
   char *proxy;
@@ -219,7 +219,7 @@ int main(int argc, char* argv[])
       fprintf(stderr, "pactester.c: %s %s.\n",
               "Problem in finding proxy for", url);
       pacparser_cleanup();
-      return 1;
+      exit(1);
     }
     printf("%s\n", proxy);
   }
@@ -230,7 +230,7 @@ int main(int argc, char* argv[])
     if (!(fp = fopen(urlslist, "r"))) {
       fprintf(stderr, "pactester.c: Could not open urlslist: %s", urlslist);
       pacparser_cleanup();
-      return 1;
+      exit(1);
     }
     while (fgets(line, sizeof(line), fp)) {
       char *url = line;
@@ -254,9 +254,8 @@ int main(int argc, char* argv[])
       if (proxy == NULL) {
         fprintf(stderr, "pactester.c: %s %s.\n",
                 "Problem in finding proxy for", url);
-        fclose(stderr);
         pacparser_cleanup();
-        return 1;
+        exit(1);
       }
       if (proxy)
         printf("%s : %s\n", url, proxy);
