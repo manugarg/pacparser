@@ -452,6 +452,7 @@ pacparser_find_proxy(const char *url, const char *host)
   if (strchr(host, '\'')) {
     print_error("%s %s\n", error_prefix,
       "Invalid hostname: hostname can't have single quotes.");
+    free(sanitized_url);
     return NULL;
   }
 

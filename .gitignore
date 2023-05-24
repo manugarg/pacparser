@@ -34,3 +34,8 @@ src/pactester
 
 # Sonar scanner
 .scannerwork
+
+#  .json config
+*.json
+pactester
+info.plist
