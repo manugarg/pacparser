@@ -32,7 +32,7 @@
 #define LINEMAX 4096  // Max length of any line read from text files (4 KiB)
 #define PACMAX (1024 * 1024)  // Max size of the PAC script (1 MiB)
 
-void usage(const char *progname)
+__attribute__((noreturn)) void usage(const char *progname)
 {
   fprintf(stderr, "\nUsage:  %s <-p pacfile> <-u url> [-h host] "
           "[-c client_ip] [-e]", progname);
@@ -66,14 +66,15 @@ char *get_host_from_url(const char *url)
   if (p[0] == '\0'||                    // We reached end without hitting :
       p[1] != '/' || p[2] != '/'        // Next two characters are not //
       ) {
-    fprintf(stderr, "pactester.c: Not a proper URL\n");
     free(q);
+    fprintf(stderr, "pactester.c: Not a proper URL\n");
     return NULL;
   }
   p = p + 3;                            // Get past '://'
   // Host part starts from here.
   char *host = p;
   if (*p == '\0' || *p == '/' || *p == ':') {   // If host part is null.
+    free(q);
     fprintf(stderr, "pactester.c: Not a proper URL\n");
     return NULL;
   }
@@ -253,8 +254,8 @@ int main(int argc, char* argv[])
       if (proxy == NULL) {
         fprintf(stderr, "pactester.c: %s %s.\n",
                 "Problem in finding proxy for", url);
+        fclose(stderr);
         pacparser_cleanup();
-        free(proxy);
         return 1;
       }
       if (proxy)
