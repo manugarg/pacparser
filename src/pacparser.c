@@ -41,6 +41,12 @@
 
 #define MAX_IP_RESULTS 10
 
+#ifdef __GNUC__
+#  define UNUSED(x) UNUSED_ ## x __attribute__((__unused__))
+#else
+#  define UNUSED(x) UNUSED_ ## x
+#endif
+
 static char *myip = NULL;
 
 // Default error printer function.
@@ -128,7 +134,6 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results,
 {
   struct addrinfo hints;
   struct addrinfo *result;
-  struct addrinfo *ai;
   char ipaddr[INET6_ADDRSTRLEN];
   int error;
 
@@ -149,7 +154,7 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results,
   error = getaddrinfo(hostname, NULL, &hints, &result);
   if (error) return error;
   int i = 0;
-  for(ai = result; ai != NULL && i < max_results; ai = ai->ai_next, i++) {
+  for(struct addrinfo *ai = result; ai != NULL && i < max_results; ai = ai->ai_next, i++) {
     getnameinfo(ai->ai_addr, ai->ai_addrlen, ipaddr, sizeof(ipaddr), NULL, 0,
                 NI_NUMERICHOST);
     if (ipaddr_list[0] == '\0') sprintf(ipaddr_list, "%s", ipaddr);
@@ -165,7 +170,7 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results,
 // dnsResolve in JS context; not available in core JavaScript.
 // returns javascript null if not able to resolve.
 static JSBool                                  // JS_TRUE or JS_FALSE
-dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+dns_resolve(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv, jsval *rval)
 {
   char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
   char* out;
@@ -187,7 +192,7 @@ dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 // dnsResolveEx in JS context; not available in core JavaScript.
 // returns javascript null if not able to resolve.
 static JSBool                                  // JS_TRUE or JS_FALSE
-dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
+dns_resolve_ex(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv,
                jsval *rval)
 {
   char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
@@ -208,7 +213,7 @@ dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
 // myIpAddress in JS context; not available in core JavaScript.
 // returns 127.0.0.1 if not able to determine local ip.
 static JSBool                                  // JS_TRUE or JS_FALSE
-my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+my_ip(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv, jsval *rval)
 {
   char ipaddr[INET6_ADDRSTRLEN];
   char* out;
@@ -233,7 +238,7 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 // myIpAddressEx in JS context; not available in core JavaScript.
 // returns 127.0.0.1 if not able to determine local ip.
 static JSBool                                  // JS_TRUE or JS_FALSE
-my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+my_ip_ex(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv, jsval *rval)
 {
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS];
   char* out;
@@ -311,22 +316,22 @@ pacparser_init()
   }
   JS_SetErrorReporter(cx, print_jserror);
   // Export our functions to Javascript engine
-  if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve, 1, 0)) {
+  if (!JS_DefineFunction(cx, global, "dnsResolve", &dns_resolve, 1, 0)) {
     print_error("%s %s\n", error_prefix,
 		  "Could not define dnsResolve in JS context.");
     return 0;
   }
-  if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0)) {
+  if (!JS_DefineFunction(cx, global, "myIpAddress", &my_ip, 0, 0)) {
     print_error("%s %s\n", error_prefix,
 		  "Could not define myIpAddress in JS context.");
     return 0;
   }
-  if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0)) {
+  if (!JS_DefineFunction(cx, global, "dnsResolveEx", &dns_resolve_ex, 1, 0)) {
     print_error("%s %s\n", error_prefix,
       "Could not define dnsResolveEx in JS context.");
     return 0;
   }
-  if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0)) {
+  if (!JS_DefineFunction(cx, global, "myIpAddressEx", &my_ip_ex, 0, 0)) {
     print_error("%s %s\n", error_prefix,
 		  "Could not define myIpAddressEx in JS context.");
     return 0;
