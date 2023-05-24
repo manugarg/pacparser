@@ -41,6 +41,12 @@
 
 #define MAX_IP_RESULTS 10
 
+#ifdef __GNUC__
+#  define UNUSED(x) UNUSED_ ## x __attribute__((__unused__))
+#else
+#  define UNUSED(x) UNUSED_ ## x
+#endif
+
 static char *myip = NULL;
 
 // Default error printer function.
@@ -128,7 +134,6 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results,
 {
   struct addrinfo hints;
   struct addrinfo *result;
-  struct addrinfo *ai;
   char ipaddr[INET6_ADDRSTRLEN];
   int error;
 
@@ -149,7 +154,7 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results,
   error = getaddrinfo(hostname, NULL, &hints, &result);
   if (error) return error;
   int i = 0;
-  for(ai = result; ai != NULL && i < max_results; ai = ai->ai_next, i++) {
+  for(struct addrinfo *ai = result; ai != NULL && i < max_results; ai = ai->ai_next, i++) {
     getnameinfo(ai->ai_addr, ai->ai_addrlen, ipaddr, sizeof(ipaddr), NULL, 0,
                 NI_NUMERICHOST);
     if (ipaddr_list[0] == '\0') sprintf(ipaddr_list, "%s", ipaddr);
@@ -165,9 +170,9 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results,
 // dnsResolve in JS context; not available in core JavaScript.
 // returns javascript null if not able to resolve.
 static JSBool                                  // JS_TRUE or JS_FALSE
-dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+dns_resolve(JSContext *cx, JSObject *UNUSED(obj), uintN UNUSED(n), jsval *argv, jsval *rval)
 {
-  char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
+  char const* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
   char* out;
   char ipaddr[INET6_ADDRSTRLEN] = "";
 
@@ -187,10 +192,9 @@ dns_resolve(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 // dnsResolveEx in JS context; not available in core JavaScript.
 // returns javascript null if not able to resolve.
 static JSBool                                  // JS_TRUE or JS_FALSE
-dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-               jsval *rval)
+dns_resolve_ex(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(n), jsval *argv, jsval *rval)
 {
-  char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
+  char const* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
   char* out;
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS] = "";
 
@@ -208,7 +212,7 @@ dns_resolve_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
 // myIpAddress in JS context; not available in core JavaScript.
 // returns 127.0.0.1 if not able to determine local ip.
 static JSBool                                  // JS_TRUE or JS_FALSE
-my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+my_ip(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(n), jsval *UNUSED(val), jsval *rval)
 {
   char ipaddr[INET6_ADDRSTRLEN];
   char* out;
@@ -233,7 +237,7 @@ my_ip(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
 // myIpAddressEx in JS context; not available in core JavaScript.
 // returns 127.0.0.1 if not able to determine local ip.
 static JSBool                                  // JS_TRUE or JS_FALSE
-my_ip_ex(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+my_ip_ex(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(n), jsval *UNUSED(v), jsval *rval)
 {
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS];
   char* out;
@@ -309,24 +313,24 @@ pacparser_init()
 		  "runtime.");
     return 0;
   }
-  JS_SetErrorReporter(cx, print_jserror);
+  JS_SetErrorReporter(cx, &print_jserror);
   // Export our functions to Javascript engine
-  if (!JS_DefineFunction(cx, global, "dnsResolve", dns_resolve, 1, 0)) {
+  if (!JS_DefineFunction(cx, global, "dnsResolve", &dns_resolve, 1, 0)) {
     print_error("%s %s\n", error_prefix,
 		  "Could not define dnsResolve in JS context.");
     return 0;
   }
-  if (!JS_DefineFunction(cx, global, "myIpAddress", my_ip, 0, 0)) {
+  if (!JS_DefineFunction(cx, global, "myIpAddress", &my_ip, 0, 0)) {
     print_error("%s %s\n", error_prefix,
 		  "Could not define myIpAddress in JS context.");
     return 0;
   }
-  if (!JS_DefineFunction(cx, global, "dnsResolveEx", dns_resolve_ex, 1, 0)) {
+  if (!JS_DefineFunction(cx, global, "dnsResolveEx", &dns_resolve_ex, 1, 0)) {
     print_error("%s %s\n", error_prefix,
       "Could not define dnsResolveEx in JS context.");
     return 0;
   }
-  if (!JS_DefineFunction(cx, global, "myIpAddressEx", my_ip_ex, 0, 0)) {
+  if (!JS_DefineFunction(cx, global, "myIpAddressEx", &my_ip_ex, 0, 0)) {
     print_error("%s %s\n", error_prefix,
 		  "Could not define myIpAddressEx in JS context.");
     return 0;
@@ -335,7 +339,7 @@ pacparser_init()
   if (!JS_EvaluateScript(cx,           // JS engine context
                          global,       // global object
                          pacUtils,     // this is defined in pac_utils.h
-                         strlen(pacUtils),
+                         (uintN) strlen(pacUtils),
                          NULL,         // filename (NULL in this case)
                          1,            // line number, used for reporting.
                          &rval)) {
@@ -363,7 +367,7 @@ pacparser_parse_pac_string(const char *script)
   if (!JS_EvaluateScript(cx,
                          global,
                          script,       // Script read from pacfile
-                         strlen(script),
+                         (uintN) strlen(script),
                          "PAC script",
                          1,
                          &rval)) {     // If script evaluation failed
@@ -439,7 +443,7 @@ pacparser_find_proxy(const char *url, const char *host)
   // Test if findProxyForURL is defined.
   script = "typeof(findProxyForURL);";
   if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
-  JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
+  JS_EvaluateScript(cx, global, script, (uintN)strlen(script), NULL, 1, &rval);
   if (strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0) {
     print_error("%s %s\n", error_prefix,
 		  "Javascript function findProxyForURL not defined.");
@@ -464,7 +468,7 @@ pacparser_find_proxy(const char *url, const char *host)
   strcat(script, host);
   strcat(script, "')");
   if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
-  if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval)) {
+  if (!JS_EvaluateScript(cx, global, script, (uintN)strlen(script), NULL, 1, &rval)) {
     print_error("%s %s\n", error_prefix, "Problem in executing findProxyForURL.");
     free(sanitized_url);
     free(script);

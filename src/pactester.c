@@ -1,4 +1,4 @@
-// Copyright (C) 2008 Manu Garg.
+// Copyright (C) 2008-2023 Manu Garg.
 // Author: Manu Garg <manugarg@gmail.com>
 //
 // This file implements pactester using pacparser.
@@ -229,7 +229,7 @@ int main(int argc, char* argv[])
       exit(1);
     }
     while (fgets(line, sizeof(line), fp)) {
-      char *url = line;
+      url = line;
       // Remove spaces from the beginning.
       while (*url == ' ' || *url == '\t')
         url++;
