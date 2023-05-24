@@ -26,6 +26,9 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
 // USA
 
+#include <string.h>
+#include <stdlib.h>
+
 static const char *pacUtils =
 "function dnsDomainIs(host, domain) {\n"
 "    return (host.length >= domain.length &&\n"
@@ -335,22 +338,37 @@ static const char *pacUtils =
 
 
 // You must free the result if result is non-NULL.
-char *str_replace(const char *orig, char *rep, char *with) {
-    char *result;  // the return string
-    char *ins;     // the next insert point
-    char *tmp;     // varies
-    int count;     // number of replacements
-    int len_front; // distance between rep and end of last rep
-    int len_rep  = strlen(rep);
-    int len_with = strlen(with);
-
-    // Get the count of replacements
-    ins = orig;
-    for (count = 0; (tmp = strstr(ins, rep)); ++count) {
-        ins = tmp + len_rep;
+char *str_replace(const char *orig, const char *rep, const char *with) {
+    if (orig == NULL || rep == NULL || with == NULL) {
+        return NULL;
     }
 
-    tmp = result = malloc(strlen(orig) + (len_with - len_rep) * count + 1);
+    size_t len_orig  = strnlen(orig, 1024);
+    size_t len_rep  = strnlen(rep, 1024);
+    size_t len_with = strnlen(with, 1024);
+
+    if (len_orig == 0 || len_rep == 0) {
+        char *result = malloc(len_orig + 1);
+        strcpy(result, orig);
+        return result;
+    }
+
+    // Count replacements needed
+    int count;           // number of replacements
+    char const *start = orig;
+    // Cursor moves through the string, looking for rep.
+    char const *cursor;
+    for (count = 0;; ++count) {
+        cursor = strstr(start, rep);
+        if (cursor == NULL) {
+            break;
+        }
+        start = cursor + len_rep;
+    }
+
+    char *tmp;
+    char *result;
+    tmp = result = malloc(len_orig + (len_with - len_rep) * count + 1);
 
     // first time through the loop, all the variable are set correctly
     // from here on,
@@ -358,8 +376,10 @@ char *str_replace(const char *orig, char *rep, char *with) {
     //    ins points to the next occurrence of rep in orig
     //    orig points to the remainder of orig after "end of rep"
     while (count--) {
-        ins = strstr(orig, rep);
-        len_front = ins - orig;
+        const char *ins = strstr(orig, rep);
+        int len_front = (int)(ins - orig); // How far have we moved
+        // Into the tmp, copy everything until we reach the rep.
+        // and move tmp forward.
         tmp = strncpy(tmp, orig, len_front) + len_front;
         tmp = strcpy(tmp, with) + len_with;
         orig += len_front + len_rep; // move to next "end of rep"
