@@ -28,6 +28,13 @@
 #include <string.h>
 #include <stdlib.h>
 
+int strlength (const char* s) 
+{ 
+  const size_t n = 102400;
+  const char* found = memchr(s, '\0', n); 
+  return found ? (int)(found-s) : n; 
+}
+
 static const char *pacUtils =
 "function dnsDomainIs(host, domain) {\n"
 "    return (host.length >= domain.length &&\n"
@@ -338,15 +345,13 @@ static const char *pacUtils =
 
 // You must free the result if result is non-NULL.
 char *str_replace(const char *orig, const char *rep, const char *with) {
-    const int max_len = 1024;
-
     if (orig == NULL || rep == NULL || with == NULL) {
         return NULL;
     }
 
-    int len_orig  = (int)strnlen(orig, max_len);
-    int len_rep  = (int)strnlen(rep, max_len);
-    int len_with = (int)strnlen(with, max_len);
+    int len_orig  = strlength(orig);
+    int len_rep  = strlength(rep);
+    int len_with = strlength(with);
 
     if (len_orig == 0 || len_rep == 0) {
         char *result = malloc(len_orig + 1);
