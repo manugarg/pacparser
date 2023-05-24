@@ -338,16 +338,24 @@ static const char *pacUtils =
 
 // You must free the result if result is non-NULL.
 char *str_replace(const char *orig, const char *rep, const char *with) {
-    int count;           // number of replacements
-    int len_front;       // distance between rep and end of last rep
-    int len_rep  = (int)strlen(rep);
-    int len_with = (int)strlen(with);
+    const int max_len = 1024;
 
-    if (strlen(orig) == 0 || strlen(rep) == 0) {
+    if (orig == NULL || rep == NULL || with == NULL) {
+        return NULL;
+    }
+
+    int len_orig  = (int)strnlen(orig, max_len);
+    int len_rep  = (int)strnlen(rep, max_len);
+    int len_with = (int)strnlen(with, max_len);
+
+    if (len_orig == 0 || len_rep == 0) {
         char *result = malloc(strlen(orig) + 1);
         strcpy(result, orig);
         return result;
     }
+
+    int count;           // number of replacements
+    int len_front;       // distance between rep and end of last rep
 
     // Get the count of replacements
     char const *start = orig;
