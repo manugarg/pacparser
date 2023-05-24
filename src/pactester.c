@@ -59,6 +59,7 @@ char *get_host_from_url(const char *url)
 {
   // copy  url to a  pointer that we'll use to seek through the string.
   char *p = strdup(url);
+  char *q = p;
   // Move to :
   while (*p != ':' && *p != '\0')
     p++;
@@ -66,6 +67,7 @@ char *get_host_from_url(const char *url)
       p[1] != '/' || p[2] != '/'        // Next two characters are not //
       ) {
     fprintf(stderr, "pactester.c: Not a proper URL\n");
+    free(q);
     return NULL;
   }
   p = p + 3;                            // Get past '://'
@@ -252,6 +254,7 @@ int main(int argc, char* argv[])
         fprintf(stderr, "pactester.c: %s %s.\n",
                 "Problem in finding proxy for", url);
         pacparser_cleanup();
+        free(proxy);
         return 1;
       }
       if (proxy)
