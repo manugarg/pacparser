@@ -156,19 +156,16 @@ int main(int argc, char* argv[])
     while (fgets(buffer, LINEMAX, stdin)) {
       if (strlen(buffer) == 0)
         break;
-      char *old = script;
       script_size += strlen(buffer);
       if (script_size > PACMAX) {
         fprintf(stderr, "Input file is too big. Maximum allowed size is: %d",
                 PACMAX);
-        free(script);
         exit(1);
       }
       script = realloc(script, script_size);
       if (script == NULL) {
         perror("pactester.c: Failed to allocate the memory for the script");
-        free(old);
-        return 1;
+        exit(1);
       }
       strcat(script, buffer);
     }
@@ -182,7 +179,6 @@ int main(int argc, char* argv[])
     if (!pacparser_parse_pac_string(script)) {
       fprintf(stderr, "pactester.c: Could not parse the pac script: %s\n",
               script);
-      free(script);
       pacparser_cleanup();
       exit(1);
     }
@@ -197,12 +193,11 @@ int main(int argc, char* argv[])
     }
   }
 
-  if (client_ip)
-    if (!pacparser_setmyip(client_ip)) {
-      fprintf(stderr, "pactester.c: Error setting client IP\n");
-      pacparser_cleanup();
-      exit(1);
-    }
+  if (client_ip && !pacparser_setmyip(client_ip)) {
+    fprintf(stderr, "pactester.c: Error setting client IP\n");
+    pacparser_cleanup();
+    exit(1);
+  }
 
   char *proxy;
 
@@ -212,7 +207,7 @@ int main(int argc, char* argv[])
     // function will print a proper error message in that case).
     host = host ? host: get_host_from_url(url);
     if (!host) {
-      return 1;
+      exit(1);
     }
     proxy = pacparser_find_proxy(url, host);
     if (proxy == NULL) {
@@ -222,9 +217,10 @@ int main(int argc, char* argv[])
       exit(1);
     }
     printf("%s\n", proxy);
+    exit(0);
   }
 
-  else if (urlslist) {
+  if (urlslist) {
     char line[LINEMAX];
     FILE *fp;
     if (!(fp = fopen(urlslist, "r"))) {
@@ -261,6 +257,7 @@ int main(int argc, char* argv[])
         printf("%s : %s\n", url, proxy);
     }
     fclose(fp);
+    exit(0);
   }
 
   pacparser_cleanup();
