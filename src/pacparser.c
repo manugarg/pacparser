@@ -80,15 +80,16 @@ _debug(void) {
 static char *                      // File content in string or NULL if failed.
 read_file_into_str(const char *filename)
 {
-  char *str;
-  int file_size;
-  FILE *fptr;
-  int records_read;
-  if (!(fptr = fopen(filename, "r"))) goto error1;
-  if ((fseek(fptr, 0L, SEEK_END) != 0)) goto error2;
-  if (!(file_size=ftell(fptr))) goto error2;
-  if ((fseek(fptr, 0L, SEEK_SET) != 0)) goto error2;
-  if (!(str = (char*) malloc(file_size+1))) goto error2;
+  FILE *fptr = fopen(filename, "r");
+  if (fptr == NULL) return NULL;
+
+  if (fseek(fptr, 0L, SEEK_END) != 0) goto error2;
+  long file_size=ftell(fptr);
+  if (file_size == -1) goto error2;
+  if (fseek(fptr, 0L, SEEK_SET) != 0) goto error2;
+
+  char *str = (char*) malloc(file_size+1);
+  if (str == NULL) goto error2;
 
   // Read the file into the string
   size_t bytes_read = fread(str, 1, file_size, fptr);
@@ -102,7 +103,6 @@ read_file_into_str(const char *filename)
   return str;
 error2:
   fclose(fptr);
-error1:
   return NULL;
 }
 
