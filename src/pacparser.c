@@ -97,8 +97,10 @@ read_file_into_str(const char *filename)
     free(str);
     goto error2;
   }
-
-  str[file_size] = '\0';
+ 
+  if (bytes_read >= 0 && bytes_read < file_size+1) {
+    str[bytes_read] = '\0';
+  }
   fclose(fptr);
   return str;
 error2:
