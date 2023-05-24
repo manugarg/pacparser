@@ -338,7 +338,7 @@ static const char *pacUtils =
 
 
 // You must free the result if result is non-NULL.
-char *str_replace(const char *orig, const char *rep, char *with) {
+char *str_replace(const char *orig, const char *rep, const char *with) {
     if (orig == NULL || rep == NULL || with == NULL) {
         return NULL;
     }
