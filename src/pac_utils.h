@@ -349,7 +349,7 @@ char *str_replace(const char *orig, const char *rep, const char *with) {
     int len_with = (int)strnlen(with, max_len);
 
     if (len_orig == 0 || len_rep == 0) {
-        char *result = malloc(strlen(orig) + 1);
+        char *result = malloc(len_orig + 1);
         strcpy(result, orig);
         return result;
     }
@@ -371,7 +371,7 @@ char *str_replace(const char *orig, const char *rep, const char *with) {
 
     char *tmp;
     char *result;
-    tmp = result = malloc(strlen(orig) + (len_with - len_rep) * count + 1);
+    tmp = result = malloc(len_orig + (len_with - len_rep) * count + 1);
 
     // first time through the loop, all the variable are set correctly
     // from here on,

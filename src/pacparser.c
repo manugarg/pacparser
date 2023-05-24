@@ -40,6 +40,7 @@
 #include "pacparser.h"
 
 #define MAX_IP_RESULTS 10
+#define MAX_STR_LEN 102400
 
 #ifdef __GNUC__
 #  define UNUSED(x) UNUSED_ ## x __attribute__((__unused__))
@@ -339,7 +340,7 @@ pacparser_init()
   if (!JS_EvaluateScript(cx,           // JS engine context
                          global,       // global object
                          pacUtils,     // this is defined in pac_utils.h
-                         (uintN) strlen(pacUtils),
+                         (uintN) strnlen(pacUtils, MAX_STR_LEN),
                          NULL,         // filename (NULL in this case)
                          1,            // line number, used for reporting.
                          &rval)) {
@@ -367,7 +368,7 @@ pacparser_parse_pac_string(const char *script)
   if (!JS_EvaluateScript(cx,
                          global,
                          script,       // Script read from pacfile
-                         (uintN) strlen(script),
+                         (uintN) strnlen(script, MAX_STR_LEN),
                          "PAC script",
                          1,
                          &rval)) {     // If script evaluation failed
@@ -440,10 +441,11 @@ pacparser_find_proxy(const char *url, const char *host)
     print_error("%s %s\n", error_prefix, "Pac parser is not initialized.");
     return NULL;
   }
+
   // Test if findProxyForURL is defined.
   script = "typeof(findProxyForURL);";
   if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
-  JS_EvaluateScript(cx, global, script, (uintN)strlen(script), NULL, 1, &rval);
+  JS_EvaluateScript(cx, global, script, (uintN)strnlen(script, MAX_STR_LEN), NULL, 1, &rval);
   if (strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0) {
     print_error("%s %s\n", error_prefix,
 		  "Javascript function findProxyForURL not defined.");
@@ -468,7 +470,7 @@ pacparser_find_proxy(const char *url, const char *host)
   strcat(script, host);
   strcat(script, "')");
   if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
-  if (!JS_EvaluateScript(cx, global, script, (uintN)strlen(script), NULL, 1, &rval)) {
+  if (!JS_EvaluateScript(cx, global, script, (uintN)strnlen(script, MAX_STR_LEN), NULL, 1, &rval)) {
     print_error("%s %s\n", error_prefix, "Problem in executing findProxyForURL.");
     free(sanitized_url);
     free(script);
