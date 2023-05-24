@@ -98,6 +98,9 @@ read_file_into_str(const char *filename)
     goto error2;
   }
  
+  // This check should not be needed but adding this satisfies
+  // sonarlint static analysis, otherwise it complains about tainted
+  // index.
   if (bytes_read >= 0 && bytes_read < file_size+1) {
     str[bytes_read] = '\0';
   }
