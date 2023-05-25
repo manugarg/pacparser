@@ -87,11 +87,7 @@ jsapi_buildstamp: spidermonkey/js/src
 spidermonkey/libjs.a: spidermonkey/js/src
 	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jslib
 
-pac_utils_test: pac_utils_test.c pac_utils.h
-	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(SHFLAGS) pac_utils_test.c -o pac_utils_test -lm -L. -I.
-
-pacparser.o: pacparser.c pac_utils.h pacparser.h pac_utils_test jsapi_buildstamp
-	./pac_utils_test
+pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
