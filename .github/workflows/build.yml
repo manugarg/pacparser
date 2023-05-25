@@ -47,16 +47,22 @@ jobs:
     - name: make non-windows dist
       if:  ${{ matrix.os != 'windows-latest' }}
       run: |
-        DESTDIR=dist PREFIX= make -C src install
-        ls -R src/dist
-        chmod a+rx src/dist/bin/*
+        DESTDIR=pacparser-${{ github.ref_name }}-${{ matrix.os }} PREFIX= make -C src dist
+        ls -R src/*.zip
 
     - name: make windows dist
       if:  ${{ matrix.os == 'windows-latest' }}
       run: |
         make -C src -f Makefile.win32 dist
 
-    - name: Upload dist
+    - name: Upload dist (non-windows)
+      if:  ${{ matrix.os != 'windows-latest' }}
+      uses: actions/upload-artifact@v2
+      with:
+        path: src/pacparser*.zip
+
+    - name: Upload dist (windows)
+      if:  ${{ matrix.os == 'windows-latest' }}
       uses: actions/upload-artifact@v2
       with:
         name: pacparser-${{ github.ref_name }}-${{ matrix.os }}-dist
