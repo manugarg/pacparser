@@ -20,8 +20,8 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        os: [ubuntu, windows, macos]
+    runs-on: ${{ matrix.os }}-latest
 
     steps:
       - uses: actions/checkout@v2
@@ -37,16 +37,16 @@ jobs:
           ref: ${{ github.event.inputs.tag }}
 
       - name: make non-windows
-        if: ${{ matrix.os != 'windows-latest' }}
+        if: ${{ matrix.os != 'windows' }}
         run: make -C src
 
       - name: make windows
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows' }}
         run: make -C src -f Makefile.win32
 
       - name: Get ref_name
         id: get_ref_name
-        if: ${{ matrix.os != 'windows-latest' }}
+        if: ${{ matrix.os != 'windows' }}
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "ref_name=${{ github.base_ref }}"
@@ -57,25 +57,25 @@ jobs:
           fi
 
       - name: make non-windows dist
-        if: ${{ matrix.os != 'windows-latest' }}
+        if: ${{ matrix.os != 'windows' }}
         run: |
           DIST_OS_SUFFIX=${{ matrix.os }} make -C src dist
           ls -R src/*.zip
 
       - name: make windows dist
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows' }}
         run: |
           make -C src -f Makefile.win32 dist
 
       - name: Upload dist (non-windows)
-        if: ${{ matrix.os != 'windows-latest' }}
+        if: ${{ matrix.os != 'windows' }}
         uses: actions/upload-artifact@v2
         with:
           name: pacparser-dist
           path: src/pacparser*.zip
 
       - name: Upload dist (windows)
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows' }}
         uses: actions/upload-artifact@v2
         with:
           name: pacparser-${{ matrix.os }}
@@ -84,9 +84,9 @@ jobs:
   python-module-build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu, windows, macos]
         python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}-latest
 
     steps:
       - uses: actions/checkout@v2
@@ -108,11 +108,11 @@ jobs:
           architecture: x64
 
       - name: make non-windows
-        if: ${{ matrix.os != 'windows-latest' }}
+        if: ${{ matrix.os != 'windows' }}
         run: make -C src pymod-dist
 
       - name: make windows
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows' }}
         run: make -C src -f Makefile.win32 pymod-dist
 
       - name: Upload dist
@@ -122,7 +122,7 @@ jobs:
           path: src/pymod/pacparser-python*
 
       - name: Build wheel non-linux
-        if: ${{ matrix.os != 'ubuntu-latest' }}
+        if: ${{ matrix.os != 'ubuntu' }}
         run: |
           python -m pip install wheel
           cd src/pymod && python setup.py bdist_wheel
@@ -135,7 +135,7 @@ jobs:
               - 'src/**'
 
       - name: Publish package to PyPI (non-linux)
-        if: ${{ (matrix.os != 'ubuntu-latest') && (steps.changes.outputs.src == 'true') && (github.event_name != 'pull_request') }}
+        if: ${{ (matrix.os != 'ubuntu') && (steps.changes.outputs.src == 'true') && (github.event_name != 'pull_request') }}
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI }}
@@ -145,7 +145,7 @@ jobs:
           twine upload src/pymod/dist/*
 
   build-linux-wheels:
-    runs-on: 'ubuntu-latest'
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
