@@ -238,7 +238,7 @@ my_ip(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv, jsval *r
 // myIpAddressEx in JS context; not available in core JavaScript.
 // returns 127.0.0.1 if not able to determine local ip.
 static JSBool                                  // JS_TRUE or JS_FALSE
-my_ip_ex(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv, jsval *rval)
+my_ip_ex(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *UNUSED(argv), jsval *rval)
 {
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS];
   char* out;
@@ -451,32 +451,14 @@ pacparser_find_proxy(const char *url, const char *host)
     return NULL;
   }
 
-  // URL-encode "'" as we use single quotes to stick the URL into a temporary script.
-  char *sanitized_url = str_replace(url, "'", "%27");
-  // Hostname shouldn't have single quotes in them
-  if (strchr(host, '\'')) {
-    print_error("%s %s\n", error_prefix,
-      "Invalid hostname: hostname can't have single quotes.");
-    free(sanitized_url);
-    return NULL;
-  }
-
-  script = (char*) malloc(32 + strlen(sanitized_url) + strlen(host));
-  script[0] = '\0';
-  strcat(script, "findProxyForURL('");
-  strcat(script, sanitized_url);
-  strcat(script, "', '");
-  strcat(script, host);
-  strcat(script, "')");
-  if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
-  if (!JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval)) {
+  jsval args[2];
+  args[0] = STRING_TO_JSVAL(JS_NewStringCopyZ(cx, url));
+  args[1] = STRING_TO_JSVAL(JS_NewStringCopyZ(cx, host));
+  
+  if (!JS_CallFunctionName(cx, global, "findProxyForURL", 2, args, &rval)) {
     print_error("%s %s\n", error_prefix, "Problem in executing findProxyForURL.");
-    free(sanitized_url);
-    free(script);
     return NULL;
   }
-  free(sanitized_url);
-  free(script);
   return JS_GetStringBytes(JS_ValueToString(cx, rval));
 }
 
