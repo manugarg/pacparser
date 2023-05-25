@@ -59,7 +59,7 @@ def sanitize_version(ver):
     ver = ver.strip()
     # Strip first 'v' and last part from git provided versions.
     # For example, v1.3.8-12-g231 becomes v1.3.8-12.
-    ver = re.sub(r"^v?([\d]+\.[\d]+\.[\d]+(-[\d]+)).*$", "\\1", ver)
+    ver = re.sub(r"^v?([\d]{1,3}\.[\d]{1,3}\.[\d]{1,3}(-[\d]{1,3})).*$", "\\1", ver)
     # 1.3.8-12 becomes 1.3.8.dev12
     return ver.replace("-", ".dev")
 
