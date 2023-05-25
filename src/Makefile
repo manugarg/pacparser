@@ -22,6 +22,8 @@
 # packaging script.
 -include version.mk
 
+SHELL := /bin/bash
+
 VERSION ?= $(shell git describe --always --tags --candidate=100)
 
 OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
@@ -127,8 +129,10 @@ install: all
 	(test -d ../examples && install -m 644 ../examples/* $(DOC_PREFIX)/examples/) || true
 
 dist: all
-	DESTDIR=$(DESTDIR) PREFIX= $(MAKE) install
-	zip -r $(DESTDIR).zip $(DESTDIR)/.
+	bindir=pacparser-$(VERSION)-$(DIST_OS_SUFFIX); \
+	bindir=$${bindir/-latest/}; \
+	PREFIX= $(MAKE) install DESTDIR=$${bindir}; \
+	zip -r $${bindir}.zip $${bindir}/.
 
 # Targets to build python module
 pymod: pacparser.o pacparser.h spidermonkey/libjs.a
