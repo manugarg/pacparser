@@ -126,6 +126,10 @@ install: all
 	install -d $(DOC_PREFIX)/examples/
 	(test -d ../examples && install -m 644 ../examples/* $(DOC_PREFIX)/examples/) || true
 
+dist: all
+	DESTDIR=$(DESTDIR) PREFIX= $(MAKE) install
+	zip -r $(DESTDIR).zip $(DESTDIR)/.
+
 # Targets to build python module
 pymod: pacparser.o pacparser.h spidermonkey/libjs.a
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
