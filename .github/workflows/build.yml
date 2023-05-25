@@ -71,13 +71,14 @@ jobs:
       if:  ${{ matrix.os != 'windows-latest' }}
       uses: actions/upload-artifact@v2
       with:
+        name: pacparser-dist
         path: src/pacparser*.zip
 
     - name: Upload dist (windows)
       if:  ${{ matrix.os == 'windows-latest' }}
       uses: actions/upload-artifact@v2
       with:
-        name: pacparser-${{ github.ref_name }}-${{ matrix.os }}
+        name: pacparser-${{ matrix.os }}
         path: src/dist
         
   python-module-build:
