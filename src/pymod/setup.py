@@ -1,4 +1,4 @@
-# Copyright (C) 2007-2022 Manu Garg.
+# Copyright (C) 2007-2023 Manu Garg.
 # Author: Manu Garg <manugarg@gmail.com>
 #
 # pacparser is a library that provides methods to parse proxy auto-config
@@ -39,123 +39,142 @@ from setuptools import setup, Extension
 
 import distutils.cmd
 
+
 def setup_dir():
-  return os.path.dirname(os.path.join(os.getcwd(), sys.argv[0]))
+    return os.path.dirname(os.path.join(os.getcwd(), sys.argv[0]))
+
 
 def module_path():
-  py_ver = '*'.join([str(x) for x in sys.version_info[0:2]])
-  print('Python version: %s' % py_ver)
-  
-  builddir = os.path.join(setup_dir(), 'build')
-  print('Build dir: %s' % builddir)
-  print(os.listdir(builddir))
-  
-  return glob.glob(os.path.join(builddir, 'lib*%s*' % py_ver))[0]
+    py_ver = "*".join([str(x) for x in sys.version_info[0:2]])
+    print("Python version: %s" % py_ver)
+
+    builddir = os.path.join(setup_dir(), "build")
+    print("Build dir: %s" % builddir)
+    print(os.listdir(builddir))
+
+    return glob.glob(os.path.join(builddir, "lib*%s*" % py_ver))[0]
+
 
 def sanitize_version(ver):
-  ver = ver.strip()
-  # Strip first 'v' and last part from git provided versions.
-  # For example, v1.3.8-12-g231 becomes v1.3.8-12.
-  ver = re.sub(r'^v?([\d]+\.[\d]+\.[\d]+(-[\d]+)).*$', '\\1', ver)
-  # 1.3.8-12 becomes 1.3.8.dev12
-  return ver.replace('-', '.dev')
+    ver = ver.strip()
+    # Strip first 'v' and last part from git provided versions.
+    # For example, v1.3.8-12-g231 becomes v1.3.8-12.
+    ver = re.sub(r"^v?([\d]+\.[\d]+\.[\d]+(-[\d]+)).*$", "\\1", ver)
+    # 1.3.8-12 becomes 1.3.8.dev12
+    return ver.replace("-", ".dev")
+
 
 def git_version():
-  return sanitize_version(subprocess.check_output(
-    'git describe --always --tags --candidate=100'.split(' '),
-    text=True
-  ))
+    return sanitize_version(
+        subprocess.check_output(
+            "git describe --always --tags --candidate=100".split(" "), text=True
+        )
+    )
+
 
 def pacparser_version():
-  if subprocess.call('git rev-parse --git-dir'.split(' '),
-                     stderr=subprocess.DEVNULL) == 0:
-    return git_version()
+    if (
+        subprocess.call("git rev-parse --git-dir".split(" "), stderr=subprocess.DEVNULL)
+        == 0
+    ):
+        return git_version()
 
-  # Check if we have version.mk. It's added in the manual release tarball.
-  version_file = os.path.join(setup_dir(), '..', 'version.mk')
-  if os.path.exists(version_file):
-    with open(version_file) as f:
-      return sanitize_version(f.read().replace('VERSION=',''))
+    # Check if we have version.mk. It's added in the manual release tarball.
+    version_file = os.path.join(setup_dir(), "..", "version.mk")
+    if os.path.exists(version_file):
+        with open(version_file) as f:
+            return sanitize_version(f.read().replace("VERSION=", ""))
 
-  return sanitize_version(os.environ.get('PACPARSER_VERSION', '1.0.0'))
+    return sanitize_version(os.environ.get("PACPARSER_VERSION", "1.0.0"))
 
 
 class DistCmd(distutils.cmd.Command):
-  """Build pacparser python distribution."""
+    """Build pacparser python distribution."""
 
-  description = 'Build pacparser python distribution.'
-  user_options = []
+    description = "Build pacparser python distribution."
+    user_options = []
 
-  def initialize_options(self):
-    pass
+    def initialize_options(self):
+        # Override to do nothing.
+        pass
 
-  def finalize_options(self):
-    pass
+    def finalize_options(self):
+        # Override to do nothing.
+        pass
 
-  def run(self):
-    py_ver = '.'.join([str(x) for x in sys.version_info[0:2]])
-    pp_ver = pacparser_version()
+    def run(self):
+        py_ver = ".".join([str(x) for x in sys.version_info[0:2]])
+        pp_ver = pacparser_version()
 
-    mach = platform.machine().lower()
-    if mach == 'x86_64':
-      mach = 'amd64'
-    dist = 'pacparser-python%s-%s-%s-%s' % (
-      py_ver.replace('.',''), pp_ver, platform.system().lower(), mach)
+        mach = platform.machine().lower()
+        if mach == "x86_64":
+            mach = "amd64"
+        dist = "pacparser-python%s-%s-%s-%s" % (
+            py_ver.replace(".", ""),
+            pp_ver,
+            platform.system().lower(),
+            mach,
+        )
 
-    if os.path.exists(dist):
-      shutil.rmtree(dist)
-    os.mkdir(dist)
-    shutil.copytree(os.path.join(module_path(), 'pacparser'),
-                    dist+'/pacparser',
-                    ignore=shutil.ignore_patterns('*pycache*'))
+        if os.path.exists(dist):
+            shutil.rmtree(dist)
+        os.mkdir(dist)
+        shutil.copytree(
+            os.path.join(module_path(), "pacparser"),
+            dist + "/pacparser",
+            ignore=shutil.ignore_patterns("*pycache*"),
+        )
 
 
-@patch('distutils.cygwinccompiler.get_msvcr')
+@patch("distutils.cygwinccompiler.get_msvcr")
 def main(patched_func):
-  python_home = os.path.dirname(sys.executable)
+    python_home = os.path.dirname(sys.executable)
 
-  extra_objects = []
-  obj_search_path = {
-    'pacparser.o': ['..', '.'],
-    'libjs.a': ['../spidermonkey', '.'],
-  }
-  for obj, paths in obj_search_path.items():
-    for path in paths:
-      if os.path.exists(os.path.join(path, obj)):
-        extra_objects.append(os.path.join(path, obj))
-        break
+    extra_objects = []
+    obj_search_path = {
+        "pacparser.o": ["..", "."],
+        "libjs.a": ["../spidermonkey", "."],
+    }
+    for obj, paths in obj_search_path.items():
+        for path in paths:
+            if os.path.exists(os.path.join(path, obj)):
+                extra_objects.append(os.path.join(path, obj))
+                break
 
-  libraries = []
-  extra_link_args = []
-  if sys.platform == 'win32':
-    extra_objects = ['../pacparser.o', '../spidermonkey/js.lib']
-    libraries = ['ws2_32']
-    # python_home has vcruntime140.dll
-    patched_func.return_value =  ['vcruntime140']
-    extra_link_args = ['-static-libgcc', '-L'+python_home]
+    libraries = []
+    extra_link_args = []
+    if sys.platform == "win32":
+        extra_objects = ["../pacparser.o", "../spidermonkey/js.lib"]
+        libraries = ["ws2_32"]
+        # python_home has vcruntime140.dll
+        patched_func.return_value = ["vcruntime140"]
+        extra_link_args = ["-static-libgcc", "-L" + python_home]
 
-  pacparser_module = Extension('_pacparser',
-                               include_dirs = ['..'],
-                               sources = ['pacparser_py.c'],
-                               libraries = libraries,
-                               extra_link_args = extra_link_args,
-                               extra_objects = extra_objects)
-  setup (
+    pacparser_module = Extension(
+        "_pacparser",
+        include_dirs=[".."],
+        sources=["pacparser_py.c"],
+        libraries=libraries,
+        extra_link_args=extra_link_args,
+        extra_objects=extra_objects,
+    )
+    setup(
         cmdclass={
-            'dist': DistCmd,
+            "dist": DistCmd,
         },
-        name = 'pacparser',
-        version = pacparser_version(),
-        description = 'Pacparser package',
-        author = 'Manu Garg',
-        author_email = 'manugarg@gmail.com',
-        url = 'http://github.com/manugarg/pacparser',
-        long_description = ('python library to parse proxy auto-config (PAC) '
-                            'files.'),
-        license = 'LGPL',
-        ext_package = 'pacparser',
-        ext_modules = [pacparser_module],
-        py_modules = ['pacparser.__init__'])
+        name="pacparser",
+        version=pacparser_version(),
+        description="Pacparser package",
+        author="Manu Garg",
+        author_email="manugarg@gmail.com",
+        url="https://github.com/manugarg/pacparser",
+        long_description=("python library to parse proxy auto-config (PAC) files."),
+        license="LGPL",
+        ext_package="pacparser",
+        ext_modules=[pacparser_module],
+        py_modules=["pacparser.__init__"],
+    )
 
-if __name__ == '__main__':
-  main()
+
+if __name__ == "__main__":
+    main()
