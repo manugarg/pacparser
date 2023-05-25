@@ -171,7 +171,7 @@ jobs:
             - 'src/**'
 
     - name: Publish package to PyPI
-      if:  ${{ steps.changes.outputs.src == 'true' && (github.event_name != 'pull_request') }}
+      if:  ${{ startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/master' && steps.changes.outputs.src == 'true') }}
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI }}
