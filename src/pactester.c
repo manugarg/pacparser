@@ -1,4 +1,4 @@
-// Copyright (C) 2008 Manu Garg.
+// Copyright (C) 2008-2023 Manu Garg.
 // Author: Manu Garg <manugarg@gmail.com>
 //
 // This file implements pactester using pacparser.

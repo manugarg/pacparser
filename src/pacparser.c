@@ -1,4 +1,4 @@
-// Copyright (C) 2007 Manu Garg.
+// Copyright (C) 2007-2023 Manu Garg.
 // Author: Manu Garg <manugarg@gmail.com>
 //
 // pacparser is a library that provides methods to parse proxy auto-config

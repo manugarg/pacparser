@@ -1,4 +1,4 @@
-// Copyright (C) 2007 Manu Garg.
+// Copyright (C) 2007-2023 Manu Garg.
 // Author: Manu Garg <manugarg@gmail.com>
 //
 // pac_utils.h defines some of the functions used by PAC files. This file is
