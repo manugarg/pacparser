@@ -44,10 +44,21 @@ jobs:
       if:  ${{ matrix.os == 'windows-latest' }}
       run: make -C src -f Makefile.win32
       
+    - name: Get ref_name
+      id: get_ref_name
+      run: |
+        if [ "${{ github.event_name }}" == "pull_request" ]; then
+          echo "ref_name=${{ github.base_ref }}"
+          echo "ref_name=${{ github.base_ref }}" >> $GITHUB_OUTPUT || exit 1
+        else
+          echo "ref_name=${{ github.ref_name }}"
+          echo "ref_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT || exit 1
+        fi
+
     - name: make non-windows dist
       if:  ${{ matrix.os != 'windows-latest' }}
       run: |
-        DESTDIR=pacparser-${{ github.ref_name }}-${{ matrix.os }} PREFIX= make -C src dist
+        DESTDIR=pacparser-${{ steps.get_ref_name.outputs.ref_name }}-${{ matrix.os }} PREFIX= make -C src dist
         ls -R src/*.zip
 
     - name: make windows dist
