@@ -49,6 +49,7 @@ jobs:
       run: |
         DESTDIR=dist PREFIX= make -C src install
         ls -R src/dist
+        chmod a+rx src/dist/bin/*
 
     - name: make windows dist
       if:  ${{ matrix.os == 'windows-latest' }}
@@ -58,7 +59,7 @@ jobs:
     - name: Upload dist
       uses: actions/upload-artifact@v2
       with:
-        name: pacparser-${{ matrix.os }}-dist
+        name: pacparser-${{ github.ref_name }}-${{ matrix.os }}-dist
         path: src/dist
         
   python-module-build:
