@@ -22,6 +22,8 @@
 # packaging script.
 -include version.mk
 
+SHELL := /bin/bash
+
 VERSION ?= $(shell git describe --always --tags --candidate=100)
 
 OS_ARCH := $(subst /,_,$(shell uname -s | sed /\ /s//_/))
