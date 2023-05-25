@@ -46,6 +46,7 @@ jobs:
       
     - name: Get ref_name
       id: get_ref_name
+      if:  ${{ matrix.os != 'windows-latest' }}
       run: |
         if [ "${{ github.event_name }}" == "pull_request" ]; then
           echo "ref_name=${{ github.base_ref }}"
@@ -76,7 +77,7 @@ jobs:
       if:  ${{ matrix.os == 'windows-latest' }}
       uses: actions/upload-artifact@v2
       with:
-        name: pacparser-${{ github.ref_name }}-${{ matrix.os }}-dist
+        name: pacparser-${{ github.ref_name }}-${{ matrix.os }}
         path: src/dist
         
   python-module-build:
