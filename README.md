@@ -16,15 +16,14 @@ a lot of possibilities. Please look at the wikipedia entry for Proxy auto-config
 The idea behind pacparser is to make it easy to add PAC-file parsing capability
 to any program (C and python supported right now). It comes as a shared C library
 and a python module which can be used to make any C or python program PAC scripts
-intelligent. Some very useful targets could be popular web software like wget,
-curl and python-urllib.
+aware.
 
 ### Implementation
 Pacparser makes use of the Mozilla's JavaScript interpreter SpiderMonkey to parse
 PAC files (which are nothing but javascripts). Apart from that, proxy
 auto-config standard assumes availability of some functions which are not
 part of the standard JavaScript. Pacparser uses Mozilla's PAC implementation to
-define all these functions except couple of dns functions which are defined by
+define all these functions except for a couple of dns functions which are defined by
 pacparser itself. As a result, pacparser is as close to standard as it gets :)
 
 ### Install
