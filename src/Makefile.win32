@@ -45,7 +45,7 @@ PYTHON ?= python
 
 .PHONY: clean pymod install-pymod
 
-all: pacparser.dll pactester pacparse
+all: pacparser.dll pactester
 
 pacparser.o: pacparser.c pac_utils.h js.lib
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
@@ -69,14 +69,12 @@ pactester: pactester.c pacparser.h pacparser.o
 pacparse: pacparse.c pacparser.h pacparser.o
 	$(CC) pacparse.c pacparser.o -o pacparse -ljs -Lspidermonkey -lws2_32
 
-dist: pacparser.dll pactester pacparse pacparser.def
+dist: pacparser.dll pactester pacparser.def
 	if exist dist rmdir /s /q dist
 	mkdir dist
 	$(CP) pacparser.dll dist
 	$(CP) pacparser.h dist
 	$(CP) pactester.exe dist
-	$(CP) pacparse.exe dist
-	$(CP) pacwget dist
 	$(CP) pacparser.def dist
 	if exist pacparser.lib $(CP) pacparser.lib dist
 	$(CP) ..\README.md dist\README.txt
