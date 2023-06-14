@@ -285,8 +285,8 @@ int main(int argc, char* argv[])
       }
       script = realloc(script, script_size);
       if (script == NULL) {
-        fprintf(stderr, "%s: Failed to realloc %d bytes memory for the script %s\n",
-	  progname, script_size);
+        fprintf(stderr, "%s: Failed to realloc %d bytes of memory for the script %s\n",
+	  progname, (int)script_size, script);
         free(old);
         return 1;
       }
