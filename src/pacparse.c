@@ -26,7 +26,7 @@
 #define PACPARSE_VERSION "1.0"
 #endif
 
-#include <pacparser.h>
+#include "pacparser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
