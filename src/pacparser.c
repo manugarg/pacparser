@@ -86,7 +86,7 @@ _debug(void) {
 static char *                      // File content in string or NULL if failed.
 read_file_into_str(const char *filename)
 {
-  FILE *fptr = fopen(filename, "r");
+  FILE *fptr = fopen(filename, "rb");
   if (fptr == NULL) return NULL;
 
   if (fseek(fptr, 0L, SEEK_END) != 0) goto error2;
