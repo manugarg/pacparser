@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 pushd $(dirname $0) > /dev/null; script_dir=$PWD; popd > /dev/null
 

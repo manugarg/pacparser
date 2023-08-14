@@ -25,6 +25,10 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifdef __FreeBSD__
+#include <arpa/inet.h>
+#endif
+
 #ifdef XP_UNIX
 #include <unistd.h>
 #include <sys/socket.h>                // for AF_INET

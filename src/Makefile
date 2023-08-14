@@ -22,7 +22,11 @@
 # packaging script.
 -include version.mk
 
+ifeq ($(shell uname),FreeBSD)
+SHELL := /usr/local/bin/bash
+else
 SHELL := /bin/bash
+endif
 
 VERSION ?= $(shell git describe --always --tags --candidate=100)
 
