@@ -47,6 +47,10 @@ LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
 SHFLAGS = -fPIC
 SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=__va_copy
 
+ifeq ($(OS_ARCH),FreeBSD)
+	PREFIX ?= /usr/local
+endif
+
 ifeq ($(OS_ARCH),Darwin)
   PREFIX ?= /usr/local
   MAC_MAJOR_VERSION := $(shell sw_vers -productVersion | cut -d. -f1)
