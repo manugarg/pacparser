@@ -92,17 +92,15 @@ endif
 # Virtually all Linux versions are identical.
 # Any distinctions are handled in linux.h
 ifeq ($(OS_ARCH),Linux)
-OS_CONFIG      := Linux_All
+    OS_CONFIG := Linux_All
+else ifeq ($(OS_ARCH),dgux)
+    OS_CONFIG := dgux
+else ifeq ($(OS_ARCH),Darwin)
+    OS_CONFIG := Darwin
+else ifeq ($(OS_ARCH),FreeBSD)  # Add this line for FreeBSD
+    OS_CONFIG := FreeBSD
 else
-ifeq ($(OS_ARCH),dgux)
-OS_CONFIG      := dgux
-else
-ifeq ($(OS_ARCH),Darwin)
-OS_CONFIG      := Darwin
-else
-OS_CONFIG       := $(OS_ARCH)$(OS_OBJTYPE)$(OS_RELEASE)
-endif
-endif
+    OS_CONFIG := $(OS_ARCH)$(OS_OBJTYPE)$(OS_RELEASE)
 endif
 
 ASFLAGS         =

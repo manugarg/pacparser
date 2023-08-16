@@ -22,7 +22,11 @@
 # packaging script.
 -include version.mk
 
+ifeq ($(shell uname),FreeBSD)
+SHELL := /usr/local/bin/bash
+else
 SHELL := /bin/bash
+endif
 
 VERSION ?= $(shell git describe --always --tags --candidate=100)
 
@@ -42,6 +46,10 @@ MKSHLIB = $(CC) -shared
 LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
 SHFLAGS = -fPIC
 SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=__va_copy
+
+ifeq ($(OS_ARCH),FreeBSD)
+	PREFIX ?= /usr/local
+endif
 
 ifeq ($(OS_ARCH),Darwin)
   PREFIX ?= /usr/local
