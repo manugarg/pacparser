@@ -1,5 +1,6 @@
 [![Build Status](https://github.com/manugarg/pacparser/actions/workflows/build.yml/badge.svg)](https://github.com/manugarg/pacparser/actions/workflows/build.yml)
 [![PyPI version](https://badge.fury.io/py/pacparser.svg)](https://badge.fury.io/py/pacparser)
+[![Packaging status](https://repology.org/badge/tiny-repos/pacparser.svg)](https://repology.org/project/pacparser/versions)
 
 # [Pacparser](http://pacparser.manugarg.com)
 ***[pacparser.manugarg.com](http://pacparser.manugarg.com)***
@@ -95,7 +96,7 @@ PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
 
 #### Platforms
 pacparser has been tested to work on Linux (all architectures supported by
-Debian), Mac OS X and Win32 systems.
+Debian), FreeBSD, Mac OS X and Win32 systems.
 
 #### Homepage
 http://pacparser.manugarg.com
