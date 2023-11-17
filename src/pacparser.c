@@ -51,7 +51,8 @@
 #  define UNUSED(x) UNUSED_ ## x
 #endif
 
-static char *myip = NULL;
+static char my_ip_buf[INET6_ADDRSTRLEN+1];
+static int my_ip_set = 0;
 
 // Default error printer function.
 static int		// Number of characters printed, negative value in case of output error.
@@ -222,8 +223,8 @@ my_ip(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv, jsval *r
   char ipaddr[INET6_ADDRSTRLEN];
   char* out;
 
-  if (myip)                  // If my (client's) IP address is already set.
-    strcpy(ipaddr, myip);
+  if (my_ip_set)                  // If my (client's) IP address is already set.
+    strcpy(ipaddr, my_ip_buf);
   else {
     char name[256];
     gethostname(name, sizeof(name));
@@ -247,8 +248,8 @@ my_ip_ex(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *UNUSED(argv
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS];
   char* out;
 
-  if (myip)                  // If my (client's) IP address is already set.
-    strcpy(ipaddr, myip);
+  if (my_ip_set)                  // If my (client's) IP address is already set.
+    strcpy(ipaddr, my_ip_buf);
   else {
     char name[256];
     gethostname(name, sizeof(name));
@@ -283,14 +284,14 @@ pacparser_setmyip(const char *ip)
     return 0;
   }
 
-  myip = malloc(strlen(ip) +1);         // Allocate space just to be sure.
-  strcpy(myip, ip);
+  strcpy(my_ip_buf, ip);
+  my_ip_set = 1;
   return 1;
 }
 
-// Decprecated: This function doesn't do anything.
+// Deprecated: This function doesn't do anything.
 //
-// This function doesn't do anything. Microsoft exntensions are now enabled by
+// This function doesn't do anything. Microsoft extensions are now enabled by
 // default.
 void
 pacparser_enable_microsoft_extensions()
@@ -470,8 +471,9 @@ pacparser_find_proxy(const char *url, const char *host)
 void
 pacparser_cleanup()
 {
-  // Reinitliaze config variables.
-  myip = NULL;
+  // Re-initialize config variables.
+  my_ip_set = 0;
+
   if (cx) {
     JS_DestroyContext(cx);
     cx = NULL;
