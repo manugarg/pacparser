@@ -29,15 +29,12 @@ import glob
 import os
 import platform
 import re
+import setuptools
 import shutil
 import subprocess
 import sys
 
 from unittest.mock import patch
-import distutils
-from setuptools import setup, Extension
-
-import distutils.cmd
 
 
 def setup_dir():
@@ -88,7 +85,7 @@ def pacparser_version():
     return sanitize_version(os.environ.get("PACPARSER_VERSION", "1.0.0"))
 
 
-class DistCmd(distutils.cmd.Command):
+class DistCmd(setuptools.Command):
     """Build pacparser python distribution."""
 
     description = "Build pacparser python distribution."
@@ -126,7 +123,7 @@ class DistCmd(distutils.cmd.Command):
         )
 
 
-@patch("distutils.cygwinccompiler.get_msvcr")
+@patch("setuptools._distutils.cygwinccompiler.get_msvcr")
 def main(patched_func):
     python_home = os.path.dirname(sys.executable)
 
@@ -143,14 +140,16 @@ def main(patched_func):
 
     libraries = []
     extra_link_args = []
+
     if sys.platform == "win32":
+        import distutils.cygwinccompiler
+
+        distutils.cygwinccompiler.get_msvcr = lambda: ["vcruntime140"]
         extra_objects = ["../pacparser.o", "../spidermonkey/js.lib"]
         libraries = ["ws2_32"]
-        # python_home has vcruntime140.dll
-        patched_func.return_value = ["vcruntime140"]
         extra_link_args = ["-static-libgcc", "-L" + python_home]
 
-    pacparser_module = Extension(
+    pacparser_module = setuptools.Extension(
         "_pacparser",
         include_dirs=[".."],
         sources=["pacparser_py.c"],
@@ -158,7 +157,7 @@ def main(patched_func):
         extra_link_args=extra_link_args,
         extra_objects=extra_objects,
     )
-    setup(
+    setuptools.setup(
         cmdclass={
             "dist": DistCmd,
         },
