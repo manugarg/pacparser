@@ -5,6 +5,7 @@ on:
       - master
   pull_request:
     types: [opened, synchronize, reopened]
+permissions: read-all
 jobs:
   build:
     name: Analyze
