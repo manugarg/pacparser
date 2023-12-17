@@ -31,9 +31,8 @@
 
 
         <ul>
-          <li><a href="https://github.com/pacparser/pacparser/zipball/master">Download <strong>ZIP File</strong></a></li>
-          <li><a href="https://github.com/pacparser/pacparser/tarball/master">Download <strong>TAR Ball</strong></a></li>
-          <li><a href="https://github.com/pacparser/pacparser">View On <strong>GitHub</strong></a></li>
+          <li><a href="https://github.com/manugarg/pacparser/releases">Download <strong>All Files</strong></a></li>
+          <li><a href="https://rawgit.com/manugarg/pacparser/master/docs/html/pacparser.html">View<strong>API Docs</strong></a></li>
         </ul>
       </header>
       <section>
@@ -46,23 +45,23 @@ browsers can use a PAC file to determine which proxy server to use or whether
 to go direct for a given URL. PAC files are written in JavaScript and can be
 programmed to return different proxy methods (e.g. "PROXY proxy1:port; DIRECT")
 depending upon URL, source IP address, protocol, time of the day etc. PAC files
-introduce a lot of possibilities. Please look at the wikipedia entry for Proxy
-auto-config (<a href="http://en.wikipedia.org/wiki/Proxy_auto-config">http://en.wikipedia.org/wiki/Proxy_auto-config</a>) for more
+introduce a lot of possibilities. Please look at the wikipedia entry for <a href="http://en.wikipedia.org/wiki/Proxy_auto-config">Proxy auto-config</a> for more
 information.</p>
 
-<p>Needless to say, PAC files are now a widely used method for proxy
-configuration management, and most companies rely on them to configure HTTP
-routing for their employees. Almost all popular web browsers support PAC files.
-The idea behind pacparser is to make it easy to add this PAC file parsing
-capability to any program (C and python supported right now). It comes as a 
-shared C library and a python module which can be used to make any C or
-python program PAC scripts aware.</p>
+<p>Needless to say, PAC files are now a widely accepted method for proxy
+configuration management and companies all over are using them in corporate
+environment. Almost all popular web browsers support PAC files. The idea behind
+pacparser is to make it easy to add this PAC file parsing capability to any
+program (C and python supported right now). It comes as a shared C library and
+a python module which can be used to make any C or python program PAC scripts
+intelligent. Some very useful targets could be popular web software like wget,
+curl and python-urllib.</p>
 
 <h3>
 <a id="implementation" class="anchor" href="#implementation" aria-hidden="true"><span class="octicon octicon-link"></span></a>Implementation</h3>
 
-<p>Pacparser makes use of the Mozilla's JavaScript interpreter SpiderMonkey to
-parse PAC files (which are nothing but javascripts). Apart from that, proxy
+<p>Pacparser makes use of the Mozilla's JavaScript interpreter SpiderMonkey to parse
+PAC files (which are nothing but javascripts). Apart from that, proxy
 auto-config standard assumes availability of some functions which are not
 part of the standard JavaScript. Pacparser uses Mozilla's PAC implementation to
 define all these functions except couple of dns functions which are defined by
@@ -81,6 +80,7 @@ and pacparser.dll on windows) as well as a python module. Using it is as easy
 compiling your C programs against it or importing pacparser module in your
 python programs.</p>
 
+<p> API docs for pacparser: <a href="http://pacparser.github.io/api/pacparser.html">API</a> </p>
 <h3>
 <a id="usage-examples" class="anchor" href="#usage-examples" aria-hidden="true"><span class="octicon octicon-link"></span></a>Usage Examples</h3>
 
@@ -130,12 +130,11 @@ PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
 
 <p>pacparser has been tested to work on Linux (all architectures supported by Debian), Mac OS X and Win32 systems.</p>
 
-<p>Author: Manu Garg <a href="mailto:manugarg@gmail.com">manugarg@gmail.com</a><br>
+<p>Author: Manu Garg <a href="http://www.manugarg.com">(www.manugarg.com)</a><br>
 Copyright (C) 2007 Manu Garg.</p>
       </section>
       <footer>
         <p>This project is maintained by <a href="https://github.com/manugarg">manugarg</a></p>
-        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
       </footer>
     </div>
     <script src="javascripts/scale.fix.js"></script>
