@@ -1,15 +1,13 @@
-@import url(https://fonts.googleapis.com/css?family=Lato:300italic,700italic,300,700);
-
 body {
   padding:50px;
   font:14px/1.5 "Lucida Grande", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-weight: 400;
+  color: #555;
+  font-weight:400;
 }
 
 h1, h2, h3, h4, h5, h6 {
   color:#222;
   margin:0 0 20px;
-  display: inline-block;
 }
 
 p, ul, ol, table, pre, dl {
@@ -47,7 +45,7 @@ a small {
 
 .wrapper {
   width:960px;
-  margin:0 auto;
+  margin:0 0 0 0;
 }
 
 blockquote {
@@ -101,14 +99,6 @@ header {
   position:fixed;
 }
 
-header img {
-  padding: 3px 5px 3px 3px;
-}
-
-header h1 {
-  vertical-align: top;
-}
-
 header ul {
   list-style:none;
   height:40px;
@@ -126,7 +116,7 @@ header ul {
   border-radius:5px;
   border:1px solid #d2d2d2;
   box-shadow:inset #fff 0 1px 0, inset rgba(0,0,0,0.03) 0 -1px 0;
-  width:270px;
+  width:180px;
 }
 
 header li {
@@ -151,31 +141,6 @@ strong {
   font-weight:700;
 }
 
-header button {
-  width:150px;
-  height:40px;
-  font-size:12px;
-  font-weight: bold;
-  text-align: center;
-  text-shadow: 0 1px 1px rgba(0,0,0,0.1);
-  text-transform: uppercase;
-    
-  background: #4d7bd6;
-  border-radius: 2px;
-  border: 1px solid #2d53af;
-  cursor: pointer;
-  color: #fff;
-  padding: 0 4px 0 4px;
-  box-shadow: 0 2px 0 0 rgba(255,255,255,.06) inset,0 2px 3px 0 rgba(0,0,0,.2);
-  outline: 0;
-  background: -moz-linear-gradient(top, #5689db 0%, #4d7bd6 100%);
-  background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#5689db), color-stop(100%,#4d7bd6));
-  background: -webkit-linear-gradient(to bottom, #5689db 0%,#4d7bd6 100%);
-  background: -o-linear-gradient(top, #5689db 0%,#4d7bd6 100%);
-  background: -ms-linear-gradient(top, #5689db 0%,#4d7bd6 100%);
-  background: linear-gradient(to bottom, #5689db, #4d7bd6);
-}
-
 header ul li + li {
   width:88px;
   border-left:1px solid #fff;
@@ -193,7 +158,7 @@ header ul a strong {
 }
 
 section {
-  width:600px;
+  width:640px;
   float:right;
   padding-bottom:50px;
 }
