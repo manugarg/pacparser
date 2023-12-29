@@ -24,14 +24,14 @@ jobs:
     runs-on: ${{ matrix.os }}-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
         with:
           fetch-depth: 0
 
       - name: Check out code for workflow_dispatch
         if: ${{ contains(github.event_name, 'workflow_dispatch') }}
-        uses: actions/checkout@v2
+        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag }}
@@ -69,14 +69,14 @@ jobs:
 
       - name: Upload dist (non-windows)
         if: ${{ matrix.os != 'windows' }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@82c141cc518b40d92cc801eee768e7aafc9c2fa2 # v2.3.1
         with:
           name: pacparser-dist
           path: src/pacparser*.zip
 
       - name: Upload dist (windows)
         if: ${{ matrix.os == 'windows' }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@82c141cc518b40d92cc801eee768e7aafc9c2fa2 # v2.3.1
         with:
           name: pacparser-${{ matrix.os }}
           path: src/dist
@@ -89,20 +89,20 @@ jobs:
     runs-on: ${{ matrix.os }}-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
         with:
           fetch-depth: 0
 
       - name: Check out code for workflow_dispatch
         if: ${{ contains(github.event_name, 'workflow_dispatch') }}
-        uses: actions/checkout@v2
+        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag }}
 
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3.1.4
         with:
           python-version: ${{ matrix.python-version }}
           architecture: x64
@@ -121,7 +121,7 @@ jobs:
         run: make -C src -f Makefile.win32 pymod-dist
 
       - name: Upload dist
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@82c141cc518b40d92cc801eee768e7aafc9c2fa2 # v2.3.1
         with:
           name: pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
           path: src/pymod/pacparser-python*
@@ -132,7 +132,7 @@ jobs:
           python -m pip install wheel
           cd src/pymod && python setup.py bdist_wheel
 
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2.11.1
         id: changes
         with:
           filters: |
@@ -153,14 +153,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
         with:
           fetch-depth: 0
 
       - name: Check out code for workflow_dispatch
         if: ${{ contains(github.event_name, 'workflow_dispatch') }}
-        uses: actions/checkout@v2
+        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag }}
@@ -169,7 +169,7 @@ jobs:
         run: echo "PACPARSER_VERSION=$(git describe --always --tags --candidate=100)" >> $GITHUB_ENV
 
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3.1.4
 
       - name: Set up setuptools
         run: |
@@ -193,7 +193,7 @@ jobs:
           CIBW_BUILD: 'cp{37,38,39,310,311}-manylinux*64'
           CIBW_ENVIRONMENT: 'PACPARSER_VERSION=${{ env.PACPARSER_VERSION }}'
 
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2.11.1
         id: changes
         with:
           filters: |
