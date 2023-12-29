@@ -71,14 +71,14 @@ jobs:
         if: ${{ matrix.os != 'windows' }}
         uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
         with:
-          name: pacparser-dist
+          name: pacparser-dist-${{ matrix.os }}
           path: src/pacparser*.zip
 
       - name: Upload dist (windows)
         if: ${{ matrix.os == 'windows' }}
         uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
         with:
-          name: pacparser-${{ matrix.os }}
+          name: pacparser-dist-${{ matrix.os }}
           path: src/dist
 
   python-module-build:
