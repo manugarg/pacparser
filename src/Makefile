@@ -47,6 +47,10 @@ LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
 SHFLAGS = -fPIC
 SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=__va_copy
 
+ifeq ($(shell test -f /etc/alpine-release && echo yes),yes)
+    SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=va_copy
+endif
+
 ifeq ($(OS_ARCH),FreeBSD)
 	PREFIX ?= /usr/local
 endif
