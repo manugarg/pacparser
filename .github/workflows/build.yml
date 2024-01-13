@@ -241,5 +241,5 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push release Docker Image (main-ghcr)
-        run: make docker_multiarch DOCKER_IMAGE=ghcr.io/manugarg/pacparser
+        run: make -C src docker_multiarch DOCKER_IMAGE=ghcr.io/manugarg/pacparser
 
