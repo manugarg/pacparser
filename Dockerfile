@@ -19,4 +19,4 @@ FROM alpine:latest
 WORKDIR /app
 COPY --from=build-stage /build/pactester /app/
 
-CMD /app/pactester
+ENTRYPOINT ["/app/pactester"]
