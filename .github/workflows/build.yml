@@ -6,6 +6,8 @@ on:
     paths:
       - 'src/**'
       - '.github/workflows/build.yml'
+      - Makefile
+      - Dockerfile
   pull_request:
   workflow_dispatch:
     inputs:
