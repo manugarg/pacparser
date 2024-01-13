@@ -163,7 +163,7 @@ pymod-dist: pacparser.o pacparser.h spidermonkey/libjs.a
 install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
-docker_multiarch: pactester Dockerfile
+docker_multiarch:
 	docker buildx build --push \
 		--build-arg BUILD_DATE=`date -u +"%Y-%m-%dT%H:%M:%SZ"` \
 		--build-arg VERSION=$(VERSION) \
