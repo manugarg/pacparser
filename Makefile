@@ -9,7 +9,7 @@ VERSION ?= $(shell git describe --always --tags --candidate=100)
 GIT_TAG := $(shell git describe --exact-match --exclude tip --tags HEAD 2>/dev/null || /bin/true)
 GIT_COMMIT = $(strip $(shell git rev-parse --short HEAD))
 
-DOCKER_IMAGE ?= manugarg/cloudprober
+DOCKER_IMAGE ?= manugarg/pactester
 ifeq "$(GIT_TAG)" ""
 	DOCKER_TAGS := -t $(DOCKER_IMAGE):master -t $(DOCKER_IMAGE):main
 else
