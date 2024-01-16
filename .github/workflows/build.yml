@@ -9,6 +9,8 @@ on:
       - Makefile
       - Dockerfile
   pull_request:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
