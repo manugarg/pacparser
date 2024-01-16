@@ -136,14 +136,14 @@ jobs:
           cd src/pymod && python setup.py bdist_wheel
 
       - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2.11.1
-        id: changes
+        id: src_changes
         with:
           filters: |
-            src:
+            changed:
               - 'src/**'
 
       - name: Publish package to PyPI (non-linux)
-        if: ${{ (matrix.os != 'ubuntu') && (steps.changes.outputs.src == 'true') && (github.event_name != 'pull_request') }}
+        if: ${{ (matrix.os != 'ubuntu') && (steps.src_changes.outputs.changed == 'true' || startsWith(github.ref, 'refs/tags/v')) && (github.event_name != 'pull_request') }}
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI }}
@@ -197,14 +197,14 @@ jobs:
           CIBW_ENVIRONMENT: 'PACPARSER_VERSION=${{ env.PACPARSER_VERSION }}'
 
       - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2.11.1
-        id: changes
+        id: src_changes
         with:
           filters: |
-            src:
+            changed:
               - 'src/**'
 
       - name: Publish package to PyPI
-        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/master' && steps.changes.outputs.src == 'true') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || steps.src_changes.outputs.changed == 'true' }}
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI }}
