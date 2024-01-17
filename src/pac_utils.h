@@ -214,7 +214,7 @@ static const char *pacUtils =
 "    if (isGMT) {\n"
 "        argc--;\n"
 "    }\n"
-"    // function will work even without explict handling of this case\n"
+"    // function will work even without explicit handling of this case\n"
 "    if (argc == 1) {\n"
 "        var tmp = parseInt(arguments[0]);\n"
 "        if (isNaN(tmp)) {\n"
