@@ -353,13 +353,13 @@ pacparser_init()
 		  "Could not evaluate pacUtils defined in pac_utils.h.");
     return 0;
   }
-  if (_debug()) print_error("DEBUG: Pacparser Initalized.\n");
+  if (_debug()) print_error("DEBUG: Pacparser Initialized.\n");
   return 1;
 }
 
 // Parses the given PAC script string.
 //
-// Evaulates the given PAC script string in the JavaScript context created
+// Evaluates the given PAC script string in the JavaScript context created
 // by pacparser_init.
 int                                     // 0 (=Failure) or 1 (=Success)
 pacparser_parse_pac_string(const char *script)

@@ -68,7 +68,7 @@ py_pacparser_init(PyObject *self, PyObject *args)
 
 // Parses the PAC script string.
 //
-// Evaulates the PAC script string in the JavaScript context created by
+// Evaluates the PAC script string in the JavaScript context created by
 // pacparser_init.
 static PyObject *                          // 0 (=Failure) or 1 (=Success)
 py_pacparser_parse_pac_string(PyObject *self, PyObject *args)
