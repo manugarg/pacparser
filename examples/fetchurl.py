@@ -83,14 +83,14 @@ def isproxyalive(proxy):
 
 def main():
   if len(sys.argv) != 3:
-    print 'Not enough arguments'
-    print 'Usage:\n%s <pacfile> <url>' % sys.argv[0]
+    print('Not enough arguments')
+    print('Usage:\n%s <pacfile> <url>' % sys.argv[0])
     return None
   pacfile = sys.argv[1]
   url = sys.argv[2]
   response = fetch_url_using_pac(pacfile, url)
   if response:
-    print response.read()
+    print(response.read())
   else:
     sys.stderr.write('URL %s could not be retrieved using PAC file %s.' %
                      (url, pacfile))
