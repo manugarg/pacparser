@@ -74,14 +74,14 @@ jobs:
 
       - name: Upload dist (non-windows)
         if: ${{ matrix.os != 'windows' }}
-        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
           name: pacparser-dist-${{ matrix.os }}
           path: src/pacparser*.zip
 
       - name: Upload dist (windows)
         if: ${{ matrix.os == 'windows' }}
-        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
           name: pacparser-dist-${{ matrix.os }}
           path: src/dist
@@ -107,7 +107,7 @@ jobs:
           ref: ${{ github.event.inputs.tag }}
 
       - name: Set up Python
-        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
         with:
           python-version: ${{ matrix.python-version }}
           architecture: x64
@@ -126,7 +126,7 @@ jobs:
         run: make -C src -f Makefile.win32 pymod-dist
 
       - name: Upload dist
-        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
           name: pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
           path: src/pymod/pacparser-python*
@@ -137,7 +137,7 @@ jobs:
           python -m pip install wheel
           cd src/pymod && python setup.py bdist_wheel
 
-      - uses: dorny/paths-filter@0bc4621a3135347011ad047f9ecf449bf72ce2bd # v3.0.0
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: src_changes
         with:
           filters: |
@@ -174,7 +174,7 @@ jobs:
         run: echo "PACPARSER_VERSION=$(git describe --always --tags --candidate=100)" >> $GITHUB_ENV
 
       - name: Set up Python
-        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
 
       - name: Set up setuptools
         run: |
@@ -198,7 +198,7 @@ jobs:
           CIBW_BUILD: 'cp{37,38,39,310,311}-manylinux*64'
           CIBW_ENVIRONMENT: 'PACPARSER_VERSION=${{ env.PACPARSER_VERSION }}'
 
-      - uses: dorny/paths-filter@0bc4621a3135347011ad047f9ecf449bf72ce2bd # v3.0.0
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: src_changes
         with:
           filters: |
