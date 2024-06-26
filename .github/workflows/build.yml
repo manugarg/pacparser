@@ -4,8 +4,8 @@ on:
   push:
     branches: [master]
     paths:
-      - 'src/**'
-      - '.github/**'
+      - "src/**"
+      - ".github/**"
       - Makefile
       - Dockerfile
   pull_request:
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to run workflow for'
+        description: "Tag to run workflow for"
         required: true
 
 permissions:
@@ -25,8 +25,8 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu, windows, macos]
-    runs-on: ${{ matrix.os }}-latest
+        os: [ubuntu-latest, windows-latest, macos-13]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -42,16 +42,16 @@ jobs:
           ref: ${{ github.event.inputs.tag }}
 
       - name: make non-windows
-        if: ${{ matrix.os != 'windows' }}
+        if: ${{ matrix.os != 'windows-latest' }}
         run: make -C src
 
       - name: make windows
-        if: ${{ matrix.os == 'windows' }}
+        if: ${{ matrix.os == 'windows-latest' }}
         run: make -C src -f Makefile.win32
 
       - name: Get ref_name
         id: get_ref_name
-        if: ${{ matrix.os != 'windows' }}
+        if: ${{ matrix.os != 'windows-latest' }}
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "ref_name=${{ github.base_ref }}"
@@ -62,25 +62,25 @@ jobs:
           fi
 
       - name: make non-windows dist
-        if: ${{ matrix.os != 'windows' }}
+        if: ${{ matrix.os != 'windows-latest' }}
         run: |
           DIST_OS_SUFFIX=${{ matrix.os }} make -C src dist
           ls -R src/*.zip
 
       - name: make windows dist
-        if: ${{ matrix.os == 'windows' }}
+        if: ${{ matrix.os == 'windows-latest' }}
         run: |
           make -C src -f Makefile.win32 dist
 
       - name: Upload dist (non-windows)
-        if: ${{ matrix.os != 'windows' }}
+        if: ${{ matrix.os != 'windows-latest' }}
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
           name: pacparser-dist-${{ matrix.os }}
           path: src/pacparser*.zip
 
       - name: Upload dist (windows)
-        if: ${{ matrix.os == 'windows' }}
+        if: ${{ matrix.os == 'windows-latest' }}
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
           name: pacparser-dist-${{ matrix.os }}
@@ -89,9 +89,9 @@ jobs:
   python-module-build:
     strategy:
       matrix:
-        os: [ubuntu, windows, macos]
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
-    runs-on: ${{ matrix.os }}-latest
+        os: [ubuntu-latest, windows-latest, macos-13]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -118,21 +118,22 @@ jobs:
           python -mpip install setuptools
 
       - name: make non-windows
-        if: ${{ matrix.os != 'windows' }}
+        if: ${{ matrix.os != 'windows-latest' }}
         run: make -C src pymod-dist
 
       - name: make windows
-        if: ${{ matrix.os == 'windows' }}
+        if: ${{ matrix.os == 'windows-latest' }}
         run: make -C src -f Makefile.win32 pymod-dist
 
       - name: Upload dist
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
-          name: pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
+          name:
+            pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
           path: src/pymod/pacparser-python*
 
       - name: Build wheel non-linux
-        if: ${{ matrix.os != 'ubuntu' }}
+        if: ${{ matrix.os != 'ubuntu-latest' }}
         run: |
           python -m pip install wheel
           cd src/pymod && python setup.py bdist_wheel
@@ -145,7 +146,11 @@ jobs:
               - 'src/**'
 
       - name: Publish package to PyPI (non-linux)
-        if: ${{ (matrix.os != 'ubuntu') && (steps.src_changes.outputs.changed == 'true' || startsWith(github.event.inputs.tag, 'v') || startsWith(github.ref, 'refs/tags/v')) && (github.event_name != 'pull_request') }}
+        if: |
+          (matrix.os != 'ubuntu-latest') &&
+          (steps.src_changes.outputs.changed == 'true' ||
+          startsWith(github.event.inputs.tag, 'v') || startsWith(github.ref,
+          'refs/tags/v')) && (github.event_name != 'pull_request')
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI }}
@@ -171,7 +176,9 @@ jobs:
           ref: ${{ github.event.inputs.tag }}
 
       - name: Set env
-        run: echo "PACPARSER_VERSION=$(git describe --always --tags --candidate=100)" >> $GITHUB_ENV
+        run: |
+          echo "PACPARSER_VERSION=$(git describe --always --tags \
+          --candidate=100)" >> $GITHUB_ENV
 
       - name: Set up Python
         uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
@@ -195,8 +202,8 @@ jobs:
           cp src/spidermonkey/libjs.a src/pacparser.o src/pacparser.h src/pymod
           cd src/pymod && python -m cibuildwheel --output-dir dist
         env:
-          CIBW_BUILD: 'cp{37,38,39,310,311}-manylinux*64'
-          CIBW_ENVIRONMENT: 'PACPARSER_VERSION=${{ env.PACPARSER_VERSION }}'
+          CIBW_BUILD: "cp{37,38,39,310,311}-manylinux*64"
+          CIBW_ENVIRONMENT: "PACPARSER_VERSION=${{ env.PACPARSER_VERSION }}"
 
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: src_changes
@@ -206,7 +213,9 @@ jobs:
               - 'src/**'
 
       - name: Publish package to PyPI
-        if: ${{ startsWith(github.event.inputs.tag, 'v') || startsWith(github.ref, 'refs/tags/v') || steps.src_changes.outputs.changed == 'true' }}
+        if: |
+          startsWith(github.event.inputs.tag, 'v') ||
+          startsWith(github.ref,'refs/tags/v') ||steps.src_changes.outputs.changed == 'true'
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI }}
@@ -215,9 +224,11 @@ jobs:
 
   build_and_push_docker_multiarch:
     name: Build and push multiarch docker image
-    if: github.repository == 'manugarg/pacparser' && (github.ref == 'refs/heads/master' || startswith(github.ref, 'refs/heads/docker') || startsWith(github.ref, 'refs/tags/v'))
+    if: |
+      github.repository == 'manugarg/pacparser' &&
+      (github.ref == 'refs/heads/master' || startswith(github.ref, 'refs/heads/docker') ||
+      startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out code into the Go module directory
         if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
@@ -247,4 +258,3 @@ jobs:
 
       - name: Build and push release Docker Image (main-ghcr)
         run: make docker_multiarch DOCKER_IMAGE=ghcr.io/manugarg/pactester
-
