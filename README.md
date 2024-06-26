@@ -1,5 +1,6 @@
 [![Build Status](https://github.com/manugarg/pacparser/actions/workflows/build.yml/badge.svg)](https://github.com/manugarg/pacparser/actions/workflows/build.yml)
 [![PyPI version](https://badge.fury.io/py/pacparser.svg)](https://badge.fury.io/py/pacparser)
+[![PyPI Downloads](https://static.pepy.tech/badge/pacparser)](https://pepy.tech/project/pacparser)
 [![Packaging status](https://repology.org/badge/tiny-repos/pacparser.svg)](https://repology.org/project/pacparser/versions)
 
 # [Pacparser](http://pacparser.manugarg.com)
