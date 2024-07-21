@@ -108,9 +108,9 @@ jobs:
           ls -R .
           mv pacparser-dist-*/*.zip .
           file=$(ls pacparser-*-ubuntu*.zip)
-          echo ${file/ubuntu/windows}
           name=${file/ubuntu/windows}
-          echo $name
+          mv pacparser-dist-windows-latest $name
+          zip -r $name.zip $name
 
       - name: Upload pacparser release
         uses: actions/upload-artifact@v2
