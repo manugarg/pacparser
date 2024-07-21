@@ -102,7 +102,7 @@ jobs:
       - name: Download ubuntu cloudprober binaries
         uses: actions/download-artifact@v4
         with:
-          pattern: pacparser-*-latest-dist
+          pattern: pacparser-dist-*
 
       - name: Upload pacparser release
         uses: actions/upload-artifact@v2
