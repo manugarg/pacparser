@@ -25,7 +25,16 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-13]
+        os: [ubuntu-latest, windows-latest, macos-13, macos-latest]
+        include:
+          - os: ubuntu-latest
+            os_suffix: "ubuntu-x86_64"
+          - os: macos-latest
+            os_suffix: "macos-arm64"
+          - os: macos-13
+            os_suffix: "macos-x86_64"
+          - os: windows-latest
+            os_suffix: "windows-x86_64"
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -64,7 +73,7 @@ jobs:
       - name: make non-windows dist
         if: ${{ matrix.os != 'windows-latest' }}
         run: |
-          DIST_OS_SUFFIX=${{ matrix.os }} make -C src dist
+          DIST_OS_SUFFIX=${{ matrix.os_suffix }} make -C src dist
           ls -R src/*.zip
 
       - name: make windows dist
@@ -85,6 +94,31 @@ jobs:
         with:
           name: pacparser-dist-${{ matrix.os }}
           path: src/dist
+
+  build-release-binaries:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download ubuntu cloudprober binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pacparser-dist-*
+
+      - name: Fix files
+        run: |
+          ls -R .
+          mv pacparser-dist-*/*.zip .
+          file=$(ls pacparser-*-ubuntu*.zip)
+          name=${file/ubuntu/windows}
+          name=${name/.zip/}
+          mv pacparser-dist-windows-latest $name
+          zip -r $name.zip $name
+
+      - name: Upload pacparser release
+        uses: actions/upload-artifact@v2
+        with:
+          name: pacparser-release-binaries
+          path: pacparser-*.zip
 
   python-module-build:
     strategy:
