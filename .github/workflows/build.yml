@@ -83,14 +83,14 @@ jobs:
 
       - name: Upload dist (non-windows)
         if: ${{ matrix.os != 'windows-latest' }}
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@0b2256b8c012f0828dc542b3febcab082c67f72b # v4.3.4
         with:
           name: pacparser-dist-${{ matrix.os }}
           path: src/pacparser*.zip
 
       - name: Upload dist (windows)
         if: ${{ matrix.os == 'windows-latest' }}
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@0b2256b8c012f0828dc542b3febcab082c67f72b # v4.3.4
         with:
           name: pacparser-dist-${{ matrix.os }}
           path: src/dist
@@ -115,7 +115,7 @@ jobs:
           zip -r $name.zip $name
 
       - name: Upload pacparser release
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: pacparser-release-binaries
           path: pacparser-*.zip
@@ -149,7 +149,7 @@ jobs:
           ref: ${{ github.event.inputs.tag }}
 
       - name: Set up Python
-        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
+        uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
         with:
           python-version: ${{ matrix.python-version }}
           architecture: ${{ matrix.architecture }}
@@ -168,7 +168,7 @@ jobs:
         run: make -C src -f Makefile.win32 pymod-dist
 
       - name: Upload dist
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@0b2256b8c012f0828dc542b3febcab082c67f72b # v4.3.4
         with:
           name:
             pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
@@ -223,7 +223,7 @@ jobs:
           --candidate=100)" >> $GITHUB_ENV
 
       - name: Set up Python
-        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
+        uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
 
       - name: Set up setuptools
         run: |
