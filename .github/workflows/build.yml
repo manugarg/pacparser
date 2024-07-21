@@ -104,11 +104,13 @@ jobs:
         with:
           pattern: pacparser-dist-*
 
-      - run: |
+      - name: Fix files
+        run: |
           ls -R .
           mv pacparser-dist-*/*.zip .
           file=$(ls pacparser-*-ubuntu*.zip)
           name=${file/ubuntu/windows}
+          name=${name/.zip/}
           mv pacparser-dist-windows-latest $name
           zip -r $name.zip $name
 
