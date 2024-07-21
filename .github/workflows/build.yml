@@ -103,7 +103,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: pacparser-dist-*
-
+      - run: ls -R .
       - name: Upload pacparser release
         uses: actions/upload-artifact@v2
         with:
