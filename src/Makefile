@@ -106,11 +106,15 @@ pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
 $(LIBRARY): pacparser.o spidermonkey/libjs.a
 	$(MKSHLIB) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o spidermonkey/libjs.a -lm
 
+libpacparser.a: pacparser.o spidermonkey/libjs.a
+	cp spidermonkey/libjs.a libpacparser.a
+	ar rcs libpacparser.a pacparser.o
+
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
-pactester: pactester.c pacparser.h pacparser.o spidermonkey/libjs.a
-	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) pactester.c pacparser.o spidermonkey/libjs.a -o pactester -lm -L. -I.
+pactester: pactester.c pacparser.h libpacparser.a 
+	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) pactester.c libpacparser.a -o pactester -lm -L. -I.
 
 testpactester: pactester $(LIBRARY_LINK)
 	echo "Running tests for pactester."
