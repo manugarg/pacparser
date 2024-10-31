@@ -20,7 +20,6 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include <errno.h>
-#include <jsapi.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -42,6 +41,7 @@
 
 #include "pac_utils.h"
 #include "pacparser.h"
+#include "duktape.h"
 
 #define MAX_IP_RESULTS 10
 
@@ -123,11 +123,10 @@ error2:
 }
 
 static void
-print_jserror(JSContext *cx, const char *message, JSErrorReport *report)
+handle_fatal(void *udata, const char *msg)
 {
-  print_error("JSERROR: %s:%d:\n    %s\n",
-	      (report->filename ? report->filename : "NULL"), report->lineno,
-	      message);
+  (void)udata;
+  print_error("%s\n", msg);
 }
 
 // DNS Resolve function; used by other routines.
@@ -174,54 +173,45 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results,
 
 // dnsResolve in JS context; not available in core JavaScript.
 // returns javascript null if not able to resolve.
-static JSBool                                  // JS_TRUE or JS_FALSE
-dns_resolve(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv, jsval *rval)
+static int
+dns_resolve(duk_context *cx)
 {
-  char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
-  char* out;
+  char* name = duk_require_string(cx, 0);
   char ipaddr[INET6_ADDRSTRLEN] = "";
 
   // Return null on failure.
   if(resolve_host(name, ipaddr, 1, AF_INET)) {
-    *rval = JSVAL_NULL;
-    return JS_TRUE;
+    duk_push_null(cx);
+    return 1;
   }
 
-  out = JS_malloc(cx, strlen(ipaddr) + 1);
-  strcpy(out, ipaddr);
-  JSString *str = JS_NewString(cx, out, strlen(out));
-  *rval = STRING_TO_JSVAL(str);
-  return JS_TRUE;
+  duk_push_string(cx, ipaddr);
+  return 1;
 }
 
 // dnsResolveEx in JS context; not available in core JavaScript.
 // returns javascript null if not able to resolve.
-static JSBool                                  // JS_TRUE or JS_FALSE
-dns_resolve_ex(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv,
-               jsval *rval)
+static int
+dns_resolve_ex(duk_context *cx)
 {
-  char* name = JS_GetStringBytes(JS_ValueToString(cx, argv[0]));
-  char* out;
+  char* name = duk_require_string(cx, 0);
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS] = "";
 
-  out = JS_malloc(cx, strlen(ipaddr) + 1);
   // Return "" on failure.
   if(resolve_host(name, ipaddr, MAX_IP_RESULTS, AF_UNSPEC)) {
-    strcpy(out, "");
+    strcpy(ipaddr, "");
   }
-  strcpy(out, ipaddr);
-  JSString *str = JS_NewString(cx, out, strlen(out));
-  *rval = STRING_TO_JSVAL(str);
-  return JS_TRUE;
+
+  duk_push_string(cx, ipaddr);
+  return 1;
 }
 
 // myIpAddress in JS context; not available in core JavaScript.
 // returns 127.0.0.1 if not able to determine local ip.
-static JSBool                                  // JS_TRUE or JS_FALSE
-my_ip(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv, jsval *rval)
+static int
+my_ip(duk_context *cx)
 {
   char ipaddr[INET6_ADDRSTRLEN];
-  char* out;
 
   if (my_ip_set)                  // If my (client's) IP address is already set.
     strcpy(ipaddr, my_ip_buf);
@@ -233,20 +223,16 @@ my_ip(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *argv, jsval *r
     }
   }
 
-  out = JS_malloc(cx, strlen(ipaddr) + 1);
-  strcpy(out, ipaddr);
-  JSString *str = JS_NewString(cx, out, strlen(out));
-  *rval = STRING_TO_JSVAL(str);
-  return JS_TRUE;
+  duk_push_string(cx, ipaddr);
+  return 1;
 }
 
 // myIpAddressEx in JS context; not available in core JavaScript.
 // returns 127.0.0.1 if not able to determine local ip.
-static JSBool                                  // JS_TRUE or JS_FALSE
-my_ip_ex(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *UNUSED(argv), jsval *rval)
+static int
+my_ip_ex(duk_context *cx)
 {
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS];
-  char* out;
 
   if (my_ip_set)                  // If my (client's) IP address is already set.
     strcpy(ipaddr, my_ip_buf);
@@ -258,22 +244,12 @@ my_ip_ex(JSContext *cx, JSObject *UNUSED(o), uintN UNUSED(u), jsval *UNUSED(argv
     }
   }
 
-  out = JS_malloc(cx, strlen(ipaddr) + 1);
-  strcpy(out, ipaddr);
-  JSString *str = JS_NewString(cx, out, strlen(out));
-  *rval = STRING_TO_JSVAL(str);
-  return JS_TRUE;
+  duk_push_string(cx, ipaddr);
+  return 1;
 }
 
 // Define some JS context related variables.
-static JSRuntime *rt = NULL;
-static JSContext *cx = NULL;
-static JSObject *global = NULL;
-static JSClass global_class = {
-    "global",0,
-    JS_PropertyStub,JS_PropertyStub,JS_PropertyStub,JS_PropertyStub,
-    JS_EnumerateStub,JS_ResolveStub,JS_ConvertStub,JS_FinalizeStub
-};
+static duk_context *cx = NULL;
 
 // Set my (client's) IP address to a custom value.
 int
@@ -308,51 +284,30 @@ pacparser_enable_microsoft_extensions()
 int                                     // 0 (=Failure) or 1 (=Success)
 pacparser_init()
 {
-  jsval rval;
   char *error_prefix = "pacparser.c: pacparser_init:";
   // Initialize JS engine
-  if (!(rt = JS_NewRuntime(8L * 1024L * 1024L)) ||
-      !(cx = JS_NewContext(rt, 8192)) ||
-      !(global = JS_NewObject(cx, &global_class, NULL, NULL)) ||
-      !JS_InitStandardClasses(cx, global)) {
+  if ((cx = duk_create_heap(NULL, NULL, NULL, NULL, handle_fatal)) == NULL) {
     print_error("%s %s\n", error_prefix, "Could not initialize  JavaScript "
 		  "runtime.");
     return 0;
   }
-  JS_SetErrorReporter(cx, print_jserror);
   // Export our functions to Javascript engine
-  if (!JS_DefineFunction(cx, global, "dnsResolve", &dns_resolve, 1, 0)) {
-    print_error("%s %s\n", error_prefix,
-		  "Could not define dnsResolve in JS context.");
-    return 0;
-  }
-  if (!JS_DefineFunction(cx, global, "myIpAddress", &my_ip, 0, 0)) {
-    print_error("%s %s\n", error_prefix,
-		  "Could not define myIpAddress in JS context.");
-    return 0;
-  }
-  if (!JS_DefineFunction(cx, global, "dnsResolveEx", &dns_resolve_ex, 1, 0)) {
-    print_error("%s %s\n", error_prefix,
-      "Could not define dnsResolveEx in JS context.");
-    return 0;
-  }
-  if (!JS_DefineFunction(cx, global, "myIpAddressEx", &my_ip_ex, 0, 0)) {
-    print_error("%s %s\n", error_prefix,
-		  "Could not define myIpAddressEx in JS context.");
-    return 0;
-  }
+  duk_push_c_function(cx, dns_resolve, 1);
+  duk_put_global_string(cx, "dnsResolve");
+  duk_push_c_function(cx, my_ip, 0);
+  duk_put_global_string(cx, "myIpAddress");
+  duk_push_c_function(cx, dns_resolve_ex, 1);
+  duk_put_global_string(cx, "dnsResolveEx");
+  duk_push_c_function(cx, my_ip_ex, 0);
+  duk_put_global_string(cx, "myIpAddressEx");
   // Evaluate pacUtils. Utility functions required to parse pac files.
-  if (!JS_EvaluateScript(cx,           // JS engine context
-                         global,       // global object
-                         pacUtils,     // this is defined in pac_utils.h
-                         strlen(pacUtils),
-                         NULL,         // filename (NULL in this case)
-                         1,            // line number, used for reporting.
-                         &rval)) {
-    print_error("%s %s\n", error_prefix,
-		  "Could not evaluate pacUtils defined in pac_utils.h.");
+  if (duk_peval_string(cx, pacUtils) != 0) {
+    print_error("%s %s: %s\n", error_prefix,
+                 "Could not evaluate pacUtils defined in pac_utils.h.", duk_safe_to_string(cx, -1));
     return 0;
   }
+  duk_pop(cx);
+
   if (_debug()) print_error("DEBUG: Pacparser Initialized.\n");
   return 1;
 }
@@ -364,24 +319,18 @@ pacparser_init()
 int                                     // 0 (=Failure) or 1 (=Success)
 pacparser_parse_pac_string(const char *script)
 {
-  jsval rval;
   char *error_prefix = "pacparser.c: pacparser_parse_pac_string:";
-  if (cx == NULL || global == NULL) {
+  if (cx == NULL) {
     print_error("%s %s\n", error_prefix, "Pac parser is not initialized.");
     return 0;
   }
-  if (!JS_EvaluateScript(cx,
-                         global,
-                         script,       // Script read from pacfile
-                         strlen(script),
-                         "PAC script",
-                         1,
-                         &rval)) {     // If script evaluation failed
-    print_error("%s %s\n", error_prefix, "Failed to evaluate the pac script.");
+  if (duk_peval_string(cx, script)) {
+    print_error("%s %s: %s\n", error_prefix, "Failed to evaluate the pac script.", duk_safe_to_string(cx, -1));
     if (_debug()) print_error("DEBUG: Failed to parse the PAC script:\n%s\n",
 				script);
     return 0;
   }
+  duk_pop(cx);
   if (_debug()) print_error("DEBUG: Parsed the PAC script.\n");
   return 1;
 }
@@ -432,7 +381,6 @@ pacparser_find_proxy(const char *url, const char *host)
   char *error_prefix = "pacparser.c: pacparser_find_proxy:";
   if (_debug()) print_error("DEBUG: Finding proxy for URL: %s and Host:"
                         " %s\n", url, host);
-  jsval rval;
   char *script;
   if (url == NULL || (strcmp(url, "") == 0)) {
     print_error("%s %s\n", error_prefix, "URL not defined");
@@ -442,29 +390,25 @@ pacparser_find_proxy(const char *url, const char *host)
     print_error("%s %s\n", error_prefix, "Host not defined");
     return NULL;
   }
-  if (cx == NULL || global == NULL) {
+  if (cx == NULL) {
     print_error("%s %s\n", error_prefix, "Pac parser is not initialized.");
     return NULL;
   }
   // Test if findProxyForURL is defined.
-  script = "typeof(findProxyForURL);";
-  if (_debug()) print_error("DEBUG: Executing JavaScript: %s\n", script);
-  JS_EvaluateScript(cx, global, script, strlen(script), NULL, 1, &rval);
-  if (strcmp("function", JS_GetStringBytes(JS_ValueToString(cx, rval))) != 0) {
+  duk_get_global_string(cx, "findProxyForURL");
+  if (!duk_is_function(cx, 0)) {
     print_error("%s %s\n", error_prefix,
-		  "Javascript function findProxyForURL not defined.");
+		    "JavaScript function findProxyForURL not defined.");
+    duk_pop(cx);
     return NULL;
   }
-
-  jsval args[2];
-  args[0] = STRING_TO_JSVAL(JS_NewStringCopyZ(cx, url));
-  args[1] = STRING_TO_JSVAL(JS_NewStringCopyZ(cx, host));
-  
-  if (!JS_CallFunctionName(cx, global, "findProxyForURL", 2, args, &rval)) {
-    print_error("%s %s\n", error_prefix, "Problem in executing findProxyForURL.");
+  duk_push_string(cx, url);
+  duk_push_string(cx, host);
+  if (duk_pcall(cx, 2)) {
+    print_error("%s %s: %s\n", error_prefix, "Problem in executing findProxyForURL", duk_safe_to_string(cx, -1));
     return NULL;
   }
-  return JS_GetStringBytes(JS_ValueToString(cx, rval));
+  return duk_get_string(cx, -1);
 }
 
 // Destroys JavaSctipt Engine.
@@ -475,15 +419,9 @@ pacparser_cleanup()
   my_ip_set = 0;
 
   if (cx) {
-    JS_DestroyContext(cx);
+    duk_destroy_heap(cx);
     cx = NULL;
   }
-  if (rt) {
-    JS_DestroyRuntime(rt);
-    rt = NULL;
-  }
-  if (!cx && !rt) JS_ShutDown();
-  global = NULL;
   if (_debug()) print_error("DEBUG: Pacparser destroyed.\n");
 }
 
@@ -502,7 +440,7 @@ pacparser_just_find_proxy(const char *pacfile,
   char *out;
   int initialized_here = 0;
   char *error_prefix = "pacparser.c: pacparser_just_find_proxy:";
-  if (!global) {
+  if (!cx) {
     if (!pacparser_init()) {
       print_error("%s %s\n", error_prefix, "Could not initialize pacparser");
       return NULL;

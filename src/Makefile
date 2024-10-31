@@ -45,7 +45,7 @@ LIB_VER = 1
 SO_SUFFIX = so
 LIBRARY = $(LIBRARY_NAME).$(SO_SUFFIX).$(LIB_VER)
 MKSHLIB = $(CC) -shared
-LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
+LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=duktape.o
 SHFLAGS = -fPIC
 SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=va_copy
 
@@ -78,9 +78,6 @@ ifndef PYTHON
   PYTHON = python
 endif
 
-# Spidermonkey library.
-MAINT_CFLAGS += -Ispidermonkey/js/src
-
 LIBRARY_LINK = $(LIBRARY_NAME).$(SO_SUFFIX)
 PREFIX := $(DESTDIR)$(PREFIX)
 LIB_PREFIX = $(PREFIX)/lib
@@ -92,23 +89,19 @@ MAN_PREFIX = $(PREFIX)/share/man
 .PHONY: clean pymod install-pymod
 all: testpactester
 
-jsapi_buildstamp: spidermonkey/js/src
-	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jsapi
-	touch jsapi_buildstamp
+duktape.o: duktape.c duktape.h duk_config.h
+	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(SHFLAGS) -c duktape.c -o dutape.o
+	touch pymod/duktape_o_buildstamp
 
-spidermonkey/libjs.a: spidermonkey/js/src
-	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jslib
-
-pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
+pacparser.o: pacparser.c pac_utils.h pacparser.h
 	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
-$(LIBRARY): pacparser.o spidermonkey/libjs.a
-	$(MKSHLIB) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o spidermonkey/libjs.a -lm
+$(LIBRARY): pacparser.o duktape.o
+	$(MKSHLIB) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o duktape.o -lm
 
-libpacparser.a: pacparser.o spidermonkey/libjs.a
-	cp spidermonkey/libjs.a libpacparser.a
-	ar rcs libpacparser.a pacparser.o
+libpacparser.a: pacparser.o duktape.o
+	ar rcs libpacparser.a pacparser.o duktape.o
 
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
@@ -149,11 +142,11 @@ dist: all
 	zip -r $${bindir}.zip $${bindir}/.
 
 # Targets to build python module
-pymod: pacparser.o pacparser.h spidermonkey/libjs.a
+pymod: pacparser.o pacparser.h duktape.o
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
 	$(PYTHON) ../tests/runtests.py
 
-pymod-dist: pacparser.o pacparser.h spidermonkey/libjs.a
+pymod-dist: pacparser.o pacparser.h duktape.o
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py dist
 	$(PYTHON) ../tests/runtests.py
@@ -165,4 +158,3 @@ clean:
 	rm -f $(LIBRARY_LINK) $(LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
 	rm -rf dist
 	cd pymod && $(PYTHON) setup.py clean --all
-	cd spidermonkey && $(MAKE) clean
