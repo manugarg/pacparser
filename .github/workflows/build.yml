@@ -2,7 +2,7 @@ name: Build Pacparser
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - "src/**"
       - ".github/**"
@@ -268,7 +268,7 @@ jobs:
     name: Build and push multiarch docker image
     if: |
       github.repository == 'manugarg/pacparser' &&
-      (github.ref == 'refs/heads/master' || startswith(github.ref, 'refs/heads/docker') ||
+      (github.ref == 'refs/heads/main' || startswith(github.ref, 'refs/heads/docker') ||
       startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     steps:
