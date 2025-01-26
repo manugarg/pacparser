@@ -1,0 +1,272 @@
+#!/bin/bash
+# Wget wrapper to support Proxy Auto Config files, multiple proxies,
+#   and round-robin server names.
+# Requires wget, and pacparse command which is part of pacparser package
+# Written by Dave Dykstra, March 2013
+#
+# pacwget is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 3 of the License, or (at your option) any later version.
+#
+# pacwget is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+
+ME=pacwget
+
+usage()
+{
+    (
+    echo "Usage: $ME [--only-proxies] [wget_options]" 
+    echo
+    echo '$PAC_URLS is a semicolon-separated list of URLs to try to read'
+    echo '  Proxy Auto Config files from if $HTTP_PROXIES and $http_proxy are'
+    echo '  not set.  "auto" in the list is equivalent to http://wpad/wpad.dat'
+    echo '  and "DIRECT" at the end indicates direct connection to server.'
+    echo '  Everything else must begin with http:// or file://.'
+    echo '  Default is "auto; DIRECT".'
+    echo '$HTTP_PROXIES is a semicolon-separated list of http proxy URLs'.
+    echo '  "DIRECT" at the end indicates direct connection to server.'
+    echo '$http_proxy is single http proxy URL.'
+    echo 'For http:// URLs, tries all proxies and servers until one succeeds,'
+    echo '   including round-robin DNS names.'
+    echo 'By default adds these wget options:'
+    echo '  --tries=1 --connect-timeout=5 --read-timeout=10'
+    echo 'Also adds wget -q when reading PAC URLs if -v or -d not given'
+    echo 'If --only-proxies is given, prints to stdout a $HTTP_PROXIES-like list of'
+    echo '  proxies that would be used and does not load the given http URL with wget.'
+    ) >&2
+    exit 1
+}
+
+if [ $# = 0 ]; then
+    usage
+fi
+
+CONNECTTIMEOUT=""
+READTIMEOUT=""
+PREV_ARG=""
+AHTTPURL=""
+AURL=""
+IPVERSION=""
+ONLYPROXIES=false
+PACPARSEDEBUG=""
+PACWGETQUIET="-q"
+for ARG; do
+    case "$PREVARG" in
+	-*T*)
+	    CONNECTTIMEOUT="$ARG"
+	    READTIMEOUT="$ARG"
+	    next
+	    ;;
+    esac
+    case "$ARG" in
+	--connect-timeout=*)
+	    CONNECTTIMEOUT=${ARG#*=}
+	    ;;
+	--read-timeout=*)
+	    READTIMEOUT=${ARG#*=}
+	    ;;
+	--only-proxies)
+	    ONLYPROXIES=true;
+	    ;;
+	--inet4-only|-4)
+	    IPVERSION="-4"
+	    ;;
+	--inet6-only|-6)
+	    IPVERSION="-6"
+	    ;;
+	--debug|-d)
+	    PACPARSEDEBUG="-d"
+	    PACWGETQUIET=""
+	    ;;
+	--verbose|-v)
+	    PACWGETQUIET=""
+	    ;;
+	http://*)
+	    if [ -z "$AHTTPURL" ]; then
+		AHTTPURL="$ARG"
+	    fi
+	    ;;
+	*://*)
+	    AURL="$ARG"
+	    ;;
+    esac
+done
+
+PACWGETARGS="--tries=1 $PACWGETQUIET $IPVERSION"
+WGETARGS="--tries=1"
+if [ -n "$CONNECTTIMEOUT" ]; then
+    PACWGETARGS="$PACWGETARGS --connect-timeout=$CONNECTTIMEOUT"
+else
+    PACWGETARGS="$PACWGETARGS --connect-timeout=5"
+    WGETARGS="$WGETARGS --connect-timeout=5"
+fi
+if [ -n "$READTIMEOUT" ]; then
+    PACWGETARGS="$PACWGETARGS --read-timeout=$READTIMEOUT"
+else
+    PACWGETARGS="$PACWGETARGS --read-timeout=10"
+    WGETARGS="$WGETARGS --read-timeout=10"
+fi
+if [ -n "$PACPARSEDEBUG" ]; then
+    PACWGETARGS="$PACWGETARGS -d"
+fi
+
+if [ -z "$AHTTPURL" ]; then
+    if [ -z "$AURL" ] || $ONLYPROXIES; then
+	usage
+    fi
+    # no HTTP URLs but there are other URLs so just let wget handle it
+    exec wget $WGETARGS "$@"
+fi
+
+if [ -n "$HTTP_PROXIES" ]; then
+    PROXIES="${HTTP_PROXIES//;/ }"
+elif [ -n "$http_proxy" ]; then
+    PROXIES="$http_proxy"
+else
+    if [ -z "$PAC_URLS" ]; then
+	PAC_URLS="auto; DIRECT"
+    fi
+    PACTMPFILE=`mktemp /tmp/pacwgetXXXXXXXXXX`
+    trap "rm -f $PACTMPFILE" 0
+    for PACURL in ${PAC_URLS//;/ }; do
+	if [ "$PACURL" = "auto" ]; then
+	    PACURL="http://wpad/wpad.dat"
+	elif [ "$PACURL" = "DIRECT" ]; then
+	    PROXIES="DIRECT"
+	    break
+	fi
+	if [ "$PACURL" != "${PACURL#file://}" ]; then
+	    PACFILE=/${PACURL#file://*/}
+	    if [ ! -r "$PACFILE" ]; then
+		echo "$ME: $PACFILE does not exist or is not readable" >&2
+		exit 2
+	    fi
+	    PROXYLIST="`pacparse $IPVERSION $PACPARSEDEBUG -p $PACFILE -u "$AHTTPURL"`"
+	    PACPARSERET=$?
+	elif [ "$PACURL" != "${PACURL#http://}" ]; then
+	    if [ -n "$PACPARSEDEBUG" ]; then
+		echo "DEBUG: wgetting $PACURL"
+	    fi
+	    if wget $PACWGETARGS -O$PACTMPFILE $PACURL; then
+		PROXYLIST="`pacparse $IPVERSION $PACPARSEDEBUG -p $PACTMPFILE -u "$AHTTPURL" -U "$PACURL"`"
+		PACPARSERET=$?
+	    else
+		# wget of a PAC file failed, silently continue to next one
+		continue
+	    fi
+	else
+	    echo "$ME: $PACURL isn't auto or DIRECT" >&2
+	    echo "    and doesn't begin with http:// or file://" >&2
+	    exit 2
+	fi
+	if [ "$PACPARSERET" != 0 ]; then
+	    echo "$ME: failed Proxy Auto Config parse of $PACURL" >&2
+	    echo "  with URL $AHTTPURL" >&2
+	    exit $PACPARSERET
+	fi
+	case "$PROXYLIST" in
+	    "PROXY "*|"DIRECT")
+		PROXIES="${PROXYLIST//PROXY /}"
+		PROXIES="${PROXIES//;/ }"
+		break
+		;;
+	esac
+	echo "$ME: Proxy Auto Config parse of $PACURL" >&2
+	echo "  with URL $AHTTPURL" >&2
+	echo "  did not return list starting with PROXY or DIRECT" >&2
+	echo "  Instead it returned: $PROXYLIST" >&2
+	exit 2
+    done
+    if [ -z "$PROXIES" ]; then
+	echo "$ME: no proxy found from PAC_URLS=\"$PAC_URLS\"" >&2
+	exit 2
+    fi
+    rm -f $PACTMPFILE
+    trap 0
+fi
+
+if $ONLYPROXIES; then
+    PROXIES="`echo $PROXIES`" # consolidate multiple blanks to 1
+    echo ${PROXIES// /;}
+    exit
+fi
+
+# Execute wget for each URL separately
+# It would nice to be able to execute wget once for all URLs, but it sometimes
+#  returns success even if one of the URLs fails.  Also, it never reuses a
+#  connection to a proxy anyway so it doesn't make a huge difference.  At
+#  least the list of proxies determined above can be reused
+RET=0
+for ARG; do
+    case "$ARG" in
+	http://*);;
+	*://*)
+	    wget $WGETARGS "$ARG"
+	    RET=$?
+	    if [ $RET = 0 ]; then
+		continue
+	    fi
+	    break
+	    ;;
+	*)
+	    WGETARGS="$WGETARGS $ARG"
+	    continue
+	    ;;
+    esac
+
+    # http:// -- try wget until one of the proxies suceeds
+    for PROXY in $PROXIES; do
+	if [ "$PROXY" = DIRECT ]; then
+	    unset http_proxy
+	else
+	    export http_proxy="$PROXY"
+	fi
+	wget $WGETARGS "$ARG"
+	RET=$?
+	if [ $RET = 0 ]; then
+	    break
+	fi
+	if [ "$PROXY" != DIRECT ]; then
+	    # if using a proxy, and server has more than one address,
+	    #  try individual addresses too if can find them, to make
+	    #  sure all have been tried
+	    AHOST="${AHTTPURL#http://}"
+	    AHOST="${AHOST%%/*}"
+	    AHOST="${AHOST%:*}"
+	    IPS="`host $AHOST 2>/dev/null|sed -n "s/.* has address //p"`"
+	    if [ `echo "$IPS"|wc -l` -lt 2 ]; then
+		continue
+	    fi
+	    for IP in $IPS; do
+		RET=0
+		wget $WGETARGS "${ARG/$AHOST/$IP}"
+		RET=$?
+		if [ $RET = 0 ]; then
+		    break
+		fi
+	    done
+	    if [ $RET = 0 ]; then
+		break
+	    fi
+	fi
+	if [ $RET = 0 ]; then
+	    break
+	fi
+    done
+    if [ $RET != 0 ]; then
+	echo "$ME: error getting $ARG" >&2
+	echo "  with HTTP_PROXIES=${PROXIES// /; }" >&2
+	break
+    fi
+done
+
+exit $RET
