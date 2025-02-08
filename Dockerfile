@@ -1,8 +1,8 @@
-# Use Alpine Linux as the base image
-FROM alpine:latest as build-stage
+# Use Ubuntu as the base image
+FROM ubuntu:latest AS build-stage
 
 # Install build dependencies
-RUN apk update && apk add --no-cache \
+RUN apt-get update && apt-get install -y \
     gcc \
     git \
     g++ \
@@ -14,7 +14,7 @@ COPY src /build
 RUN make pactester
 
 # Final stage
-FROM alpine:latest
+FROM ubuntu:latest
 
 WORKDIR /app
 COPY --from=build-stage /build/pactester /app/
