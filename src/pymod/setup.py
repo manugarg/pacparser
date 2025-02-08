@@ -130,7 +130,7 @@ def main(patched_func):
     extra_objects = []
     obj_search_path = {
         "pacparser.o": ["..", "."],
-        "libjs.a": ["../spidermonkey", "."],
+        "duktape.o": ["..", "."],
     }
     for obj, paths in obj_search_path.items():
         for path in paths:
@@ -145,7 +145,7 @@ def main(patched_func):
         import distutils.cygwinccompiler
 
         distutils.cygwinccompiler.get_msvcr = lambda: ["vcruntime140"]
-        extra_objects = ["../pacparser.o", "../spidermonkey/js.lib"]
+        extra_objects = ["../pacparser.o", "../duktape.o"]
         libraries = ["ws2_32"]
         extra_link_args = ["-static-libgcc", "-L" + python_home]
 

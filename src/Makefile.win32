@@ -39,7 +39,7 @@ endif
 VERSION ?= $(shell git describe --always --tags --candidate=100)
 
 LIB_VER=1
-CFLAGS=-g -DXP_WIN -DWINVER=0x0501 -DVERSION=$(VERSION) -Ispidermonkey/js/src -Wall
+CFLAGS=-g -DXP_WIN -DWINVER=0x0501 -DVERSION=$(VERSION) -Wall
 CC=gcc
 PYTHON ?= python
 
@@ -47,24 +47,24 @@ PYTHON ?= python
 
 all: pacparser.dll pactester
 
-pacparser.o: pacparser.c pac_utils.h js.lib
+pacparser.o: pacparser.c pac_utils.h
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
 
-js.lib:
-	$(MAKE) -C spidermonkey -f Makefile.win32
+duktape.o: duktape.c duk_config.h duktape.h
+	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
 
-pacparser.dll: pacparser.o spidermonkey/js.lib
+pacparser.dll: pacparser.o duktape.o
 	$(CC) -shared -o pacparser.dll \
 	-Wl,--output-def,pacparser.def \
 	-Wl,--out-implib,libpacparser.a \
 	-Wl,--export-all-symbols \
-	pacparser.o -ljs -Lspidermonkey -lws2_32
+	pacparser.o duktape.o -lws2_32
 
 pacparser.lib: pacparser.dll pacparser.def
 	lib /machine:i386 /def:pacparser.def
 
 pactester: pactester.c pacparser.h pacparser.o
-	$(CC) pactester.c pacparser.o -o pactester -ljs -Lspidermonkey -lws2_32
+	$(CC) pactester.c pacparser.o duktape.o -o pactester -lws2_32
 
 dist: pacparser.dll pactester pacparser.def
 	if exist dist rmdir /s /q dist
@@ -98,7 +98,6 @@ pymod-dist-%:
 	cd pymod && py -$* setup.py dist
 
 clean:
-	$(RM) pacparser.dll *.lib pacparser.def pacparser.exp pacparser.o pactester.exe libpacparser.a
-	$(MAKE) -C spidermonkey -f Makefile.win32 clean
+	$(RM) pacparser.dll *.lib pacparser.def pacparser.exp pacparser.o duktape.o pactester.exe libpacparser.a
 	cd pymod && $(PYTHON) setup.py clean --all
 	$(RM) dist
