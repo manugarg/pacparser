@@ -82,15 +82,15 @@ dist: pacparser.dll pactester pacparser.def
 	if exist ..\docs\html xcopy ..\docs\html dist\docs
 
 # Targets to build python module
-pymod: pacparser.h pacparser.dll pacparser.o js.lib
+pymod: pacparser.h pacparser.dll pacparser.o duktape.o
 	cd pymod && $(PYTHON) setup.py build --compiler=mingw32
 	cd .. && $(PYTHON) tests/runtests.py
 
-pymod-dist: pacparser.h pacparser.dll pacparser.o js.lib
+pymod-dist: pacparser.h pacparser.dll pacparser.o duktape.o
 	cd pymod && $(PYTHON) setup.py build --compiler=mingw32 && $(PYTHON) setup.py dist
 	cd .. && $(PYTHON) tests/runtests.py
 
-pymod-%: pacparser.h pacparser.dll pacparser.o js.lib
+pymod-%: pacparser.h pacparser.dll pacparser.o duktape.o
 	cd pymod && py -$* setup.py  build --compiler=mingw32
 	cd .. && py -$* tests\runtests.py
 
