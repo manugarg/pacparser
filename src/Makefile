@@ -90,7 +90,7 @@ MAN_PREFIX = $(PREFIX)/share/man
 all: testpactester
 
 duktape.o: duktape.c duktape.h duk_config.h
-	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(SHFLAGS) -c duktape.c -o dutape.o
+	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(SHFLAGS) -c duktape.c -o duktape.o
 	touch pymod/duktape_o_buildstamp
 
 pacparser.o: pacparser.c pac_utils.h pacparser.h
