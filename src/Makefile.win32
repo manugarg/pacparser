@@ -51,7 +51,7 @@ pacparser.o: pacparser.c pac_utils.h
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
 
 duktape.o: duktape.c duk_config.h duktape.h
-	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
+	$(CC) $(CFLAGS) -c duktape.c -o duktape.o
 
 pacparser.dll: pacparser.o duktape.o
 	$(CC) -shared -o pacparser.dll \
