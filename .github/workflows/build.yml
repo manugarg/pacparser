@@ -25,14 +25,12 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-13, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
             os_suffix: "ubuntu-x86_64"
           - os: macos-latest
             os_suffix: "macos-arm64"
-          - os: macos-13
-            os_suffix: "macos-x86_64"
           - os: windows-latest
             os_suffix: "windows-x86_64"
     runs-on: ${{ matrix.os }}
