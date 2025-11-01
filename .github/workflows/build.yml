@@ -123,12 +123,15 @@ jobs:
   python-module-build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
         architecture: [x64]
         include:
           - os: macos-latest
             architecture: arm64
+        exclude:
+          - os: macos-latest
+            architecture: x64
     runs-on: ${{ matrix.os }}
 
     steps:
