@@ -83,14 +83,14 @@ jobs:
 
       - name: Upload dist (non-windows)
         if: ${{ matrix.os != 'windows-latest' }}
-        uses: actions/upload-artifact@0b2256b8c012f0828dc542b3febcab082c67f72b # v4.3.4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: pacparser-dist-${{ matrix.os }}
           path: src/pacparser*.zip
 
       - name: Upload dist (windows)
         if: ${{ matrix.os == 'windows-latest' }}
-        uses: actions/upload-artifact@0b2256b8c012f0828dc542b3febcab082c67f72b # v4.3.4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: pacparser-dist-${{ matrix.os }}
           path: src/dist
@@ -100,7 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download ubuntu cloudprober binaries
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           pattern: pacparser-dist-*
 
@@ -115,7 +115,7 @@ jobs:
           zip -r $name.zip $name
 
       - name: Upload pacparser release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pacparser-release-binaries
           path: pacparser-*.zip
@@ -168,7 +168,7 @@ jobs:
         run: make -C src -f Makefile.win32 pymod-dist
 
       - name: Upload dist
-        uses: actions/upload-artifact@0b2256b8c012f0828dc542b3febcab082c67f72b # v4.3.4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name:
             pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
