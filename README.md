@@ -34,7 +34,7 @@ For Python module, you can use pip. Pre-built module is available for `64-bit Li
 Windows, MacOS-Intel, and MacOS-ARM`, for Python `3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14`.
 ```
 python -m pip install pacparser
-python -m pip install pacparser==1.3.8.dev15 (specific version)
+python -m pip install pacparser==1.4.6 (specific version)
 ```
 
 For other pre-built binaries, download them from the project's [releases](
