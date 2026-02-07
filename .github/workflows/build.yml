@@ -230,7 +230,7 @@ jobs:
 
       - name: Build wheel using cibuildwheel
         run: |
-          cp src/spidermonkey/libjs.a src/pacparser.o src/pacparser.h src/pymod
+          cp src/quickjs/libquickjs.a src/pacparser.o src/pacparser.h src/pymod
           cd src/pymod && python -m cibuildwheel --output-dir dist
         env:
           CIBW_BUILD: "cp{37,38,39,310,311,312}-manylinux*64"

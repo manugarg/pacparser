@@ -40,3 +40,5 @@ src/pactester
 *.json
 pactester
 info.plist
+
+.gemini/tmp

@@ -45,9 +45,8 @@ LIB_VER = 1
 SO_SUFFIX = so
 LIBRARY = $(LIBRARY_NAME).$(SO_SUFFIX).$(LIB_VER)
 MKSHLIB = $(CC) -shared
-LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libjs.a
+LIB_OPTS = -Wl,-soname=$(LIBRARY) -Wl,-exclude-libs=libquickjs.a
 SHFLAGS = -fPIC
-SMCFLAGS = -DHAVE_VA_COPY -DVA_COPY=va_copy
 
 ifeq ($(OS_ARCH),FreeBSD)
 	PREFIX ?= /usr/local
@@ -62,24 +61,17 @@ ifeq ($(OS_ARCH),Darwin)
   MKSHLIB = $(CC) -dynamiclib -framework System
   LIB_OPTS = -install_name $(PREFIX)/lib/$(notdir $@)
   SHFLAGS =
-  ifeq ($(MAC_GT_OS11),false)
-    MAC_MINOR_VERSION := $(shell sw_vers -productVersion | cut -d. -f2)
-    MAC_GT_10_5 := $(shell [ $(MAC_MINOR_VERSION) -le 5 ] && echo false)
-    ifeq ($(MAC_GT_10_5),false)
-      SMCFLAGS =
-    endif
-  endif
 endif
 
 PREFIX ?= /usr
-MAINT_CFLAGS := -g -DXP_UNIX -Wall -DVERSION=$(VERSION)
+MAINT_CFLAGS := -g -Wall -DVERSION=$(VERSION)
 
 ifndef PYTHON
   PYTHON = python
 endif
 
-# Spidermonkey library.
-MAINT_CFLAGS += -Ispidermonkey/js/src
+# QuickJS library.
+MAINT_CFLAGS += -Iquickjs
 
 LIBRARY_LINK = $(LIBRARY_NAME).$(SO_SUFFIX)
 PREFIX := $(DESTDIR)$(PREFIX)
@@ -92,28 +84,24 @@ MAN_PREFIX = $(PREFIX)/share/man
 .PHONY: clean pymod install-pymod
 all: testpactester
 
-jsapi_buildstamp: spidermonkey/js/src
-	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jsapi
-	touch jsapi_buildstamp
+quickjs/libquickjs.a:
+	cd quickjs && $(MAKE) CFLAGS="$(SHFLAGS)"
 
-spidermonkey/libjs.a: spidermonkey/js/src
-	cd spidermonkey && SMCFLAGS="$(SHFLAGS) $(SMCFLAGS)" $(MAKE) jslib
-
-pacparser.o: pacparser.c pac_utils.h pacparser.h jsapi_buildstamp
+pacparser.o: pacparser.c pac_utils.h pacparser.h
 	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(SHFLAGS) -c pacparser.c -o pacparser.o
 	touch pymod/pacparser_o_buildstamp
 
-$(LIBRARY): pacparser.o spidermonkey/libjs.a
-	$(MKSHLIB) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o spidermonkey/libjs.a -lm
+$(LIBRARY): pacparser.o quickjs/libquickjs.a
+	$(MKSHLIB) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) $(LIB_OPTS) -o $(LIBRARY) pacparser.o quickjs/libquickjs.a -lm
 
-libpacparser.a: pacparser.o spidermonkey/libjs.a
-	cp spidermonkey/libjs.a libpacparser.a
+libpacparser.a: pacparser.o quickjs/libquickjs.a
+	cp quickjs/libquickjs.a libpacparser.a
 	ar rcs libpacparser.a pacparser.o
 
 $(LIBRARY_LINK): $(LIBRARY)
 	ln -sf $(LIBRARY) $(LIBRARY_LINK)
 
-pactester: pactester.c pacparser.h libpacparser.a 
+pactester: pactester.c pacparser.h libpacparser.a
 	$(CC) $(MAINT_CFLAGS) $(CFLAGS) $(LDFLAGS) pactester.c libpacparser.a -o pactester -lm -L. -I.
 
 testpactester: pactester $(LIBRARY_LINK)
@@ -149,11 +137,11 @@ dist: all
 	zip -r $${bindir}.zip $${bindir}/.
 
 # Targets to build python module
-pymod: pacparser.o pacparser.h spidermonkey/libjs.a
+pymod: pacparser.o pacparser.h quickjs/libquickjs.a
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
 	$(PYTHON) ../tests/runtests.py
 
-pymod-dist: pacparser.o pacparser.h spidermonkey/libjs.a
+pymod-dist: pacparser.o pacparser.h quickjs/libquickjs.a
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py dist
 	$(PYTHON) ../tests/runtests.py
@@ -162,7 +150,7 @@ install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
 clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp jsapi_buildstamp
+	rm -f $(LIBRARY_LINK) $(LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp libpacparser.a
 	rm -rf dist
 	cd pymod && $(PYTHON) setup.py clean --all
-	cd spidermonkey && $(MAKE) clean
+	cd quickjs && $(MAKE) clean
