@@ -230,11 +230,18 @@ jobs:
 
       - name: Build wheel using cibuildwheel
         run: |
-          cp src/spidermonkey/libjs.a src/pacparser.o src/pacparser.h src/pymod
-          cd src/pymod && python -m cibuildwheel --output-dir dist
+          cd src/pymod && python setup.py clean --all
+          cp -r ../quickjs ../pacparser.c ../pac_utils.h ../pacparser.h .
+          python -m cibuildwheel --output-dir dist
         env:
           CIBW_BUILD: "cp{37,38,39,310,311,312}-manylinux*64"
           CIBW_ENVIRONMENT: "PACPARSER_VERSION=${{ env.PACPARSER_VERSION }}"
+          CIBW_BEFORE_BUILD: >-
+            cd {project} &&
+            make -C quickjs clean &&
+            make -C quickjs CFLAGS='-fPIC' &&
+            cc -g -Wall -DVERSION=$PACPARSER_VERSION -Iquickjs -fPIC -c pacparser.c -o pacparser.o &&
+            cp quickjs/libquickjs.a .
 
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: src_changes

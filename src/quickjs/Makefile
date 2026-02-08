@@ -1,0 +1,7 @@
+CFLAGS += -fPIC
+libquickjs.a: quickjs.o
+	ar rcs $@ $<
+quickjs.o: quickjs.c quickjs.h
+	$(CC) $(CFLAGS) -c quickjs.c -o quickjs.o
+clean:
+	rm -f quickjs.o libquickjs.a

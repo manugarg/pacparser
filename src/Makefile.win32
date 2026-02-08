@@ -22,7 +22,7 @@
 # packaging script.
 -include version.mk
 
-ifeq ($(OS),Windows_NT) 
+ifeq ($(OS),Windows_NT)
 RM = del /Q /F
 CP = copy /Y
 ifdef ComSpec
@@ -39,7 +39,7 @@ endif
 VERSION ?= $(shell git describe --always --tags --candidate=100)
 
 LIB_VER=1
-CFLAGS=-g -DXP_WIN -DWINVER=0x0501 -DVERSION=$(VERSION) -Ispidermonkey/js/src -Wall
+CFLAGS=-g -DWINVER=0x0501 -DVERSION=$(VERSION) -Iquickjs -Wall
 CC=gcc
 PYTHON ?= python
 
@@ -47,24 +47,24 @@ PYTHON ?= python
 
 all: pacparser.dll pactester
 
-pacparser.o: pacparser.c pac_utils.h js.lib
+pacparser.o: pacparser.c pac_utils.h quickjs/libquickjs.a
 	$(CC) $(CFLAGS) -c pacparser.c -o pacparser.o
 
-js.lib:
-	$(MAKE) -C spidermonkey -f Makefile.win32
+quickjs/libquickjs.a:
+	$(MAKE) -C quickjs -f Makefile.win32
 
-pacparser.dll: pacparser.o spidermonkey/js.lib
+pacparser.dll: pacparser.o quickjs/libquickjs.a
 	$(CC) -shared -o pacparser.dll \
 	-Wl,--output-def,pacparser.def \
 	-Wl,--out-implib,libpacparser.a \
 	-Wl,--export-all-symbols \
-	pacparser.o -ljs -Lspidermonkey -lws2_32
+	pacparser.o quickjs/libquickjs.a -lws2_32
 
 pacparser.lib: pacparser.dll pacparser.def
 	lib /machine:i386 /def:pacparser.def
 
-pactester: pactester.c pacparser.h pacparser.o
-	$(CC) pactester.c pacparser.o -o pactester -ljs -Lspidermonkey -lws2_32
+pactester: pactester.c pacparser.h pacparser.o quickjs/libquickjs.a
+	$(CC) pactester.c pacparser.o quickjs/libquickjs.a -o pactester -lws2_32
 
 dist: pacparser.dll pactester pacparser.def
 	if exist dist rmdir /s /q dist
@@ -82,15 +82,15 @@ dist: pacparser.dll pactester pacparser.def
 	if exist ..\docs\html xcopy ..\docs\html dist\docs
 
 # Targets to build python module
-pymod: pacparser.h pacparser.dll pacparser.o js.lib
+pymod: pacparser.h pacparser.dll pacparser.o quickjs/libquickjs.a
 	cd pymod && $(PYTHON) setup.py build --compiler=mingw32
 	cd .. && $(PYTHON) tests/runtests.py
 
-pymod-dist: pacparser.h pacparser.dll pacparser.o js.lib
+pymod-dist: pacparser.h pacparser.dll pacparser.o quickjs/libquickjs.a
 	cd pymod && $(PYTHON) setup.py build --compiler=mingw32 && $(PYTHON) setup.py dist
 	cd .. && $(PYTHON) tests/runtests.py
 
-pymod-%: pacparser.h pacparser.dll pacparser.o js.lib
+pymod-%: pacparser.h pacparser.dll pacparser.o quickjs/libquickjs.a
 	cd pymod && py -$* setup.py  build --compiler=mingw32
 	cd .. && py -$* tests\runtests.py
 
@@ -99,6 +99,6 @@ pymod-dist-%:
 
 clean:
 	$(RM) pacparser.dll *.lib pacparser.def pacparser.exp pacparser.o pactester.exe libpacparser.a
-	$(MAKE) -C spidermonkey -f Makefile.win32 clean
+	$(MAKE) -C quickjs -f Makefile.win32 clean
 	cd pymod && $(PYTHON) setup.py clean --all
 	$(RM) dist

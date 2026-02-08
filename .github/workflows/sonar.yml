@@ -15,14 +15,14 @@ jobs:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Install sonar-scanner and build-wrapper
-        uses: SonarSource/sonarcloud-github-c-cpp@44cc4d3d487fbc35e5c29b0a9d717be218d3a0e8 # v3.2.0
-      - name: Run sonar-scanner
+      - name: Install bear
+        run: sudo apt install -y bear
+      - name: Generate compilation database
+        run: |
+          make -C src clean
+          bear -- make -C src
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          sudo apt install -y bear
-          make -C src clean
-          bear -- make -C src
-          sonar-scanner
