@@ -164,11 +164,16 @@ resolve_host(const char *hostname, char *ipaddr_list, int max_results,
   error = getaddrinfo(hostname, NULL, &hints, &result);
   if (error) return error;
   int i = 0;
+  size_t offset = 0;
   for(struct addrinfo *ai = result; ai != NULL && i < max_results; ai = ai->ai_next, i++) {
     getnameinfo(ai->ai_addr, ai->ai_addrlen, ipaddr, sizeof(ipaddr), NULL, 0,
                 NI_NUMERICHOST);
-    if (ipaddr_list[0] == '\0') sprintf(ipaddr_list, "%s", ipaddr);
-    else sprintf(ipaddr_list, "%s;%s", ipaddr_list, ipaddr);
+    if (offset > 0) {
+      ipaddr_list[offset++] = ';';
+    }
+    size_t len = strlen(ipaddr);
+    strcpy(ipaddr_list + offset, ipaddr);
+    offset += len;
   }
   freeaddrinfo(result);
 #ifdef _WIN32
