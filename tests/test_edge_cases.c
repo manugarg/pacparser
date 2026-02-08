@@ -4,10 +4,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
+#ifndef _WIN32
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#else
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
 
 #define MAX_IP_RESULTS 10
 

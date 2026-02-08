@@ -74,7 +74,7 @@ jobs:
           cd tests
           foreach ($test in @('test_resolve_host', 'test_multi_ip', 'test_buffer_safety', 'test_edge_cases')) {
             Write-Host "=== Building $test ==="
-            gcc -g -Wall -o "$test.exe" "$test.c"
+            gcc -g -Wall -o "$test.exe" "$test.c" -lws2_32
             if ($LASTEXITCODE -ne 0) { exit 1 }
             Write-Host "=== Running $test ==="
             & ".\$test.exe"
