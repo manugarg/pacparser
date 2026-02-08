@@ -36,14 +36,14 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
         with:
           fetch-depth: 0
 
       - name: Check out code for workflow_dispatch
         if: ${{ contains(github.event_name, 'workflow_dispatch') }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag }}
@@ -81,14 +81,14 @@ jobs:
 
       - name: Upload dist (non-windows)
         if: ${{ matrix.os != 'windows-latest' }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: pacparser-dist-${{ matrix.os }}
           path: src/pacparser*.zip
 
       - name: Upload dist (windows)
         if: ${{ matrix.os == 'windows-latest' }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: pacparser-dist-${{ matrix.os }}
           path: src/dist
@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download ubuntu cloudprober binaries
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: pacparser-dist-*
 
@@ -113,7 +113,7 @@ jobs:
           zip -r $name.zip $name
 
       - name: Upload pacparser release
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: pacparser-release-binaries
           path: pacparser-*.zip
@@ -126,20 +126,20 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
         with:
           fetch-depth: 0
 
       - name: Check out code for workflow_dispatch
         if: ${{ contains(github.event_name, 'workflow_dispatch') }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag }}
 
       - name: Set up Python
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -157,7 +157,7 @@ jobs:
         run: make -C src -f Makefile.win32 pymod-dist
 
       - name: Upload dist
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name:
             pacparser-python-${{ matrix.python-version }}-${{ matrix.os }}-dist
@@ -194,14 +194,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
         with:
           fetch-depth: 0
 
       - name: Check out code for workflow_dispatch
         if: ${{ contains(github.event_name, 'workflow_dispatch') }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag }}
@@ -212,7 +212,7 @@ jobs:
           --candidate=100)" >> $GITHUB_ENV
 
       - name: Set up Python
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
 
       - name: Set up setuptools
         run: |
@@ -263,13 +263,13 @@ jobs:
     steps:
       - name: Check out code into the Go module directory
         if: ${{ !contains(github.event_name, 'workflow_dispatch') }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6.0.1
         with:
           fetch-depth: 0
 
       - name: Check out code into the Go module directory
         if: ${{ contains(github.event_name, 'workflow_dispatch') }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6.0.1
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag }}
