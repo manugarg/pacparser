@@ -341,6 +341,10 @@ pacparser_parse_pac_string(const char *script)
     print_error("%s %s\n", error_prefix, "Pac parser is not initialized.");
     return 0;
   }
+  if (script == NULL) {
+    print_error("%s %s\n", error_prefix, "PAC script is NULL.");
+    return 0;
+  }
   JSValue result = JS_Eval(ctx, script, strlen(script), "PAC script",
                            JS_EVAL_TYPE_GLOBAL);
   if (JS_IsException(result)) {
