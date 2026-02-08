@@ -230,8 +230,9 @@ jobs:
 
       - name: Build wheel using cibuildwheel
         run: |
-          cp -r src/quickjs src/pacparser.c src/pac_utils.h src/pacparser.h src/pymod/
-          cd src/pymod && python -m cibuildwheel --output-dir dist
+          cd src/pymod && python setup.py clean --all
+          cp -r ../quickjs ../pacparser.c ../pac_utils.h ../pacparser.h .
+          python -m cibuildwheel --output-dir dist
         env:
           CIBW_BUILD: "cp{37,38,39,310,311,312}-manylinux*64"
           CIBW_ENVIRONMENT: "PACPARSER_VERSION=${{ env.PACPARSER_VERSION }}"
