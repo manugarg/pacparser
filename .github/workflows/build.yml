@@ -52,9 +52,35 @@ jobs:
         if: ${{ matrix.os != 'windows-latest' }}
         run: make -C src
 
+      - name: Run resolve_host tests (non-windows)
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          cd tests
+          for test in test_resolve_host test_multi_ip test_buffer_safety test_edge_cases; do
+            echo "=== Building $test ==="
+            gcc -g -Wall -o $test ${test}.c || exit 1
+            echo "=== Running $test ==="
+            ./$test || exit 1
+            echo
+          done
+
       - name: make windows
         if: ${{ matrix.os == 'windows-latest' }}
         run: make -C src -f Makefile.win32
+
+      - name: Run resolve_host tests (windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: |
+          cd tests
+          foreach ($test in @('test_resolve_host', 'test_multi_ip', 'test_buffer_safety', 'test_edge_cases')) {
+            Write-Host "=== Building $test ==="
+            gcc -g -Wall -o "$test.exe" "$test.c"
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            Write-Host "=== Running $test ==="
+            & ".\$test.exe"
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            Write-Host ""
+          }
 
       - name: Get ref_name
         id: get_ref_name
