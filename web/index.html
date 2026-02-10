@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pacparser - PAC File Parser Library & Tester</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🌐 PAC File Tester</h1>
+            <p class="subtitle">Test your Proxy Auto-Config files online - 100% client-side, no data sent to servers</p>
+        </header>
+
+        <main>
+            <!-- PAC File Input Section -->
+            <section class="section">
+                <h2>PAC File</h2>
+                <div class="input-group">
+                    <textarea id="pacFile" placeholder="Paste your PAC file content here..." rows="10"></textarea>
+                    <div class="file-upload">
+                        <label for="fileInput" class="btn-secondary">
+                            📁 Or Upload .pac File
+                        </label>
+                        <input type="file" id="fileInput" accept=".pac,.js,.txt" style="display: none;">
+                        <span id="fileName"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Test Configuration Section -->
+            <section class="section">
+                <h2>Test Configuration</h2>
+
+                <div class="input-row">
+                    <label for="testUrl">Test URL:</label>
+                    <input type="text" id="testUrl" placeholder="https://example.com/path" value="https://example.com">
+                </div>
+
+                <div class="input-row">
+                    <label for="clientIp">Client IP (optional):</label>
+                    <input type="text" id="clientIp" placeholder="192.168.1.100">
+                    <small>Used for myIpAddress() function</small>
+                </div>
+
+                <!-- DNS Mappings Section -->
+                <div class="dns-section">
+                    <h3>DNS Mappings (optional)</h3>
+                    <p class="help-text">Provide hostname to IP address mappings for dnsResolve() and isResolvable()
+                        functions</p>
+
+                    <div id="dnsMappings">
+                        <div class="dns-mapping">
+                            <input type="text" placeholder="hostname (e.g., example.com)" class="dns-host">
+                            <span class="arrow">→</span>
+                            <input type="text" placeholder="IP address" class="dns-ip">
+                            <button class="btn-remove" onclick="removeDnsMapping(this)">✕</button>
+                        </div>
+                    </div>
+
+                    <button class="btn-secondary" onclick="addDnsMapping()">+ Add DNS Mapping</button>
+                </div>
+            </section>
+
+            <!-- About Section -->
+            <section class="section about-section">
+                <h2>About Pacparser</h2>
+                <div class="about-content">
+                    <p>
+                        <strong>Pacparser</strong> is a library to parse proxy auto-config (PAC) files.
+                        PAC files are a widely used method for configuring web browsers to select a proxy server.
+                        Pacparser makes it easy to use PAC files in your own programs.
+                    </p>
+                    <div class="links-grid">
+                        <a href="https://github.com/manugarg/pacparser" class="btn-outline" target="_blank">
+                            <span class="icon">📦</span> GitHub Repository
+                        </a>
+                        <a href="https://github.com/manugarg/pacparser#readme" class="btn-outline" target="_blank">
+                            <span class="icon">📖</span> Documentation
+                        </a>
+                        <a href="https://pypi.org/project/pacparser/" class="btn-outline" target="_blank">
+                            <span class="icon">🐍</span> PyPI Package
+                        </a>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- Test Button -->
+            <div class="action-section">
+                <button id="testBtn" class="btn-primary" onclick="testPac()">🚀 Test Proxy</button>
+            </div>
+
+            <!-- Results Section -->
+            <section class="section" id="resultsSection" style="display: none;">
+                <h2>Results</h2>
+                <div id="results"></div>
+            </section>
+        </main>
+
+        <footer>
+            <p>
+                Powered by <a href="https://github.com/manugarg/pacparser" target="_blank">Pacparser</a> |
+                <a href="https://github.com/manugarg/pacparser/blob/main/COPYING" target="_blank">LGPL License</a>
+            </p>
+        </footer>
+    </div>
+
+    <script src="pac_utils.js"></script>
+    <script src="pac-tester.js"></script>
+</body>
+
+</html>

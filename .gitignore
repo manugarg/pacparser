@@ -26,6 +26,7 @@ tools/packages
 *buildstamp
 src/spidermonkey/js
 src/pactester
+src/pac_utils_dump
 
 # OS specific files
 .DS_Store
