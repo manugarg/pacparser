@@ -4,7 +4,7 @@
 [![Packaging status](https://repology.org/badge/tiny-repos/pacparser.svg)](https://repology.org/project/pacparser/versions)
 
 # [Pacparser](http://pacparser.manugarg.com)
-***[pacparser.manugarg.com](http://pacparser.manugarg.com)***
+***[pacparser.manugarg.com](http://pacparser.manugarg.com)*** - *Homepage and Online PAC file tester*
 
 Pacparser is a library to parse proxy auto-config (PAC) files. Proxy auto-config
 files are a vastly used proxy configuration method these days. Web browsers can
