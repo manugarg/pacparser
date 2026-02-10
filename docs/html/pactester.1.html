@@ -2,97 +2,107 @@
 <!-- available at http://polyglotman.sourceforge.net/ -->
 
 <html>
+
 <head>
-<title>"pactester"("1") manual page</title>
+    <title>"pactester"("1") manual page</title>
 </head>
+
 <body bgcolor='white'>
-<a href='#toc'>Table of Contents</a><p>
+    <a href='#toc'>Table of Contents</a>
+    <p>
 
-<h2><a name='sect0' href='#toc0'>Name</a></h2>
-pactester - Tool to test proxy auto-config (pac) files. 
-<h2><a name='sect1' href='#toc1'>Synopsis</a></h2>
-<b>pactester
-&lt;-p pacfile&gt; &lt;-u url&gt; [-h host] [-c client_ip] [-e]</b> <p>
-<b>pactester &lt;-p pacfile&gt; &lt;-f urlslist&gt;
-[-c client_ip] [-e]</b> 
-<h2><a name='sect2' href='#toc2'>Description</a></h2>
-pactester is a tool to test proxy auto-config
-(pac) files. It returns the proxy config string for the given URL and the
-pac file. pactester uses pacparser C library for most of its functionality.
+    <h2><a name='sect0' href='#toc0'>Name</a></h2>
+    pactester - Tool to test proxy auto-config (pac) files.
+    <h2><a name='sect1' href='#toc1'>Synopsis</a></h2>
+    <b>pactester
+        &lt;-p pacfile&gt; &lt;-u url&gt; [-h host] [-c client_ip] [-e]</b>
+    <p>
+        <b>pactester &lt;-p pacfile&gt; &lt;-f urlslist&gt;
+            [-c client_ip] [-e]</b>
+    <h2><a name='sect2' href='#toc2'>Description</a></h2>
+    pactester is a tool to test proxy auto-config
+    (pac) files. It returns the proxy config string for the given URL and the
+    pac file. pactester uses pacparser C library for most of its functionality.
 
-<h2><a name='sect3' href='#toc3'>Options</a></h2>
+    <h2><a name='sect3' href='#toc3'>Options</a></h2>
 
-<dl>
+    <dl>
 
-<dt><b>-p pacfile</b> </dt>
-<dd>PAC file to test. Specify "-" to read from the standard
-input. </dd>
+        <dt><b>-p pacfile</b> </dt>
+        <dd>PAC file to test. Specify "-" to read from the standard
+            input. </dd>
 
-<dt><b>-u url</b> </dt>
-<dd>URL to test the PAC file for. </dd>
+        <dt><b>-u url</b> </dt>
+        <dd>URL to test the PAC file for. </dd>
 
-<dt><b>-h host</b> </dt>
-<dd>Host part of the URL. If
-not specified, it&rsquo;s determined from the URL. </dd>
+        <dt><b>-h host</b> </dt>
+        <dd>Host part of the URL. If
+            not specified, it&rsquo;s determined from the URL. </dd>
 
-<dt><b>-c client_ip</b> </dt>
-<dd>Client&rsquo;s IP address
-(as returned by the function myIpAddress() in PAC files). If not specified,
-it defaults to the IP address of the machine on which this tool is running.
-</dd>
+        <dt><b>-c client_ip</b> </dt>
+        <dd>Client&rsquo;s IP address
+            (as returned by the function myIpAddress() in PAC files). If not specified,
+            it defaults to the IP address of the machine on which this tool is running.
+        </dd>
 
-<dt><b>-e</b> </dt>
-<dd>Enable Microsoft PAC extensions (dnsResolveEx, myIpAddressEx, isResolvableEx).
-</dd>
+        <dt><b>-e</b> </dt>
+        <dd>Enable Microsoft PAC extensions (dnsResolveEx, myIpAddressEx, isResolvableEx).
+        </dd>
 
-<dt><b>-f urlslist</b> </dt>
-<dd>A file containing the list of URLs to be tested. This is good
-for testing a PAC file against a set of URLs. </dd>
-</dl>
+        <dt><b>-f urlslist</b> </dt>
+        <dd>A file containing the list of URLs to be tested. This is good
+            for testing a PAC file against a set of URLs. </dd>
+    </dl>
 
-<h2><a name='sect4' href='#toc4'>Examples</a></h2>
-<p>
-To find out the proxy
-config string for the pac file "wpad.dat" and the URL "<a href='http://www.google.com'>http://www.google.com</a>
-":
-<p>
-$ pactester -p wpad.dat -u <a href='http://www.google.com'>http://www.google.com</a>
- 
-<p> For a client with IP address
-10.0.12.123: <p>
-$ pactester -p wpad.dat -c 10.0.12.123 -u <a href='http://www.google.com'>http://www.google.com</a>
- 
-<p> For a
-pac file hosted at <a href='http://wpad/wpad.dat:'>http://wpad/wpad.dat:</a>
- <p>
-$ curl -s <a href='http://wpad/wpad.dat'>http://wpad/wpad.dat</a>
- | pactester
--p - -u <a href='http://google.com'>http://google.com</a>
- 
-<h2><a name='sect5' href='#toc5'>Bugs</a></h2>
-If you have come across a bug in pactester, please
-submit a bug report at <a href='http://github.com/pacparser/pacparser/issues.'>http://github.com/pacparser/pacparser/issues.</a>
- 
-<h2><a name='sect6' href='#toc6'>Author</a></h2>
-Written
-by Manu Garg (http://www.manugarg.com). 
-<h2><a name='sect7' href='#toc7'>Resources</a></h2>
-Homepage: <a href='http://github.com/pacparser/pacparser.'>http://github.com/pacparser/pacparser.</a>
+    <h2><a name='sect4' href='#toc4'>Examples</a></h2>
+    <p>
+        To find out the proxy
+        config string for the pac file "wpad.dat" and the URL "<a href='http://www.google.com'>http://www.google.com</a>
+        ":
+    <p>
+        $ pactester -p wpad.dat -u <a href='http://www.google.com'>http://www.google.com</a>
+
+    <p> For a client with IP address
+        10.0.12.123:
+    <p>
+        $ pactester -p wpad.dat -c 10.0.12.123 -u <a href='http://www.google.com'>http://www.google.com</a>
+
+    <p> For a
+        pac file hosted at <a href='http://wpad/wpad.dat:'>http://wpad/wpad.dat:</a>
+    <p>
+        $ curl -s <a href='http://wpad/wpad.dat'>http://wpad/wpad.dat</a>
+        | pactester
+        -p - -u <a href='http://google.com'>http://google.com</a>
+
+    <h2><a name='sect5' href='#toc5'>Bugs</a></h2>
+    If you have come across a bug in pactester, please
+    submit a bug report at <a
+        href='http://github.com/manugarg/pacparser/issues.'>http://github.com/manugarg/pacparser/issues.</a>
+
+    <h2><a name='sect6' href='#toc6'>Author</a></h2>
+    Written
+    by Manu Garg (http://www.manugarg.com).
+    <h2><a name='sect7' href='#toc7'>Resources</a></h2>
+    Homepage: <a href='http://github.com/manugarg/pacparser.'>http://github.com/manugarg/pacparser.</a>
 
 
-<p> <p>
+    <p>
+    <p>
 
-<hr><p>
-<a name='toc'><b>Table of Contents</b></a><p>
-<ul>
-<li><a name='toc0' href='#sect0'>Name</a></li>
-<li><a name='toc1' href='#sect1'>Synopsis</a></li>
-<li><a name='toc2' href='#sect2'>Description</a></li>
-<li><a name='toc3' href='#sect3'>Options</a></li>
-<li><a name='toc4' href='#sect4'>Examples</a></li>
-<li><a name='toc5' href='#sect5'>Bugs</a></li>
-<li><a name='toc6' href='#sect6'>Author</a></li>
-<li><a name='toc7' href='#sect7'>Resources</a></li>
-</ul>
+        <hr>
+    <p>
+        <a name='toc'><b>Table of Contents</b></a>
+    <p>
+    <ul>
+        <li><a name='toc0' href='#sect0'>Name</a></li>
+        <li><a name='toc1' href='#sect1'>Synopsis</a></li>
+        <li><a name='toc2' href='#sect2'>Description</a></li>
+        <li><a name='toc3' href='#sect3'>Options</a></li>
+        <li><a name='toc4' href='#sect4'>Examples</a></li>
+        <li><a name='toc5' href='#sect5'>Bugs</a></li>
+        <li><a name='toc6' href='#sect6'>Author</a></li>
+        <li><a name='toc7' href='#sect7'>Resources</a></li>
+    </ul>
 </body>
+
 </html>
