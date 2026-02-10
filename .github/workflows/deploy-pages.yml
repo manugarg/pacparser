@@ -37,6 +37,11 @@ jobs:
       - name: Regenerate pac_utils.js
         run: make -C src pac_utils_js
 
+      - name: Copy API docs to web/api
+        run: |
+          mkdir -p web/api
+          cp -a src/docs/html/* web/api/
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
