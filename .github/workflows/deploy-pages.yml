@@ -15,11 +15,12 @@ permissions:
   pages: write
   id-token: write
 
-# Only one Pages deployment at a time; skip queued runs but don't cancel
-# an in-progress deploy.
+# Only one Pages deployment at a time. Cancel any in-progress run when a
+# newer one starts, preventing the "multiple github-pages artifacts" error
+# that occurs when two runs both reach the upload step concurrently.
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
