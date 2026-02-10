@@ -359,4 +359,51 @@ footer a:hover {
     .btn-primary {
         width: 100%;
     }
+
+    .links-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* About Section Styles */
+.about-section {
+    background-color: var(--card-bg);
+    border-top: 1px solid var(--border-color);
+}
+
+.about-content {
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+.links-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--primary-color);
+    border-radius: 6px;
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.btn-outline:hover {
+    background-color: var(--primary-color);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.icon {
+    margin-right: 0.5rem;
+    font-size: 1.2em;
 }

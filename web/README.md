@@ -70,32 +70,6 @@ The tester implements all standard PAC helper functions:
 4. The `FindProxyForURL()` function is called with your test URL
 5. Results and debug information are displayed
 
-## Deployment
-
-### GitHub Pages
-1. Push the `web` directory to your repository
-2. Enable GitHub Pages in repository settings
-3. Set the source to the `web` directory
-4. Access at: `https://yourusername.github.io/pacparser/`
-
-### Netlify
-1. Drag and drop the `web` folder to Netlify
-2. Or connect your GitHub repository
-
-### Any Static Host
-Since this is a pure client-side application, you can host it on:
-- AWS S3 + CloudFront
-- Google Cloud Storage
-- Azure Static Web Apps
-- Any web server (Apache, Nginx, etc.)
-
-## Browser Compatibility
-
-Works in all modern browsers:
-- Chrome/Edge 90+
-- Firefox 88+
-- Safari 14+
-
 ## Privacy & Security
 
 - **No Server Processing**: Everything runs in your browser using JavaScript

@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PAC File Tester - Pacparser</title>
+    <title>Pacparser - PAC File Parser Library & Tester</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -47,7 +49,8 @@
                 <!-- DNS Mappings Section -->
                 <div class="dns-section">
                     <h3>DNS Mappings (optional)</h3>
-                    <p class="help-text">Provide hostname to IP address mappings for dnsResolve() and isResolvable() functions</p>
+                    <p class="help-text">Provide hostname to IP address mappings for dnsResolve() and isResolvable()
+                        functions</p>
 
                     <div id="dnsMappings">
                         <div class="dns-mapping">
@@ -61,6 +64,30 @@
                     <button class="btn-secondary" onclick="addDnsMapping()">+ Add DNS Mapping</button>
                 </div>
             </section>
+
+            <!-- About Section -->
+            <section class="section about-section">
+                <h2>About Pacparser</h2>
+                <div class="about-content">
+                    <p>
+                        <strong>Pacparser</strong> is a library to parse proxy auto-config (PAC) files.
+                        PAC files are a widely used method for configuring web browsers to select a proxy server.
+                        Pacparser makes it easy to use PAC files in your own programs.
+                    </p>
+                    <div class="links-grid">
+                        <a href="https://github.com/manugarg/pacparser" class="btn-outline" target="_blank">
+                            <span class="icon">📦</span> GitHub Repository
+                        </a>
+                        <a href="https://github.com/manugarg/pacparser#readme" class="btn-outline" target="_blank">
+                            <span class="icon">📖</span> Documentation
+                        </a>
+                        <a href="https://pypi.org/project/pacparser/" class="btn-outline" target="_blank">
+                            <span class="icon">🐍</span> PyPI Package
+                        </a>
+                    </div>
+                </div>
+            </section>
+
 
             <!-- Test Button -->
             <div class="action-section">
@@ -85,4 +112,5 @@
     <script src="pac_utils.js"></script>
     <script src="pac-tester.js"></script>
 </body>
+
 </html>
