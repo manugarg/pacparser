@@ -108,6 +108,12 @@ testpactester: pactester $(LIBRARY_LINK)
 	echo "Running tests for pactester."
 	NO_INTERNET=$(NO_INTERNET) ../tests/runtests.sh
 
+pac_utils_dump: pac_utils_dump.c pac_utils.h
+	$(CC) -o pac_utils_dump pac_utils_dump.c
+
+pac_utils_js: pac_utils_dump
+	./pac_utils_dump > ../web/pac_utils.js
+
 docs:
 	../tools/generatedocs.sh
 
@@ -150,7 +156,7 @@ install-pymod: pymod
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py install --root="$(DESTDIR)/" $(EXTRA_ARGS)
 
 clean:
-	rm -f $(LIBRARY_LINK) $(LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp libpacparser.a
+	rm -f $(LIBRARY_LINK) $(LIBRARY) pacparser.o pactester pymod/pacparser_o_buildstamp libpacparser.a pac_utils_dump
 	rm -rf dist
 	cd pymod && $(PYTHON) setup.py clean --all
 	cd quickjs && $(MAKE) clean
