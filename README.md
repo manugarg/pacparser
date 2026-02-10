@@ -21,12 +21,12 @@ and a python module which can be used to make any C or python program PAC script
 aware.
 
 ### Implementation
-Pacparser makes use of the Mozilla's JavaScript interpreter SpiderMonkey to parse
-PAC files (which are nothing but javascripts). Apart from that, proxy
-auto-config standard assumes availability of some functions which are not
-part of the standard JavaScript. Pacparser uses Mozilla's PAC implementation to
-define all these functions except for a couple of dns functions which are defined by
-pacparser itself. As a result, pacparser is as close to standard as it gets :)
+Pacparser makes use of the QuickJS JavaScript engine to parse  PAC files (which
+are nothing but javascripts). Apart from that, proxy auto-config standard assumes
+availability of some functions which are not part of the standard JavaScript.
+Pacparser uses Mozilla's PAC implementation to define all these functions except
+for a couple of dns functions which are defined by pacparser itself. As a result,
+pacparser is as close to standard as it gets :)
 
 ### Install
 
@@ -34,7 +34,7 @@ For Python module, you can use pip. Pre-built module is available for `64-bit Li
 Windows, MacOS-Intel, and MacOS-ARM`, for Python `3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14`.
 ```
 python -m pip install pacparser
-python -m pip install pacparser==1.4.6 (specific version)
+python -m pip install pacparser==1.5.0 (specific version)
 ```
 
 For other pre-built binaries, download them from the project's [releases](
