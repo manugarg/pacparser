@@ -16,7 +16,9 @@ int main() {
     printf("// directly, so that the eval'd PAC sandbox can define its own\n");
     printf("// dnsResolve() / myIpAddress() in the same scope as the utility\n");
     printf("// functions — keeping DNS mocking correct via lexical scoping.\n");
-    printf("const PAC_UTILS_JS = `\n");
+    // String.raw preserves backslashes as-is, preventing the JS template
+    // literal parser from mangling regex patterns like /\*/g → /*/g (invalid).
+    printf("const PAC_UTILS_JS = String.raw`\n");
     printf("%s", pacUtils);
     printf("`;\n");
     return 0;

@@ -5,7 +5,7 @@
 // directly, so that the eval'd PAC sandbox can define its own
 // dnsResolve() / myIpAddress() in the same scope as the utility
 // functions — keeping DNS mocking correct via lexical scoping.
-const PAC_UTILS_JS = `
+const PAC_UTILS_JS = String.raw`
 function dnsDomainIs(host, domain) {
     return (host.length >= domain.length &&
             host.substring(host.length - domain.length) == domain);
