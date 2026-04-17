@@ -24,6 +24,7 @@ import getopt
 import glob
 import os
 import sys
+import tempfile
 
 def module_path(tests_dir):
   py_ver = '*'.join([str(x) for x in sys.version_info[0:2]])
@@ -75,6 +76,34 @@ def runtests(pacfile, testdata, tests_dir):
     pacparser.cleanup()
     if result != expected_result:
       raise Exception('Tests failed. Got "%s", expected "%s"' % (result, expected_result))
+
+  # Logging test: alert() / console.log() should emit to the C library's
+  # stderr. The extension writes directly via vfprintf, so redirect at the
+  # file-descriptor level rather than via sys.stderr.
+  logging_pac = os.path.join(tests_dir, 'logging.pac')
+  expected_stderr = ('ALERT: checking example.com\n'
+                     'LOG: url: http://example.com/\n'
+                     'LOG: single arg\n')
+  with tempfile.TemporaryFile(mode='w+') as tmp:
+    saved_fd = os.dup(2)
+    os.dup2(tmp.fileno(), 2)
+    try:
+      pacparser.init()
+      pacparser.parse_pac_file(logging_pac)
+      proxy = pacparser.find_proxy('http://example.com/', 'example.com')
+      pacparser.cleanup()
+    finally:
+      sys.stderr.flush()
+      os.dup2(saved_fd, 2)
+      os.close(saved_fd)
+    tmp.seek(0)
+    actual_stderr = tmp.read()
+  if proxy != 'DIRECT':
+    raise Exception('Logging test failed: proxy was "%s", expected "DIRECT"' % proxy)
+  if actual_stderr != expected_stderr:
+    raise Exception('Logging test failed: stderr mismatch\nExpected:\n%s\nGot:\n%s' %
+                    (expected_stderr, actual_stderr))
+
   print('All tests were successful.')
 
 
