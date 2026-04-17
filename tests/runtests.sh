@@ -55,4 +55,28 @@ while read line
     fi
   done < $testdata
 
+
+# Logging tests: verify alert() / console.log() output lands on stderr with
+# the expected prefixes, and that the proxy result on stdout is unaffected.
+logging_pac=$script_dir/logging.pac
+logging_stderr=$(mktemp)
+logging_stdout=$($pactester -p $logging_pac -u http://example.com/ -h example.com 2>$logging_stderr)
+if [ "$logging_stdout" != "DIRECT" ]; then
+  echo "Logging test failed: stdout was \"$logging_stdout\", expected \"DIRECT\""
+  cat $logging_stderr
+  rm -f $logging_stderr
+  exit 1
+fi
+expected_stderr=$'ALERT: checking example.com\nLOG: url: http://example.com/\nLOG: single arg'
+actual_stderr=$(cat $logging_stderr)
+rm -f $logging_stderr
+if [ "$actual_stderr" != "$expected_stderr" ]; then
+  echo "Logging test failed: stderr mismatch"
+  echo "Expected:"
+  echo "$expected_stderr"
+  echo "Got:"
+  echo "$actual_stderr"
+  exit 1
+fi
+
 echo "All tests were successful."
