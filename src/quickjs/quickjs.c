@@ -82,6 +82,16 @@
 #ifndef CUTILS_H
 #define CUTILS_H
 
+#include <assert.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <time.h>
+#if !defined(_MSC_VER)
+#include <sys/time.h>
+#endif
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -93,7 +103,6 @@ extern "C" {
 #endif
 
 #if defined(_MSC_VER)
-#include <winsock2.h>
 #include <malloc.h>
 #define alloca _alloca
 #define ssize_t ptrdiff_t
@@ -105,9 +114,11 @@ extern "C" {
 #elif defined(__FreeBSD__)
 #include <malloc_np.h>
 #elif defined(_WIN32)
+#include <winsock2.h>
 #include <windows.h>
+#include <process.h> // _beginthread
 #endif
-#if !defined(_WIN32) && !defined(EMSCRIPTEN) && !defined(__wasi__)
+#if !defined(_WIN32) && !defined(EMSCRIPTEN) && !defined(__wasi__) && !defined(__DJGPP)
 #include <errno.h>
 #include <pthread.h>
 #endif
@@ -116,10 +127,13 @@ extern "C" {
 #include <unistd.h>
 #endif
 
+#if defined(__sun)
+#undef __maybe_unused
+#endif
+
 #if defined(_MSC_VER) && !defined(__clang__)
 #  define likely(x)       (x)
 #  define unlikely(x)     (x)
-#  define force_inline __forceinline
 #  define no_inline __declspec(noinline)
 #  define __maybe_unused
 #  define __attribute__(x)
@@ -127,18 +141,8 @@ extern "C" {
 #else
 #  define likely(x)       __builtin_expect(!!(x), 1)
 #  define unlikely(x)     __builtin_expect(!!(x), 0)
-#  define force_inline inline __attribute__((always_inline))
 #  define no_inline __attribute__((noinline))
 #  define __maybe_unused __attribute__((unused))
-#endif
-
-#if defined(_MSC_VER) && !defined(__clang__)
-#include <math.h>
-#define INF INFINITY
-#define NEG_INF -INFINITY
-#else
-#define INF (1.0/0.0)
-#define NEG_INF (-1.0/0.0)
 #endif
 
 #ifndef offsetof
@@ -163,7 +167,8 @@ extern "C" {
 
 /* Borrowed from Folly */
 #ifndef JS_PRINTF_FORMAT
-#ifdef _MSC_VER
+/* Clang on Windows doesn't seem to support _Printf_format_string_ */
+#if defined(_MSC_VER) && !defined(__clang__)
 #include <sal.h>
 #define JS_PRINTF_FORMAT _Printf_format_string_
 #define JS_PRINTF_FORMAT_ATTR(format_param, dots_param)
@@ -187,10 +192,10 @@ extern "C" {
 # define JS__PATH_MAX 8192
 #endif
 
-void js__pstrcpy(char *buf, int buf_size, const char *str);
-char *js__pstrcat(char *buf, int buf_size, const char *s);
-int js__strstart(const char *str, const char *val, const char **ptr);
-int js__has_suffix(const char *str, const char *suffix);
+static inline void js__pstrcpy(char *buf, int buf_size, const char *str);
+static inline char *js__pstrcat(char *buf, int buf_size, const char *s);
+static inline int js__strstart(const char *str, const char *val, const char **ptr);
+static inline int js__has_suffix(const char *str, const char *suffix);
 
 static inline uint8_t is_be(void) {
     union {
@@ -246,6 +251,16 @@ static inline int64_t min_int64(int64_t a, int64_t b)
         return a;
     else
         return b;
+}
+
+static inline uint32_t hash32(uint32_t a)
+{
+    // use the negative of the golden ratio, it spreads out the bits nicely
+    // and is what the linux kernel does
+    //
+    // the golden ratio phi is defined as (1+sqrt(5))/2 or 1 + (sqrt(5)-1)/2
+    // (approx. 1.618033988), and negated is round(2**32/phi**2) = 0x61c88647
+    return a * 0x61c88647;
 }
 
 /* WARNING: undefined if a = 0 */
@@ -404,14 +419,6 @@ static inline uint64_t bswap64(uint64_t v)
 }
 #endif
 
-static inline void inplace_bswap16(uint8_t *tab) {
-    put_u16(tab, bswap16(get_u16(tab)));
-}
-
-static inline void inplace_bswap32(uint8_t *tab) {
-    put_u32(tab, bswap32(get_u32(tab)));
-}
-
 static inline double fromfp16(uint16_t v) {
     double d, s;
     int e;
@@ -499,28 +506,49 @@ typedef struct DynBuf {
     void *opaque; /* for realloc_func */
 } DynBuf;
 
-void dbuf_init(DynBuf *s);
-void dbuf_init2(DynBuf *s, void *opaque, DynBufReallocFunc *realloc_func);
-int dbuf_realloc(DynBuf *s, size_t new_size);
-int dbuf_write(DynBuf *s, size_t offset, const void *data, size_t len);
-int dbuf_put(DynBuf *s, const void *data, size_t len);
-int dbuf_put_self(DynBuf *s, size_t offset, size_t len);
-int dbuf_putc(DynBuf *s, uint8_t c);
-int dbuf_putstr(DynBuf *s, const char *str);
+static inline void dbuf_init(DynBuf *s);
+static inline void dbuf_init2(DynBuf *s, void *opaque, DynBufReallocFunc *realloc_func);
+static inline int dbuf_claim(DynBuf *s, size_t len);
+static inline int dbuf_put(DynBuf *s, const void *data, size_t len);
+static inline int dbuf_put_self(DynBuf *s, size_t offset, size_t len);
+static inline int __dbuf_putc(DynBuf *s, uint8_t c);
+static inline int __dbuf_put_u16(DynBuf *s, uint16_t val);
+static inline int __dbuf_put_u32(DynBuf *s, uint32_t val);
+static inline int __dbuf_put_u64(DynBuf *s, uint64_t val);
+static inline int dbuf_putstr(DynBuf *s, const char *str);
+static inline int dbuf_putc(DynBuf *s, uint8_t val)
+{
+    if (unlikely((s->allocated_size - s->size) < 1))
+        return __dbuf_putc(s, val);
+    s->buf[s->size++] = val;
+    return 0;
+}
 static inline int dbuf_put_u16(DynBuf *s, uint16_t val)
 {
-    return dbuf_put(s, (uint8_t *)&val, 2);
+    if (unlikely((s->allocated_size - s->size) < 2))
+        return __dbuf_put_u16(s, val);
+    put_u16(s->buf + s->size, val);
+    s->size += 2;
+    return 0;
 }
 static inline int dbuf_put_u32(DynBuf *s, uint32_t val)
 {
-    return dbuf_put(s, (uint8_t *)&val, 4);
+    if (unlikely((s->allocated_size - s->size) < 4))
+        return __dbuf_put_u32(s, val);
+    put_u32(s->buf + s->size, val);
+    s->size += 4;
+    return 0;
 }
 static inline int dbuf_put_u64(DynBuf *s, uint64_t val)
 {
-    return dbuf_put(s, (uint8_t *)&val, 8);
+    if (unlikely((s->allocated_size - s->size) < 8))
+        return __dbuf_put_u64(s, val);
+    put_u64(s->buf + s->size, val);
+    s->size += 8;
+    return 0;
 }
-int JS_PRINTF_FORMAT_ATTR(2, 3) dbuf_printf(DynBuf *s, JS_PRINTF_FORMAT const char *fmt, ...);
-void dbuf_free(DynBuf *s);
+static inline int JS_PRINTF_FORMAT_ATTR(2, 3) dbuf_printf(DynBuf *s, JS_PRINTF_FORMAT const char *fmt, ...);
+static inline void dbuf_free(DynBuf *s);
 static inline bool dbuf_error(DynBuf *s) {
     return s->error;
 }
@@ -540,15 +568,15 @@ enum {
     UTF8_HAS_NON_BMP1 = 4,  // has non-BMP1 code points, needs UTF-16 surrogate pairs
     UTF8_HAS_ERRORS   = 8,  // has encoding errors
 };
-int utf8_scan(const char *buf, size_t len, size_t *plen);
-size_t utf8_encode_len(uint32_t c);
-size_t utf8_encode(uint8_t buf[minimum_length(UTF8_CHAR_LEN_MAX)], uint32_t c);
-uint32_t utf8_decode_len(const uint8_t *p, size_t max_len, const uint8_t **pp);
-uint32_t utf8_decode(const uint8_t *p, const uint8_t **pp);
-size_t utf8_decode_buf8(uint8_t *dest, size_t dest_len, const char *src, size_t src_len);
-size_t utf8_decode_buf16(uint16_t *dest, size_t dest_len, const char *src, size_t src_len);
-size_t utf8_encode_buf8(char *dest, size_t dest_len, const uint8_t *src, size_t src_len);
-size_t utf8_encode_buf16(char *dest, size_t dest_len, const uint16_t *src, size_t src_len);
+static inline int utf8_scan(const char *buf, size_t len, size_t *plen);
+static inline size_t utf8_encode_len(uint32_t c);
+static inline size_t utf8_encode(uint8_t buf[minimum_length(UTF8_CHAR_LEN_MAX)], uint32_t c);
+static inline uint32_t utf8_decode_len(const uint8_t *p, size_t max_len, const uint8_t **pp);
+static inline uint32_t utf8_decode(const uint8_t *p, const uint8_t **pp);
+static inline size_t utf8_decode_buf8(uint8_t *dest, size_t dest_len, const char *src, size_t src_len);
+static inline size_t utf8_decode_buf16(uint16_t *dest, size_t dest_len, const char *src, size_t src_len);
+static inline size_t utf8_encode_buf8(char *dest, size_t dest_len, const uint8_t *src, size_t src_len);
+static inline size_t utf8_encode_buf16(char *dest, size_t dest_len, const uint16_t *src, size_t src_len);
 
 static inline bool is_surrogate(uint32_t c)
 {
@@ -600,7 +628,7 @@ static inline uint8_t to_upper_ascii(uint8_t c) {
     return c >= 'a' && c <= 'z' ? c - 'a' + 'A' : c;
 }
 
-void rqsort(void *base, size_t nmemb, size_t size,
+static inline void rqsort(void *base, size_t nmemb, size_t size,
             int (*cmp)(const void *, const void *, void *),
             void *arg);
 
@@ -624,8 +652,8 @@ static inline double uint64_as_float64(uint64_t u64)
     return u.d;
 }
 
-int64_t js__gettimeofday_us(void);
-uint64_t js__hrtime_ns(void);
+static inline int64_t js__gettimeofday_us(void);
+static inline uint64_t js__hrtime_ns(void);
 
 static inline size_t js__malloc_usable_size(const void *ptr)
 {
@@ -640,11 +668,11 @@ static inline size_t js__malloc_usable_size(const void *ptr)
 #endif
 }
 
-int js_exepath(char* buffer, size_t* size);
+static inline int js_exepath(char* buffer, size_t* size);
 
 /* Cross-platform threading APIs. */
 
-#if defined(EMSCRIPTEN) || defined(__wasi__)
+#if defined(EMSCRIPTEN) || defined(__wasi__) || defined(__DJGPP)
 
 #define JS_HAVE_THREADS 0
 
@@ -666,30 +694,1358 @@ typedef pthread_cond_t js_cond_t;
 typedef pthread_t js_thread_t;
 #endif
 
-void js_once(js_once_t *guard, void (*callback)(void));
+static inline void js_once(js_once_t *guard, void (*callback)(void));
 
-void js_mutex_init(js_mutex_t *mutex);
-void js_mutex_destroy(js_mutex_t *mutex);
-void js_mutex_lock(js_mutex_t *mutex);
-void js_mutex_unlock(js_mutex_t *mutex);
+static inline void js_mutex_init(js_mutex_t *mutex);
+static inline void js_mutex_destroy(js_mutex_t *mutex);
+static inline void js_mutex_lock(js_mutex_t *mutex);
+static inline void js_mutex_unlock(js_mutex_t *mutex);
 
-void js_cond_init(js_cond_t *cond);
-void js_cond_destroy(js_cond_t *cond);
-void js_cond_signal(js_cond_t *cond);
-void js_cond_broadcast(js_cond_t *cond);
-void js_cond_wait(js_cond_t *cond, js_mutex_t *mutex);
-int js_cond_timedwait(js_cond_t *cond, js_mutex_t *mutex, uint64_t timeout);
+static inline void js_cond_init(js_cond_t *cond);
+static inline void js_cond_destroy(js_cond_t *cond);
+static inline void js_cond_signal(js_cond_t *cond);
+static inline void js_cond_broadcast(js_cond_t *cond);
+static inline void js_cond_wait(js_cond_t *cond, js_mutex_t *mutex);
+static inline int js_cond_timedwait(js_cond_t *cond, js_mutex_t *mutex, uint64_t timeout);
 
 enum {
     JS_THREAD_CREATE_DETACHED = 1,
 };
 
 // creates threads with 2 MB stacks (glibc default)
-int js_thread_create(js_thread_t *thrd, void (*start)(void *), void *arg,
+static inline int js_thread_create(js_thread_t *thrd, void (*start)(void *), void *arg,
                      int flags);
-int js_thread_join(js_thread_t thrd);
+static inline int js_thread_join(js_thread_t thrd);
 
 #endif /* !defined(EMSCRIPTEN) && !defined(__wasi__) */
+
+// JS requires strict rounding behavior. Turn on 64-bits double precision
+// and disable x87 80-bits extended precision for intermediate floating-point
+// results. 0x300 is extended  precision, 0x200 is double precision.
+// Note that `*&cw` in the asm constraints looks redundant but isn't.
+#if defined(__i386__) && !defined(_MSC_VER)
+#define JS_X87_FPCW_SAVE_AND_ADJUST(cw)                                     \
+    unsigned short cw;                                                      \
+    __asm__ __volatile__("fnstcw %0" : "=m"(*&cw));                         \
+    do {                                                                    \
+        unsigned short t = 0x200 | (cw & ~0x300);                           \
+        __asm__ __volatile__("fldcw %0" : /*empty*/ : "m"(*&t));            \
+    } while (0)
+#define JS_X87_FPCW_RESTORE(cw)                                             \
+    __asm__ __volatile__("fldcw %0" : /*empty*/ : "m"(*&cw))
+#else
+#define JS_X87_FPCW_SAVE_AND_ADJUST(cw)
+#define JS_X87_FPCW_RESTORE(cw)
+#endif
+
+#undef NANOSEC
+#define NANOSEC ((uint64_t) 1e9)
+
+static inline void js__pstrcpy(char *buf, int buf_size, const char *str)
+{
+    int c;
+    char *q = buf;
+
+    if (buf_size <= 0)
+        return;
+
+    for(;;) {
+        c = *str++;
+        if (c == 0 || q >= buf + buf_size - 1)
+            break;
+        *q++ = c;
+    }
+    *q = '\0';
+}
+
+/* strcat and truncate. */
+static inline char *js__pstrcat(char *buf, int buf_size, const char *s)
+{
+    int len;
+    len = strlen(buf);
+    if (len < buf_size)
+        js__pstrcpy(buf + len, buf_size - len, s);
+    return buf;
+}
+
+static inline int js__strstart(const char *str, const char *val, const char **ptr)
+{
+    const char *p, *q;
+    p = str;
+    q = val;
+    while (*q != '\0') {
+        if (*p != *q)
+            return 0;
+        p++;
+        q++;
+    }
+    if (ptr)
+        *ptr = p;
+    return 1;
+}
+
+static inline int js__has_suffix(const char *str, const char *suffix)
+{
+    size_t len = strlen(str);
+    size_t slen = strlen(suffix);
+    return (len >= slen && !memcmp(str + len - slen, suffix, slen));
+}
+
+/* Dynamic buffer package */
+
+static void *dbuf_default_realloc(void *opaque, void *ptr, size_t size)
+{
+    if (unlikely(size == 0)) {
+        free(ptr);
+        return NULL;
+    }
+    return realloc(ptr, size);
+}
+
+static inline void dbuf_init2(DynBuf *s, void *opaque, DynBufReallocFunc *realloc_func)
+{
+    memset(s, 0, sizeof(*s));
+    if (!realloc_func)
+        realloc_func = dbuf_default_realloc;
+    s->opaque = opaque;
+    s->realloc_func = realloc_func;
+}
+
+static inline void dbuf_init(DynBuf *s)
+{
+    dbuf_init2(s, NULL, NULL);
+}
+
+/* Try to allocate 'len' more bytes. return < 0 if error */
+static inline int dbuf_claim(DynBuf *s, size_t len)
+{
+    size_t new_size, size, new_allocated_size;
+    uint8_t *new_buf;
+    new_size = s->size + len;
+    if (new_size < len)
+        return -1; /* overflow */
+    if (new_size > s->allocated_size) {
+        if (s->error)
+            return -1;
+        size = s->allocated_size + (s->allocated_size / 2);
+        if (size < new_size || size < s->allocated_size) /* overflow test */
+            new_allocated_size = new_size;
+        else
+            new_allocated_size = size;
+        new_buf = s->realloc_func(s->opaque, s->buf, new_allocated_size);
+        if (!new_buf) {
+            s->error = true;
+            return -1;
+        }
+        s->buf = new_buf;
+        s->allocated_size = new_allocated_size;
+    }
+    return 0;
+}
+
+static inline int dbuf_put(DynBuf *s, const void *data, size_t len)
+{
+    if (unlikely((s->size + len) > s->allocated_size)) {
+        if (dbuf_claim(s, len))
+            return -1;
+    }
+    if (len > 0) {
+        memcpy(s->buf + s->size, data, len);
+        s->size += len;
+    }
+    return 0;
+}
+
+static inline int dbuf_put_self(DynBuf *s, size_t offset, size_t len)
+{
+    if (unlikely((s->size + len) > s->allocated_size)) {
+        if (dbuf_claim(s, len))
+            return -1;
+    }
+    if (len > 0) {
+        memcpy(s->buf + s->size, s->buf + offset, len);
+        s->size += len;
+    }
+    return 0;
+}
+
+static inline int __dbuf_putc(DynBuf *s, uint8_t c)
+{
+    return dbuf_put(s, &c, 1);
+}
+
+static inline int __dbuf_put_u16(DynBuf *s, uint16_t val)
+{
+    return dbuf_put(s, (uint8_t *)&val, 2);
+}
+
+static inline int __dbuf_put_u32(DynBuf *s, uint32_t val)
+{
+    return dbuf_put(s, (uint8_t *)&val, 4);
+}
+
+static inline int __dbuf_put_u64(DynBuf *s, uint64_t val)
+{
+    return dbuf_put(s, (uint8_t *)&val, 8);
+}
+
+static inline int dbuf_putstr(DynBuf *s, const char *str)
+{
+    return dbuf_put(s, (const uint8_t *)str, strlen(str));
+}
+
+static inline int JS_PRINTF_FORMAT_ATTR(2, 3) dbuf_printf(DynBuf *s, JS_PRINTF_FORMAT const char *fmt, ...)
+{
+    va_list ap;
+    char buf[128];
+    int len;
+
+    va_start(ap, fmt);
+    len = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (len < (int)sizeof(buf)) {
+        /* fast case */
+        return dbuf_put(s, (uint8_t *)buf, len);
+    } else {
+        if (dbuf_claim(s, len + 1))
+            return -1;
+        va_start(ap, fmt);
+        vsnprintf((char *)(s->buf + s->size), s->allocated_size - s->size,
+                  fmt, ap);
+        va_end(ap);
+        s->size += len;
+    }
+    return 0;
+}
+
+static inline void dbuf_free(DynBuf *s)
+{
+    /* we test s->buf as a fail safe to avoid crashing if dbuf_free()
+       is called twice */
+    if (s->buf) {
+        s->realloc_func(s->opaque, s->buf, 0);
+    }
+    memset(s, 0, sizeof(*s));
+}
+
+/*--- UTF-8 utility functions --*/
+
+/* Note: only encode valid codepoints (0x0000..0x10FFFF).
+   At most UTF8_CHAR_LEN_MAX bytes are output. */
+
+/* Compute the number of bytes of the UTF-8 encoding for a codepoint
+   `c` is a code-point.
+   Returns the number of bytes. If a codepoint is beyond 0x10FFFF the
+   return value is 3 as the codepoint would be encoded as 0xFFFD.
+ */
+static inline size_t utf8_encode_len(uint32_t c)
+{
+    if (c < 0x80)
+        return 1;
+    if (c < 0x800)
+        return 2;
+    if (c < 0x10000)
+        return 3;
+    if (c < 0x110000)
+        return 4;
+    return 3;
+}
+
+/* Encode a codepoint in UTF-8
+   `buf` points to an array of at least `UTF8_CHAR_LEN_MAX` bytes
+   `c` is a code-point.
+   Returns the number of bytes. If a codepoint is beyond 0x10FFFF the
+   return value is 3 and the codepoint is encoded as 0xFFFD.
+   No null byte is stored after the encoded bytes.
+   Return value is in range 1..4
+ */
+static inline size_t utf8_encode(uint8_t buf[minimum_length(UTF8_CHAR_LEN_MAX)], uint32_t c)
+{
+    if (c < 0x80) {
+        buf[0] = c;
+        return 1;
+    }
+    if (c < 0x800) {
+        buf[0] = (c >> 6) | 0xC0;
+        buf[1] = (c & 0x3F) | 0x80;
+        return 2;
+    }
+    if (c < 0x10000) {
+        buf[0] = (c >> 12) | 0xE0;
+        buf[1] = ((c >> 6) & 0x3F) | 0x80;
+        buf[2] = (c & 0x3F) | 0x80;
+        return 3;
+    }
+    if (c < 0x110000) {
+        buf[0] = (c >> 18) | 0xF0;
+        buf[1] = ((c >> 12) & 0x3F) | 0x80;
+        buf[2] = ((c >> 6) & 0x3F) | 0x80;
+        buf[3] = (c & 0x3F) | 0x80;
+        return 4;
+    }
+    buf[0] = (0xFFFD >> 12) | 0xE0;
+    buf[1] = ((0xFFFD >> 6) & 0x3F) | 0x80;
+    buf[2] = (0xFFFD & 0x3F) | 0x80;
+    return 3;
+}
+
+/* Decode a single code point from a UTF-8 encoded array of bytes
+   `p` is a valid pointer to an array of bytes
+   `pp` is a valid pointer to a `const uint8_t *` to store a pointer
+   to the byte following the current sequence.
+   Return the code point at `p`, in the range `0..0x10FFFF`
+   Return 0xFFFD on error. Only a single byte is consumed in this case
+   The maximum length for a UTF-8 byte sequence is 4 bytes.
+   This implements the algorithm specified in whatwg.org, except it accepts
+   UTF-8 encoded surrogates as JavaScript allows them in strings.
+   The source string is assumed to have at least UTF8_CHAR_LEN_MAX bytes
+   or be null terminated.
+   If `p[0]` is '\0', the return value is `0` and the byte is consumed.
+   cf: https://encoding.spec.whatwg.org/#utf-8-encoder
+ */
+static inline uint32_t utf8_decode(const uint8_t *p, const uint8_t **pp)
+{
+    uint32_t c;
+    uint8_t lower, upper;
+
+    c = *p++;
+    if (c < 0x80) {
+        *pp = p;
+        return c;
+    }
+    switch(c) {
+    case 0xC2: case 0xC3:
+    case 0xC4: case 0xC5: case 0xC6: case 0xC7:
+    case 0xC8: case 0xC9: case 0xCA: case 0xCB:
+    case 0xCC: case 0xCD: case 0xCE: case 0xCF:
+    case 0xD0: case 0xD1: case 0xD2: case 0xD3:
+    case 0xD4: case 0xD5: case 0xD6: case 0xD7:
+    case 0xD8: case 0xD9: case 0xDA: case 0xDB:
+    case 0xDC: case 0xDD: case 0xDE: case 0xDF:
+        if (*p >= 0x80 && *p <= 0xBF) {
+            *pp = p + 1;
+            return ((c - 0xC0) << 6) + (*p - 0x80);
+        }
+        // otherwise encoding error
+        break;
+    case 0xE0:
+        lower = 0xA0;   /* reject invalid encoding */
+        goto need2;
+    case 0xE1: case 0xE2: case 0xE3:
+    case 0xE4: case 0xE5: case 0xE6: case 0xE7:
+    case 0xE8: case 0xE9: case 0xEA: case 0xEB:
+    case 0xEC: case 0xED: case 0xEE: case 0xEF:
+        lower = 0x80;
+    need2:
+        if (*p >= lower && *p <= 0xBF && p[1] >= 0x80 && p[1] <= 0xBF) {
+            *pp = p + 2;
+            return ((c - 0xE0) << 12) + ((*p - 0x80) << 6) + (p[1] - 0x80);
+        }
+        // otherwise encoding error
+        break;
+    case 0xF0:
+        lower = 0x90;   /* reject invalid encoding */
+        upper = 0xBF;
+        goto need3;
+    case 0xF4:
+        lower = 0x80;
+        upper = 0x8F;   /* reject values above 0x10FFFF */
+        goto need3;
+    case 0xF1: case 0xF2: case 0xF3:
+        lower = 0x80;
+        upper = 0xBF;
+    need3:
+        if (*p >= lower && *p <= upper && p[1] >= 0x80 && p[1] <= 0xBF
+        &&  p[2] >= 0x80 && p[2] <= 0xBF) {
+            *pp = p + 3;
+            return ((c - 0xF0) << 18) + ((*p - 0x80) << 12) +
+                ((p[1] - 0x80) << 6) + (p[2] - 0x80);
+        }
+        // otherwise encoding error
+        break;
+    default:
+        // invalid lead byte
+        break;
+    }
+    *pp = p;
+    return 0xFFFD;
+}
+
+static inline uint32_t utf8_decode_len(const uint8_t *p, size_t max_len, const uint8_t **pp) {
+    switch (max_len) {
+    case 0:
+        *pp = p;
+        return 0xFFFD;
+    case 1:
+        if (*p < 0x80)
+            goto good;
+        break;
+    case 2:
+        if (*p < 0xE0)
+            goto good;
+        break;
+    case 3:
+        if (*p < 0xF0)
+            goto good;
+        break;
+    default:
+    good:
+        return utf8_decode(p, pp);
+    }
+    *pp = p + 1;
+    return 0xFFFD;
+}
+
+/* Scan a UTF-8 encoded buffer for content type
+   `buf` is a valid pointer to a UTF-8 encoded string
+   `len` is the number of bytes to scan
+   `plen` points to a `size_t` variable to receive the number of units
+   Return value is a mask of bits.
+   - `UTF8_PLAIN_ASCII`: return value for 7-bit ASCII plain text
+   - `UTF8_NON_ASCII`: bit for non ASCII code points (8-bit or more)
+   - `UTF8_HAS_16BIT`: bit for 16-bit code points
+   - `UTF8_HAS_NON_BMP1`: bit for non-BMP1 code points, needs UTF-16 surrogate pairs
+   - `UTF8_HAS_ERRORS`: bit for encoding errors
+ */
+static inline int utf8_scan(const char *buf, size_t buf_len, size_t *plen)
+{
+    const uint8_t *p, *p_end, *p_next;
+    size_t i, len;
+    int kind;
+    uint8_t cbits;
+
+    kind = UTF8_PLAIN_ASCII;
+    cbits = 0;
+    len = buf_len;
+    // TODO: handle more than 1 byte at a time
+    for (i = 0; i < buf_len; i++)
+        cbits |= buf[i];
+    if (cbits >= 0x80) {
+        p = (const uint8_t *)buf;
+        p_end = p + buf_len;
+        kind = UTF8_NON_ASCII;
+        len = 0;
+        while (p < p_end) {
+            len++;
+            if (*p++ >= 0x80) {
+                /* parse UTF-8 sequence, check for encoding error */
+                uint32_t c = utf8_decode_len(p - 1, p_end - (p - 1), &p_next);
+                if (p_next == p)
+                    kind |= UTF8_HAS_ERRORS;
+                p = p_next;
+                if (c > 0xFF) {
+                    kind |= UTF8_HAS_16BIT;
+                    if (c > 0xFFFF) {
+                        len++;
+                        kind |= UTF8_HAS_NON_BMP1;
+                    }
+                }
+            }
+        }
+    }
+    *plen = len;
+    return kind;
+}
+
+/* Decode a string encoded in UTF-8 into an array of bytes
+   `src` points to the source string. It is assumed to be correctly encoded
+   and only contains code points below 0x800
+   `src_len` is the length of the source string
+   `dest` points to the destination array, it can be null if `dest_len` is `0`
+   `dest_len` is the length of the destination array. A null
+   terminator is stored at the end of the array unless `dest_len` is `0`.
+ */
+static inline size_t utf8_decode_buf8(uint8_t *dest, size_t dest_len, const char *src, size_t src_len)
+{
+    const uint8_t *p, *p_end;
+    size_t i;
+
+    p = (const uint8_t *)src;
+    p_end = p + src_len;
+    for (i = 0; p < p_end; i++) {
+        uint32_t c = *p++;
+        if (c >= 0xC0)
+            c = (c << 6) + *p++ - ((0xC0 << 6) + 0x80);
+        if (i < dest_len)
+            dest[i] = c;
+    }
+    if (i < dest_len)
+        dest[i] = '\0';
+    else if (dest_len > 0)
+        dest[dest_len - 1] = '\0';
+    return i;
+}
+
+/* Decode a string encoded in UTF-8 into an array of 16-bit words
+   `src` points to the source string. It is assumed to be correctly encoded.
+   `src_len` is the length of the source string
+   `dest` points to the destination array, it can be null if `dest_len` is `0`
+   `dest_len` is the length of the destination array. No null terminator is
+   stored at the end of the array.
+ */
+static inline size_t utf8_decode_buf16(uint16_t *dest, size_t dest_len, const char *src, size_t src_len)
+{
+    const uint8_t *p, *p_end;
+    size_t i;
+
+    p = (const uint8_t *)src;
+    p_end = p + src_len;
+    for (i = 0; p < p_end; i++) {
+        uint32_t c = *p++;
+        if (c >= 0x80) {
+            /* parse utf-8 sequence */
+            c = utf8_decode_len(p - 1, p_end - (p - 1), &p);
+            /* encoding errors are converted as 0xFFFD and use a single byte */
+            if (c > 0xFFFF) {
+                if (i < dest_len)
+                    dest[i] = get_hi_surrogate(c);
+                i++;
+                c = get_lo_surrogate(c);
+            }
+        }
+        if (i < dest_len)
+            dest[i] = c;
+    }
+    return i;
+}
+
+/* Encode a buffer of 8-bit bytes as a UTF-8 encoded string
+   `src` points to the source buffer.
+   `src_len` is the length of the source buffer
+   `dest` points to the destination array, it can be null if `dest_len` is `0`
+   `dest_len` is the length in bytes of the destination array. A null
+   terminator is stored at the end of the array unless `dest_len` is `0`.
+ */
+static inline size_t utf8_encode_buf8(char *dest, size_t dest_len, const uint8_t *src, size_t src_len)
+{
+    size_t i, j;
+    uint32_t c;
+
+    for (i = j = 0; i < src_len; i++) {
+        c = src[i];
+        if (c < 0x80) {
+            if (j + 1 >= dest_len)
+                goto overflow;
+            dest[j++] = c;
+        } else {
+            if (j + 2 >= dest_len)
+                goto overflow;
+            dest[j++] = (c >> 6) | 0xC0;
+            dest[j++] = (c & 0x3F) | 0x80;
+        }
+    }
+    if (j < dest_len)
+        dest[j] = '\0';
+    return j;
+
+overflow:
+    if (j < dest_len)
+        dest[j] = '\0';
+    while (i < src_len)
+        j += 1 + (src[i++] >= 0x80);
+    return j;
+}
+
+/* Encode a buffer of 16-bit code points as a UTF-8 encoded string
+   `src` points to the source buffer.
+   `src_len` is the length of the source buffer
+   `dest` points to the destination array, it can be null if `dest_len` is `0`
+   `dest_len` is the length in bytes of the destination array. A null
+   terminator is stored at the end of the array unless `dest_len` is `0`.
+ */
+static inline size_t utf8_encode_buf16(char *dest, size_t dest_len, const uint16_t *src, size_t src_len)
+{
+    size_t i, j;
+    uint32_t c;
+
+    for (i = j = 0; i < src_len;) {
+        c = src[i++];
+        if (c < 0x80) {
+            if (j + 1 >= dest_len)
+                goto overflow;
+            dest[j++] = c;
+        } else {
+            if (is_hi_surrogate(c) && i < src_len && is_lo_surrogate(src[i]))
+                c = from_surrogate(c, src[i++]);
+            if (j + utf8_encode_len(c) >= dest_len)
+                goto overflow;
+            j += utf8_encode((uint8_t *)dest + j, c);
+        }
+    }
+    if (j < dest_len)
+        dest[j] = '\0';
+    return j;
+
+overflow:
+    i -= 1 + (c > 0xFFFF);
+    if (j < dest_len)
+        dest[j] = '\0';
+    while (i < src_len) {
+        c = src[i++];
+        if (c < 0x80) {
+            j++;
+        } else {
+            if (is_hi_surrogate(c) && i < src_len && is_lo_surrogate(src[i]))
+                c = from_surrogate(c, src[i++]);
+            j += utf8_encode_len(c);
+        }
+    }
+    return j;
+}
+
+/*---- sorting with opaque argument ----*/
+
+typedef void (*exchange_f)(void *a, void *b, size_t size);
+typedef int (*cmp_f)(const void *, const void *, void *opaque);
+
+static void exchange_bytes(void *a, void *b, size_t size) {
+    uint8_t *ap = (uint8_t *)a;
+    uint8_t *bp = (uint8_t *)b;
+
+    while (size-- != 0) {
+        uint8_t t = *ap;
+        *ap++ = *bp;
+        *bp++ = t;
+    }
+}
+
+static void exchange_one_byte(void *a, void *b, size_t size) {
+    uint8_t *ap = (uint8_t *)a;
+    uint8_t *bp = (uint8_t *)b;
+    uint8_t t = *ap;
+    *ap = *bp;
+    *bp = t;
+}
+
+static void exchange_int16s(void *a, void *b, size_t size) {
+    uint16_t *ap = (uint16_t *)a;
+    uint16_t *bp = (uint16_t *)b;
+
+    for (size /= sizeof(uint16_t); size-- != 0;) {
+        uint16_t t = *ap;
+        *ap++ = *bp;
+        *bp++ = t;
+    }
+}
+
+static void exchange_one_int16(void *a, void *b, size_t size) {
+    uint16_t *ap = (uint16_t *)a;
+    uint16_t *bp = (uint16_t *)b;
+    uint16_t t = *ap;
+    *ap = *bp;
+    *bp = t;
+}
+
+static void exchange_int32s(void *a, void *b, size_t size) {
+    uint32_t *ap = (uint32_t *)a;
+    uint32_t *bp = (uint32_t *)b;
+
+    for (size /= sizeof(uint32_t); size-- != 0;) {
+        uint32_t t = *ap;
+        *ap++ = *bp;
+        *bp++ = t;
+    }
+}
+
+static void exchange_one_int32(void *a, void *b, size_t size) {
+    uint32_t *ap = (uint32_t *)a;
+    uint32_t *bp = (uint32_t *)b;
+    uint32_t t = *ap;
+    *ap = *bp;
+    *bp = t;
+}
+
+static void exchange_int64s(void *a, void *b, size_t size) {
+    uint64_t *ap = (uint64_t *)a;
+    uint64_t *bp = (uint64_t *)b;
+
+    for (size /= sizeof(uint64_t); size-- != 0;) {
+        uint64_t t = *ap;
+        *ap++ = *bp;
+        *bp++ = t;
+    }
+}
+
+static void exchange_one_int64(void *a, void *b, size_t size) {
+    uint64_t *ap = (uint64_t *)a;
+    uint64_t *bp = (uint64_t *)b;
+    uint64_t t = *ap;
+    *ap = *bp;
+    *bp = t;
+}
+
+static void exchange_int128s(void *a, void *b, size_t size) {
+    uint64_t *ap = (uint64_t *)a;
+    uint64_t *bp = (uint64_t *)b;
+
+    for (size /= sizeof(uint64_t) * 2; size-- != 0; ap += 2, bp += 2) {
+        uint64_t t = ap[0];
+        uint64_t u = ap[1];
+        ap[0] = bp[0];
+        ap[1] = bp[1];
+        bp[0] = t;
+        bp[1] = u;
+    }
+}
+
+static void exchange_one_int128(void *a, void *b, size_t size) {
+    uint64_t *ap = (uint64_t *)a;
+    uint64_t *bp = (uint64_t *)b;
+    uint64_t t = ap[0];
+    uint64_t u = ap[1];
+    ap[0] = bp[0];
+    ap[1] = bp[1];
+    bp[0] = t;
+    bp[1] = u;
+}
+
+static inline exchange_f exchange_func(const void *base, size_t size) {
+    switch (((uintptr_t)base | (uintptr_t)size) & 15) {
+    case 0:
+        if (size == sizeof(uint64_t) * 2)
+            return exchange_one_int128;
+        else
+            return exchange_int128s;
+    case 8:
+        if (size == sizeof(uint64_t))
+            return exchange_one_int64;
+        else
+            return exchange_int64s;
+    case 4:
+    case 12:
+        if (size == sizeof(uint32_t))
+            return exchange_one_int32;
+        else
+            return exchange_int32s;
+    case 2:
+    case 6:
+    case 10:
+    case 14:
+        if (size == sizeof(uint16_t))
+            return exchange_one_int16;
+        else
+            return exchange_int16s;
+    default:
+        if (size == 1)
+            return exchange_one_byte;
+        else
+            return exchange_bytes;
+    }
+}
+
+static void heapsortx(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
+{
+    uint8_t *basep = (uint8_t *)base;
+    size_t i, n, c, r;
+    exchange_f swap = exchange_func(base, size);
+
+    if (nmemb > 1) {
+        i = (nmemb / 2) * size;
+        n = nmemb * size;
+
+        while (i > 0) {
+            i -= size;
+            for (r = i; (c = r * 2 + size) < n; r = c) {
+                if (c < n - size && cmp(basep + c, basep + c + size, opaque) <= 0)
+                    c += size;
+                if (cmp(basep + r, basep + c, opaque) > 0)
+                    break;
+                swap(basep + r, basep + c, size);
+            }
+        }
+        for (i = n - size; i > 0; i -= size) {
+            swap(basep, basep + i, size);
+
+            for (r = 0; (c = r * 2 + size) < i; r = c) {
+                if (c < i - size && cmp(basep + c, basep + c + size, opaque) <= 0)
+                    c += size;
+                if (cmp(basep + r, basep + c, opaque) > 0)
+                    break;
+                swap(basep + r, basep + c, size);
+            }
+        }
+    }
+}
+
+static inline void *med3(void *a, void *b, void *c, cmp_f cmp, void *opaque)
+{
+    return cmp(a, b, opaque) < 0 ?
+        (cmp(b, c, opaque) < 0 ? b : (cmp(a, c, opaque) < 0 ? c : a )) :
+        (cmp(b, c, opaque) > 0 ? b : (cmp(a, c, opaque) < 0 ? a : c ));
+}
+
+/* pointer based version with local stack and insertion sort threshhold */
+static inline void rqsort(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
+{
+    struct { uint8_t *base; size_t count; int depth; } stack[50], *sp = stack;
+    uint8_t *ptr, *pi, *pj, *plt, *pgt, *top, *m;
+    size_t m4, i, lt, gt, span, span2;
+    int c, depth;
+    exchange_f swap = exchange_func(base, size);
+    exchange_f swap_block = exchange_func(base, size | 128);
+
+    if (nmemb < 2 || size <= 0)
+        return;
+
+    sp->base = (uint8_t *)base;
+    sp->count = nmemb;
+    sp->depth = 0;
+    sp++;
+
+    while (sp > stack) {
+        sp--;
+        ptr = sp->base;
+        nmemb = sp->count;
+        depth = sp->depth;
+
+        while (nmemb > 6) {
+            if (++depth > 50) {
+                /* depth check to ensure worst case logarithmic time */
+                heapsortx(ptr, nmemb, size, cmp, opaque);
+                nmemb = 0;
+                break;
+            }
+            /* select median of 3 from 1/4, 1/2, 3/4 positions */
+            /* should use median of 5 or 9? */
+            m4 = (nmemb >> 2) * size;
+            m = med3(ptr + m4, ptr + 2 * m4, ptr + 3 * m4, cmp, opaque);
+            swap(ptr, m, size);  /* move the pivot to the start or the array */
+            i = lt = 1;
+            pi = plt = ptr + size;
+            gt = nmemb;
+            pj = pgt = top = ptr + nmemb * size;
+            for (;;) {
+                while (pi < pj && (c = cmp(ptr, pi, opaque)) >= 0) {
+                    if (c == 0) {
+                        swap(plt, pi, size);
+                        lt++;
+                        plt += size;
+                    }
+                    i++;
+                    pi += size;
+                }
+                while (pi < (pj -= size) && (c = cmp(ptr, pj, opaque)) <= 0) {
+                    if (c == 0) {
+                        gt--;
+                        pgt -= size;
+                        swap(pgt, pj, size);
+                    }
+                }
+                if (pi >= pj)
+                    break;
+                swap(pi, pj, size);
+                i++;
+                pi += size;
+            }
+            /* array has 4 parts:
+             * from 0 to lt excluded: elements identical to pivot
+             * from lt to pi excluded: elements smaller than pivot
+             * from pi to gt excluded: elements greater than pivot
+             * from gt to n excluded: elements identical to pivot
+             */
+            /* move elements identical to pivot in the middle of the array: */
+            /* swap values in ranges [0..lt[ and [i-lt..i[
+               swapping the smallest span between lt and i-lt is sufficient
+             */
+            span = plt - ptr;
+            span2 = pi - plt;
+            lt = i - lt;
+            if (span > span2)
+                span = span2;
+            swap_block(ptr, pi - span, span);
+            /* swap values in ranges [gt..top[ and [i..top-(top-gt)[
+               swapping the smallest span between top-gt and gt-i is sufficient
+             */
+            span = top - pgt;
+            span2 = pgt - pi;
+            pgt = top - span2;
+            gt = nmemb - (gt - i);
+            if (span > span2)
+                span = span2;
+            swap_block(pi, top - span, span);
+
+            /* now array has 3 parts:
+             * from 0 to lt excluded: elements smaller than pivot
+             * from lt to gt excluded: elements identical to pivot
+             * from gt to n excluded: elements greater than pivot
+             */
+            /* stack the larger segment and keep processing the smaller one
+               to minimize stack use for pathological distributions */
+            if (lt > nmemb - gt) {
+                sp->base = ptr;
+                sp->count = lt;
+                sp->depth = depth;
+                sp++;
+                ptr = pgt;
+                nmemb -= gt;
+            } else {
+                sp->base = pgt;
+                sp->count = nmemb - gt;
+                sp->depth = depth;
+                sp++;
+                nmemb = lt;
+            }
+        }
+        /* Use insertion sort for small fragments */
+        for (pi = ptr + size, top = ptr + nmemb * size; pi < top; pi += size) {
+            for (pj = pi; pj > ptr && cmp(pj - size, pj, opaque) > 0; pj -= size)
+                swap(pj, pj - size, size);
+        }
+    }
+}
+
+/*---- Portable time functions ----*/
+
+#ifdef _WIN32
+ // From: https://stackoverflow.com/a/26085827
+static int gettimeofday_msvc(struct timeval *tp)
+{
+  static const uint64_t EPOCH = ((uint64_t)116444736000000000ULL);
+
+  SYSTEMTIME  system_time;
+  FILETIME    file_time;
+  uint64_t    time;
+
+  GetSystemTime(&system_time);
+  SystemTimeToFileTime(&system_time, &file_time);
+  time = ((uint64_t)file_time.dwLowDateTime);
+  time += ((uint64_t)file_time.dwHighDateTime) << 32;
+
+  tp->tv_sec = (long)((time - EPOCH) / 10000000L);
+  tp->tv_usec = (long)(system_time.wMilliseconds * 1000);
+
+  return 0;
+}
+
+static inline uint64_t js__hrtime_ns(void) {
+    LARGE_INTEGER counter, frequency;
+    double scaled_freq;
+    double result;
+
+    if (!QueryPerformanceFrequency(&frequency))
+        abort();
+    assert(frequency.QuadPart != 0);
+
+    if (!QueryPerformanceCounter(&counter))
+        abort();
+    assert(counter.QuadPart != 0);
+
+  /* Because we have no guarantee about the order of magnitude of the
+   * performance counter interval, integer math could cause this computation
+   * to overflow. Therefore we resort to floating point math.
+   */
+  scaled_freq = (double) frequency.QuadPart / NANOSEC;
+  result = (double) counter.QuadPart / scaled_freq;
+  return (uint64_t) result;
+}
+#else
+static inline uint64_t js__hrtime_ns(void) {
+#ifdef __DJGPP
+  struct timeval tv;
+  if (gettimeofday(&tv, NULL))
+    abort();
+  return tv.tv_sec * NANOSEC + tv.tv_usec * 1000;
+#else
+  struct timespec t;
+
+  if (clock_gettime(CLOCK_MONOTONIC, &t))
+    abort();
+
+  return t.tv_sec * NANOSEC + t.tv_nsec;
+#endif
+}
+#endif
+
+static inline int64_t js__gettimeofday_us(void) {
+    struct timeval tv;
+#ifdef _WIN32
+    gettimeofday_msvc(&tv);
+#else
+    gettimeofday(&tv, NULL);
+#endif
+    return ((int64_t)tv.tv_sec * 1000000) + tv.tv_usec;
+}
+
+#if defined(_WIN32)
+static inline int js_exepath(char *buffer, size_t *size_ptr) {
+    int utf8_len, utf16_buffer_len, utf16_len;
+    WCHAR* utf16_buffer;
+
+    if (buffer == NULL || size_ptr == NULL || *size_ptr == 0)
+      return -1;
+
+    if (*size_ptr > 32768) {
+      /* Windows paths can never be longer than this. */
+      utf16_buffer_len = 32768;
+    } else {
+      utf16_buffer_len = (int)*size_ptr;
+    }
+
+    utf16_buffer = malloc(sizeof(WCHAR) * utf16_buffer_len);
+    if (!utf16_buffer)
+        return -1;
+
+    /* Get the path as UTF-16. */
+    utf16_len = GetModuleFileNameW(NULL, utf16_buffer, utf16_buffer_len);
+    if (utf16_len <= 0)
+      goto error;
+
+    /* Convert to UTF-8 */
+    utf8_len = WideCharToMultiByte(CP_UTF8,
+                                   0,
+                                   utf16_buffer,
+                                   -1,
+                                   buffer,
+                                   (int)*size_ptr,
+                                   NULL,
+                                   NULL);
+    if (utf8_len == 0)
+      goto error;
+
+    free(utf16_buffer);
+
+    /* utf8_len *does* include the terminating null at this point, but the
+     * returned size shouldn't. */
+    *size_ptr = utf8_len - 1;
+    return 0;
+
+error:
+    free(utf16_buffer);
+    return -1;
+}
+#elif defined(__APPLE__)
+static inline int js_exepath(char *buffer, size_t *size) {
+    /* realpath(exepath) may be > PATH_MAX so double it to be on the safe side. */
+    char abspath[PATH_MAX * 2 + 1];
+    char exepath[PATH_MAX + 1];
+    uint32_t exepath_size;
+    size_t abspath_size;
+
+    if (buffer == NULL || size == NULL || *size == 0)
+        return -1;
+
+    exepath_size = sizeof(exepath);
+    if (_NSGetExecutablePath(exepath, &exepath_size))
+        return -1;
+
+    if (realpath(exepath, abspath) != abspath)
+        return -1;
+
+    abspath_size = strlen(abspath);
+    if (abspath_size == 0)
+        return -1;
+
+    *size -= 1;
+    if (*size > abspath_size)
+        *size = abspath_size;
+
+    memcpy(buffer, abspath, *size);
+    buffer[*size] = '\0';
+
+    return 0;
+}
+#elif defined(__linux__) || defined(__GNU__)
+static inline int js_exepath(char *buffer, size_t *size) {
+    ssize_t n;
+
+    if (buffer == NULL || size == NULL || *size == 0)
+        return -1;
+
+    n = *size - 1;
+    if (n > 0)
+        n = readlink("/proc/self/exe", buffer, n);
+
+    if (n == -1)
+        return n;
+
+    buffer[n] = '\0';
+    *size = n;
+
+    return 0;
+}
+#else
+static inline int js_exepath(char* buffer, size_t* size_ptr) {
+    return -1;
+}
+#endif
+
+/*--- Cross-platform threading APIs. ----*/
+
+#if JS_HAVE_THREADS
+#if defined(_WIN32)
+typedef void (*js__once_cb)(void);
+
+typedef struct {
+    js__once_cb callback;
+} js__once_data_t;
+
+static int WINAPI js__once_inner(INIT_ONCE *once, void *param, void **context) {
+    js__once_data_t *data = param;
+
+    data->callback();
+
+    return 1;
+}
+
+static inline void js_once(js_once_t *guard, js__once_cb callback) {
+    js__once_data_t data = { .callback = callback };
+    InitOnceExecuteOnce(guard, js__once_inner, (void*) &data, NULL);
+}
+
+static inline void js_mutex_init(js_mutex_t *mutex) {
+    InitializeCriticalSection(mutex);
+}
+
+static inline void js_mutex_destroy(js_mutex_t *mutex) {
+    DeleteCriticalSection(mutex);
+}
+
+static inline void js_mutex_lock(js_mutex_t *mutex) {
+    EnterCriticalSection(mutex);
+}
+
+static inline void js_mutex_unlock(js_mutex_t *mutex) {
+    LeaveCriticalSection(mutex);
+}
+
+static inline void js_cond_init(js_cond_t *cond) {
+    InitializeConditionVariable(cond);
+}
+
+static inline void js_cond_destroy(js_cond_t *cond) {
+  /* nothing to do */
+  (void) cond;
+}
+
+static inline void js_cond_signal(js_cond_t *cond) {
+    WakeConditionVariable(cond);
+}
+
+static inline void js_cond_broadcast(js_cond_t *cond) {
+    WakeAllConditionVariable(cond);
+}
+
+static inline void js_cond_wait(js_cond_t *cond, js_mutex_t *mutex) {
+    if (!SleepConditionVariableCS(cond, mutex, INFINITE))
+        abort();
+}
+
+static inline int js_cond_timedwait(js_cond_t *cond, js_mutex_t *mutex, uint64_t timeout) {
+    if (SleepConditionVariableCS(cond, mutex, (DWORD)(timeout / 1e6)))
+        return 0;
+    if (GetLastError() != ERROR_TIMEOUT)
+        abort();
+    return -1;
+}
+
+static inline int js_thread_create(js_thread_t *thrd, void (*start)(void *), void *arg,
+                     int flags)
+{
+    HANDLE h, cp;
+
+    *thrd = INVALID_HANDLE_VALUE;
+    if (flags & ~JS_THREAD_CREATE_DETACHED)
+        return -1;
+    h = (HANDLE)_beginthread(start, /*stacksize*/2<<20, arg);
+    if (!h)
+        return -1;
+    if (flags & JS_THREAD_CREATE_DETACHED)
+        return 0;
+    // _endthread() automatically closes the handle but we want to wait on
+    // it so make a copy. Race-y for very short-lived threads. Can be solved
+    // by switching to _beginthreadex(CREATE_SUSPENDED) but means changing
+    // |start| from __cdecl to __stdcall.
+    cp = GetCurrentProcess();
+    if (DuplicateHandle(cp, h, cp, thrd, 0, FALSE, DUPLICATE_SAME_ACCESS))
+        return 0;
+    return -1;
+}
+
+static inline int js_thread_join(js_thread_t thrd)
+{
+    if (WaitForSingleObject(thrd, INFINITE))
+        return -1;
+    CloseHandle(thrd);
+    return 0;
+}
+
+#else /* !defined(_WIN32) */
+
+static inline void js_once(js_once_t *guard, void (*callback)(void)) {
+    if (pthread_once(guard, callback))
+        abort();
+}
+
+static inline void js_mutex_init(js_mutex_t *mutex) {
+    if (pthread_mutex_init(mutex, NULL))
+        abort();
+}
+
+static inline void js_mutex_destroy(js_mutex_t *mutex) {
+    if (pthread_mutex_destroy(mutex))
+        abort();
+}
+
+static inline void js_mutex_lock(js_mutex_t *mutex) {
+    if (pthread_mutex_lock(mutex))
+        abort();
+}
+
+static inline void js_mutex_unlock(js_mutex_t *mutex) {
+    if (pthread_mutex_unlock(mutex))
+        abort();
+}
+
+static inline void js_cond_init(js_cond_t *cond) {
+#if defined(__APPLE__) && defined(__MACH__)
+    if (pthread_cond_init(cond, NULL))
+        abort();
+#else
+    pthread_condattr_t attr;
+
+    if (pthread_condattr_init(&attr))
+        abort();
+
+    if (pthread_condattr_setclock(&attr, CLOCK_MONOTONIC))
+        abort();
+
+    if (pthread_cond_init(cond, &attr))
+        abort();
+
+    if (pthread_condattr_destroy(&attr))
+        abort();
+#endif
+}
+
+static inline void js_cond_destroy(js_cond_t *cond) {
+#if defined(__APPLE__) && defined(__MACH__)
+    /* It has been reported that destroying condition variables that have been
+     * signalled but not waited on can sometimes result in application crashes.
+     * See https://codereview.chromium.org/1323293005.
+     */
+    pthread_mutex_t mutex;
+    struct timespec ts;
+    int err;
+
+    if (pthread_mutex_init(&mutex, NULL))
+        abort();
+
+    if (pthread_mutex_lock(&mutex))
+        abort();
+
+    ts.tv_sec = 0;
+    ts.tv_nsec = 1;
+
+    err = pthread_cond_timedwait_relative_np(cond, &mutex, &ts);
+    if (err != 0 && err != ETIMEDOUT)
+        abort();
+
+    if (pthread_mutex_unlock(&mutex))
+        abort();
+
+    if (pthread_mutex_destroy(&mutex))
+        abort();
+#endif /* defined(__APPLE__) && defined(__MACH__) */
+
+    if (pthread_cond_destroy(cond))
+        abort();
+}
+
+static inline void js_cond_signal(js_cond_t *cond) {
+    if (pthread_cond_signal(cond))
+        abort();
+}
+
+static inline void js_cond_broadcast(js_cond_t *cond) {
+    if (pthread_cond_broadcast(cond))
+        abort();
+}
+
+static inline void js_cond_wait(js_cond_t *cond, js_mutex_t *mutex) {
+#if defined(__APPLE__) && defined(__MACH__)
+    int r;
+
+    errno = 0;
+    r = pthread_cond_wait(cond, mutex);
+
+    /* Workaround for a bug in OS X at least up to 13.6
+     * See https://github.com/libuv/libuv/issues/4165
+     */
+    if (r == EINVAL && errno == EBUSY)
+        return;
+    if (r)
+        abort();
+#else
+    if (pthread_cond_wait(cond, mutex))
+        abort();
+#endif
+}
+
+static inline int js_cond_timedwait(js_cond_t *cond, js_mutex_t *mutex, uint64_t timeout) {
+    int r;
+    struct timespec ts;
+
+#if !defined(__APPLE__)
+    timeout += js__hrtime_ns();
+#endif
+
+    ts.tv_sec = timeout / NANOSEC;
+    ts.tv_nsec = timeout % NANOSEC;
+#if defined(__APPLE__) && defined(__MACH__)
+    r = pthread_cond_timedwait_relative_np(cond, mutex, &ts);
+#else
+    r = pthread_cond_timedwait(cond, mutex, &ts);
+#endif
+
+    if (r == 0)
+        return 0;
+
+    if (r == ETIMEDOUT)
+        return -1;
+
+    abort();
+
+    /* Pacify some compilers. */
+    return -1;
+}
+
+static inline int js_thread_create(js_thread_t *thrd, void (*start)(void *), void *arg,
+                     int flags)
+{
+    union {
+        void (*x)(void *);
+        void *(*f)(void *);
+    } u = {start};
+    pthread_attr_t attr;
+    int ret;
+
+    if (flags & ~JS_THREAD_CREATE_DETACHED)
+        return -1;
+    if (pthread_attr_init(&attr))
+        return -1;
+    ret = -1;
+    if (pthread_attr_setstacksize(&attr, 2<<20))
+        goto fail;
+    if (flags & JS_THREAD_CREATE_DETACHED)
+        if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED))
+            goto fail;
+    if (pthread_create(thrd, &attr, u.f, arg))
+        goto fail;
+    ret = 0;
+fail:
+    pthread_attr_destroy(&attr);
+    return ret;
+}
+
+static inline int js_thread_join(js_thread_t thrd)
+{
+    if (pthread_join(thrd, NULL))
+        return -1;
+    return 0;
+}
+
+#endif /* !defined(_WIN32) */
+#endif /* JS_HAVE_THREADS */
 
 #ifdef __cplusplus
 } /* extern "C" { */
@@ -719,6 +2075,8 @@ int js_thread_join(js_thread_t thrd);
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#ifndef DTOA_H
+#define DTOA_H
 
 //#define JS_DTOA_DUMP_STATS
 
@@ -779,6 +2137,8 @@ size_t u64toa(char *buf, uint64_t n);
 size_t i64toa(char *buf, int64_t n);
 size_t u64toa_radix(char *buf, uint64_t n, unsigned int radix);
 size_t i64toa_radix(char *buf, int64_t n, unsigned int radix);
+
+#endif /* DTOA_H */
 /*
  * Linux klist like system
  *
@@ -1057,8 +2417,9 @@ extern "C" {
 #define LRE_FLAG_NAMED_GROUPS (1 << 7) /* named groups are present in the regexp */
 #define LRE_FLAG_UNICODE_SETS (1 << 8)
 
-#define LRE_RET_MEMORY_ERROR (-1)
-#define LRE_RET_TIMEOUT      (-2)
+#define LRE_RET_MEMORY_ERROR   (-1)
+#define LRE_RET_TIMEOUT        (-2)
+#define LRE_RET_BYTECODE_ERROR (-3)
 
 uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
                      const char *buf, size_t buf_len, int re_flags,
@@ -1072,8 +2433,6 @@ int lre_exec(uint8_t **capture,
 
 int lre_parse_escape(const uint8_t **pp, int allow_utf16);
 bool lre_is_space(int c);
-
-void lre_byte_swap(uint8_t *buf, size_t len, bool is_byte_swapped);
 
 /* must be provided by the user */
 bool lre_check_stack_overflow(void *opaque, size_t alloca_size);
@@ -1198,17 +2557,17 @@ static const uint32_t case_conv_table1[378] = {
     0x53d50130, 0x53d58130, 0x53d60130, 0x53d68130,
     0x53d70130, 0x53d80130, 0x53d88130, 0x53d90130,
     0x53d98131, 0x53da1040, 0x53e20131, 0x53e28130,
-    0x53e30130, 0x53e38440, 0x53e58130, 0x53e60240,
-    0x53e80240, 0x53eb0640, 0x53ee0130, 0x53fa8240,
-    0x55a98101, 0x55b85020, 0x7d8001b2, 0x7d8081b2,
-    0x7d8101b2, 0x7d8181da, 0x7d8201da, 0x7d8281b3,
-    0x7d8301b3, 0x7d8981bb, 0x7d8a01bb, 0x7d8a81bb,
-    0x7d8b01bc, 0x7d8b81bb, 0x7f909a31, 0x7fa09a01,
-    0x82002831, 0x82142801, 0x82582431, 0x826c2401,
-    0x82b80b31, 0x82be0f31, 0x82c60731, 0x82ca0231,
-    0x82cb8b01, 0x82d18f01, 0x82d98701, 0x82dd8201,
-    0x86403331, 0x86603301, 0x86a81631, 0x86b81601,
-    0x8c502031, 0x8c602001, 0xb7202031, 0xb7302001,
+    0x53e30130, 0x53e38440, 0x53e58130, 0x53e61040,
+    0x53ee0130, 0x53fa8240, 0x55a98101, 0x55b85020,
+    0x7d8001b2, 0x7d8081b2, 0x7d8101b2, 0x7d8181da,
+    0x7d8201da, 0x7d8281b3, 0x7d8301b3, 0x7d8981bb,
+    0x7d8a01bb, 0x7d8a81bb, 0x7d8b01bc, 0x7d8b81bb,
+    0x7f909a31, 0x7fa09a01, 0x82002831, 0x82142801,
+    0x82582431, 0x826c2401, 0x82b80b31, 0x82be0f31,
+    0x82c60731, 0x82ca0231, 0x82cb8b01, 0x82d18f01,
+    0x82d98701, 0x82dd8201, 0x86403331, 0x86603301,
+    0x86a81631, 0x86b81601, 0x8c502031, 0x8c602001,
+    0xb7202031, 0xb7302001, 0xb7501931, 0xb75d9901,
     0xf4802231, 0xf4912201,
 };
 
@@ -1217,7 +2576,7 @@ static const uint8_t case_conv_table2[378] = {
     0x10, 0x00, 0x8f, 0x0b, 0x00, 0x00, 0x11, 0x00,
     0x08, 0x00, 0x53, 0x4b, 0x52, 0x00, 0x53, 0x00,
     0x54, 0x00, 0x3b, 0x55, 0x56, 0x00, 0x58, 0x5a,
-    0x40, 0x5f, 0x5e, 0x00, 0x47, 0x52, 0x63, 0x65,
+    0x40, 0x5f, 0x5e, 0x00, 0x47, 0x50, 0x63, 0x65,
     0x43, 0x66, 0x00, 0x68, 0x00, 0x6a, 0x00, 0x6c,
     0x00, 0x6e, 0x00, 0x70, 0x00, 0x00, 0x41, 0x00,
     0x00, 0x00, 0x00, 0x1a, 0x00, 0x93, 0x00, 0x00,
@@ -1234,7 +2593,7 @@ static const uint8_t case_conv_table2[378] = {
     0x95, 0x77, 0x33, 0x95, 0x00, 0x90, 0x00, 0x76,
     0x9b, 0x9a, 0x99, 0x98, 0x00, 0x00, 0xa0, 0x00,
     0x9e, 0x00, 0xa3, 0xa2, 0x15, 0x31, 0x32, 0x33,
-    0xb7, 0xb8, 0x55, 0xac, 0xab, 0x12, 0x14, 0x1e,
+    0xb7, 0xb8, 0x53, 0xac, 0xab, 0x12, 0x14, 0x1e,
     0x21, 0x22, 0x22, 0x2a, 0x34, 0x35, 0x00, 0xa8,
     0xa9, 0x39, 0x22, 0x4c, 0x00, 0x00, 0x97, 0x01,
     0x5a, 0xda, 0x1d, 0x36, 0x05, 0x00, 0xc7, 0xc6,
@@ -1254,11 +2613,11 @@ static const uint8_t case_conv_table2[378] = {
     0x00, 0xa5, 0xa6, 0xa7, 0x00, 0x00, 0x00, 0x00,
     0x00, 0xb9, 0x00, 0x00, 0x5c, 0x00, 0x4a, 0x00,
     0x5d, 0x57, 0x59, 0x62, 0x60, 0x72, 0x6b, 0x71,
-    0x54, 0x00, 0x3e, 0x69, 0xbb, 0x00, 0x5b, 0x00,
-    0x00, 0x00, 0x25, 0x00, 0x48, 0xaa, 0x8a, 0x8b,
-    0x8c, 0xab, 0xac, 0x58, 0x58, 0xaf, 0x94, 0xb0,
-    0x6f, 0xb2, 0x63, 0x62, 0x65, 0x64, 0x67, 0x66,
-    0x6c, 0x6d, 0x6e, 0x6f, 0x68, 0x69, 0x6a, 0x6b,
+    0x52, 0x00, 0x3e, 0x69, 0xbb, 0x00, 0x5b, 0x00,
+    0x25, 0x00, 0x48, 0xaa, 0x8a, 0x8b, 0x8c, 0xab,
+    0xac, 0x58, 0x58, 0xaf, 0x94, 0xb0, 0x6f, 0xb2,
+    0x61, 0x60, 0x63, 0x62, 0x65, 0x64, 0x6a, 0x6b,
+    0x6c, 0x6d, 0x66, 0x67, 0x68, 0x69, 0x6f, 0x6e,
     0x71, 0x70, 0x73, 0x72, 0x75, 0x74, 0x77, 0x76,
     0x79, 0x78,
 };
@@ -1274,12 +2633,12 @@ static const uint16_t case_conv_ext[58] = {
     0x006b, 0x00e5,
 };
 
-static const uint8_t unicode_prop_Cased1_table[193] = {
+static const uint8_t unicode_prop_Cased1_table[190] = {
     0x40, 0xa9, 0x80, 0x8e, 0x80, 0xfc, 0x80, 0xd3,
     0x80, 0x9b, 0x81, 0x8d, 0x02, 0x80, 0xe1, 0x80,
     0x91, 0x85, 0x9a, 0x01, 0x00, 0x01, 0x11, 0x03,
     0x04, 0x08, 0x01, 0x08, 0x30, 0x08, 0x01, 0x15,
-    0x20, 0x00, 0x39, 0x99, 0x31, 0x9d, 0x84, 0x40,
+    0x20, 0x01, 0x31, 0x99, 0x31, 0x9d, 0x84, 0x40,
     0x94, 0x80, 0xd6, 0x82, 0xa6, 0x80, 0x41, 0x62,
     0x80, 0xa6, 0x80, 0x4b, 0x72, 0x80, 0x4c, 0x02,
     0xf8, 0x02, 0x80, 0x8f, 0x80, 0xb0, 0x40, 0xdb,
@@ -1288,27 +2647,26 @@ static const uint8_t unicode_prop_Cased1_table[193] = {
     0x10, 0x11, 0x02, 0x01, 0x18, 0x0b, 0x24, 0x4b,
     0x26, 0x01, 0x01, 0x86, 0xe5, 0x80, 0x60, 0x79,
     0xb6, 0x81, 0x40, 0x91, 0x81, 0xbd, 0x88, 0x94,
-    0x05, 0x80, 0x98, 0x80, 0xa2, 0x00, 0x80, 0x9b,
-    0x12, 0x82, 0x43, 0x34, 0xa2, 0x06, 0x80, 0x8d,
-    0x60, 0x5c, 0x15, 0x01, 0x10, 0xa9, 0x80, 0x88,
-    0x60, 0xcc, 0x44, 0xd4, 0x80, 0xc6, 0x01, 0x08,
-    0x09, 0x0b, 0x80, 0x8b, 0x00, 0x06, 0x80, 0xc0,
-    0x03, 0x0f, 0x06, 0x80, 0x9b, 0x03, 0x04, 0x00,
-    0x16, 0x80, 0x41, 0x53, 0x81, 0x98, 0x80, 0x98,
-    0x80, 0x9e, 0x80, 0x98, 0x80, 0x9e, 0x80, 0x98,
-    0x80, 0x9e, 0x80, 0x98, 0x80, 0x9e, 0x80, 0x98,
-    0x07, 0x47, 0x33, 0x89, 0x80, 0x93, 0x2d, 0x41,
-    0x04, 0xbd, 0x50, 0xc1, 0x99, 0x85, 0x99, 0x85,
-    0x99,
+    0x05, 0x80, 0x98, 0x80, 0xc0, 0x1a, 0x82, 0x43,
+    0x34, 0xa2, 0x06, 0x80, 0x8d, 0x60, 0x5c, 0x15,
+    0x01, 0x10, 0xa9, 0x80, 0x88, 0x60, 0xcc, 0x44,
+    0xd4, 0x80, 0xc6, 0x01, 0x08, 0x09, 0x0b, 0x80,
+    0x8b, 0x00, 0x06, 0x80, 0xc0, 0x03, 0x0f, 0x06,
+    0x80, 0x9b, 0x03, 0x04, 0x00, 0x16, 0x80, 0x41,
+    0x53, 0x81, 0x98, 0x80, 0x98, 0x80, 0x9e, 0x80,
+    0x98, 0x80, 0x9e, 0x80, 0x98, 0x80, 0x9e, 0x80,
+    0x98, 0x80, 0x9e, 0x80, 0x98, 0x07, 0x47, 0x33,
+    0x89, 0x80, 0x93, 0x2d, 0x41, 0x04, 0xbd, 0x50,
+    0xc1, 0x99, 0x85, 0x99, 0x85, 0x99,
 };
 
 static const uint8_t unicode_prop_Cased1_index[18] = {
     0xb9, 0x02, 0x80, 0xa0, 0x1e, 0x40, 0x9e, 0xa6,
-    0x40, 0xbb, 0x07, 0x01, 0xdb, 0xd6, 0x01, 0x8a,
+    0x40, 0x55, 0xd4, 0x21, 0x15, 0xd7, 0x21, 0x8a,
     0xf1, 0x01,
 };
 
-static const uint8_t unicode_prop_Case_Ignorable_table[764] = {
+static const uint8_t unicode_prop_Case_Ignorable_table[785] = {
     0xa6, 0x05, 0x80, 0x8a, 0x80, 0xa2, 0x00, 0x80,
     0xc6, 0x03, 0x00, 0x03, 0x01, 0x81, 0x41, 0xf6,
     0x40, 0xbf, 0x19, 0x18, 0x88, 0x08, 0x80, 0x40,
@@ -1341,85 +2699,89 @@ static const uint8_t unicode_prop_Case_Ignorable_table[764] = {
     0xc0, 0x81, 0xa1, 0x80, 0xf5, 0x13, 0x81, 0x88,
     0x05, 0x82, 0x40, 0xda, 0x09, 0x80, 0xb9, 0x00,
     0x30, 0x00, 0x01, 0x3d, 0x89, 0x08, 0xa6, 0x07,
-    0x9e, 0xb0, 0x83, 0xaf, 0x00, 0x20, 0x04, 0x80,
-    0xa7, 0x88, 0x8b, 0x81, 0x9f, 0x19, 0x08, 0x82,
-    0xb7, 0x00, 0x0a, 0x00, 0x82, 0xb9, 0x39, 0x81,
-    0xbf, 0x85, 0xd1, 0x10, 0x8c, 0x06, 0x18, 0x28,
-    0x11, 0xb1, 0xbe, 0x8c, 0x80, 0xa1, 0xe4, 0x41,
-    0xbc, 0x00, 0x82, 0x8a, 0x82, 0x8c, 0x82, 0x8c,
-    0x82, 0x8c, 0x81, 0x8b, 0x27, 0x81, 0x89, 0x01,
-    0x01, 0x84, 0xb0, 0x20, 0x89, 0x00, 0x8c, 0x80,
-    0x8f, 0x8c, 0xb2, 0xa0, 0x4b, 0x8a, 0x81, 0xf0,
-    0x82, 0xfc, 0x80, 0x8e, 0x80, 0xdf, 0x9f, 0xae,
-    0x80, 0x41, 0xd4, 0x80, 0xa3, 0x1a, 0x24, 0x80,
-    0xdc, 0x85, 0xdc, 0x82, 0x60, 0x6f, 0x15, 0x80,
-    0x44, 0xe1, 0x85, 0x41, 0x0d, 0x80, 0xe1, 0x18,
-    0x89, 0x00, 0x9b, 0x83, 0xcf, 0x81, 0x8d, 0xa1,
-    0xcd, 0x80, 0x96, 0x82, 0xe6, 0x12, 0x0f, 0x02,
-    0x03, 0x80, 0x98, 0x0c, 0x80, 0x40, 0x96, 0x81,
-    0x99, 0x91, 0x8c, 0x80, 0xa5, 0x87, 0x98, 0x8a,
-    0xad, 0x82, 0xaf, 0x01, 0x19, 0x81, 0x90, 0x80,
-    0x94, 0x81, 0xc1, 0x29, 0x09, 0x81, 0x8b, 0x07,
-    0x80, 0xa2, 0x80, 0x8a, 0x80, 0xb2, 0x00, 0x11,
-    0x0c, 0x08, 0x80, 0x9a, 0x80, 0x8d, 0x0c, 0x08,
-    0x80, 0xe3, 0x84, 0x88, 0x82, 0xf8, 0x01, 0x03,
-    0x80, 0x60, 0x4f, 0x2f, 0x80, 0x40, 0x92, 0x90,
-    0x42, 0x3c, 0x8f, 0x10, 0x8b, 0x8f, 0xa1, 0x01,
-    0x80, 0x40, 0xa8, 0x06, 0x05, 0x80, 0x8a, 0x80,
-    0xa2, 0x00, 0x80, 0xae, 0x80, 0xac, 0x81, 0xc2,
-    0x80, 0x94, 0x82, 0x42, 0x00, 0x80, 0x40, 0xe1,
-    0x80, 0x40, 0x94, 0x84, 0x44, 0x04, 0x28, 0xa9,
-    0x80, 0x88, 0x42, 0x45, 0x10, 0x0c, 0x83, 0xa7,
-    0x13, 0x80, 0x40, 0xa4, 0x81, 0x42, 0x3c, 0x83,
-    0xa5, 0x80, 0x99, 0x20, 0x80, 0x41, 0x3a, 0x81,
-    0xce, 0x83, 0xc5, 0x8a, 0xb0, 0x83, 0xfa, 0x80,
-    0xb5, 0x8e, 0xa8, 0x01, 0x81, 0x89, 0x82, 0xb0,
-    0x19, 0x09, 0x03, 0x80, 0x89, 0x80, 0xb1, 0x82,
-    0xa3, 0x20, 0x87, 0xbd, 0x80, 0x8b, 0x81, 0xb3,
-    0x88, 0x89, 0x19, 0x80, 0xde, 0x11, 0x00, 0x0d,
-    0x01, 0x80, 0x40, 0x9c, 0x02, 0x87, 0x94, 0x81,
-    0xb8, 0x0a, 0x80, 0xa4, 0x32, 0x84, 0xc5, 0x85,
-    0x8c, 0x00, 0x00, 0x80, 0x8d, 0x81, 0xd4, 0x39,
-    0x10, 0x80, 0x96, 0x80, 0xd3, 0x28, 0x03, 0x08,
-    0x81, 0x40, 0xed, 0x1d, 0x08, 0x81, 0x9a, 0x81,
-    0xd4, 0x39, 0x00, 0x81, 0xe9, 0x00, 0x01, 0x28,
-    0x80, 0xe4, 0x00, 0x01, 0x18, 0x84, 0x41, 0x02,
-    0x88, 0x01, 0x40, 0xff, 0x08, 0x03, 0x80, 0x40,
-    0x8f, 0x19, 0x0b, 0x80, 0x9f, 0x89, 0xa7, 0x29,
-    0x1f, 0x80, 0x88, 0x29, 0x82, 0xad, 0x8c, 0x01,
-    0x41, 0x95, 0x30, 0x28, 0x80, 0xd1, 0x95, 0x0e,
-    0x01, 0x01, 0xf9, 0x2a, 0x00, 0x08, 0x30, 0x80,
-    0xc7, 0x0a, 0x00, 0x80, 0x41, 0x5a, 0x81, 0x8a,
-    0x81, 0xb3, 0x24, 0x00, 0x80, 0x96, 0x80, 0x54,
-    0xd4, 0x90, 0x85, 0x8e, 0x60, 0x2c, 0xc7, 0x8b,
-    0x12, 0x49, 0xbf, 0x84, 0xba, 0x86, 0x88, 0x83,
-    0x41, 0xfb, 0x82, 0xa7, 0x81, 0x41, 0xe1, 0x80,
-    0xbe, 0x90, 0xbf, 0x08, 0x81, 0x60, 0x40, 0x0a,
-    0x18, 0x30, 0x81, 0x4c, 0x9d, 0x08, 0x83, 0x52,
-    0x5b, 0xad, 0x81, 0x96, 0x42, 0x1f, 0x82, 0x88,
-    0x8f, 0x0e, 0x9d, 0x83, 0x40, 0x93, 0x82, 0x47,
-    0xba, 0xb6, 0x83, 0xb1, 0x38, 0x8d, 0x80, 0x95,
-    0x20, 0x8e, 0x45, 0x4f, 0x30, 0x90, 0x0e, 0x01,
-    0x04, 0x84, 0xbd, 0xa0, 0x80, 0x40, 0x9f, 0x8d,
-    0x41, 0x6f, 0x80, 0xbc, 0x83, 0x41, 0xfa, 0x84,
-    0x40, 0xfd, 0x81, 0x42, 0xdf, 0x86, 0xec, 0x87,
-    0x4a, 0xae, 0x84, 0x6c, 0x0c, 0x00, 0x80, 0x9d,
-    0xdf, 0xff, 0x40, 0xef,
+    0xad, 0x81, 0x8b, 0x93, 0x83, 0xaf, 0x00, 0x20,
+    0x04, 0x80, 0xa7, 0x88, 0x8b, 0x81, 0x9f, 0x19,
+    0x08, 0x82, 0xb7, 0x00, 0x0a, 0x00, 0x82, 0xb9,
+    0x39, 0x81, 0xbf, 0x85, 0xd1, 0x10, 0x8c, 0x06,
+    0x18, 0x28, 0x11, 0xb1, 0xbe, 0x8c, 0x80, 0xa1,
+    0xe4, 0x41, 0xbc, 0x00, 0x82, 0x8a, 0x82, 0x8c,
+    0x82, 0x8c, 0x82, 0x8c, 0x81, 0x8b, 0x27, 0x81,
+    0x89, 0x01, 0x01, 0x84, 0xb0, 0x20, 0x89, 0x00,
+    0x8c, 0x80, 0x8f, 0x8c, 0xb2, 0xa0, 0x4b, 0x8a,
+    0x81, 0xf0, 0x82, 0xfc, 0x80, 0x8e, 0x80, 0xdf,
+    0x9f, 0xae, 0x80, 0x41, 0xd4, 0x80, 0xa3, 0x1a,
+    0x24, 0x80, 0xdc, 0x85, 0xdc, 0x82, 0x60, 0x6f,
+    0x15, 0x80, 0x44, 0xe1, 0x85, 0x41, 0x0d, 0x80,
+    0xe1, 0x18, 0x89, 0x00, 0x9b, 0x83, 0xcf, 0x81,
+    0x8d, 0xa1, 0xcd, 0x80, 0x96, 0x82, 0xe5, 0x1a,
+    0x0f, 0x02, 0x03, 0x80, 0x98, 0x0c, 0x80, 0x40,
+    0x96, 0x81, 0x99, 0x91, 0x8c, 0x80, 0xa5, 0x87,
+    0x98, 0x8a, 0xad, 0x82, 0xaf, 0x01, 0x19, 0x81,
+    0x90, 0x80, 0x94, 0x81, 0xc1, 0x29, 0x09, 0x81,
+    0x8b, 0x07, 0x80, 0xa2, 0x80, 0x8a, 0x80, 0xb2,
+    0x00, 0x11, 0x0c, 0x08, 0x80, 0x9a, 0x80, 0x8d,
+    0x0c, 0x08, 0x80, 0xe3, 0x84, 0x88, 0x82, 0xf8,
+    0x01, 0x03, 0x80, 0x60, 0x4f, 0x2f, 0x80, 0x40,
+    0x92, 0x90, 0x42, 0x3c, 0x8f, 0x10, 0x8b, 0x8f,
+    0xa1, 0x01, 0x80, 0x40, 0xa8, 0x06, 0x05, 0x80,
+    0x8a, 0x80, 0xa2, 0x00, 0x80, 0xae, 0x80, 0xac,
+    0x81, 0xc2, 0x80, 0x94, 0x82, 0x42, 0x00, 0x80,
+    0x40, 0xe1, 0x80, 0x40, 0x94, 0x84, 0x44, 0x04,
+    0x28, 0xa9, 0x80, 0x88, 0x42, 0x45, 0x10, 0x0c,
+    0x83, 0xa7, 0x13, 0x80, 0x40, 0xa4, 0x81, 0x42,
+    0x3c, 0x83, 0xa5, 0x80, 0x99, 0x20, 0x80, 0x41,
+    0x3a, 0x81, 0x97, 0x80, 0xb3, 0x85, 0xc5, 0x8a,
+    0xb0, 0x83, 0xfa, 0x80, 0xb5, 0x8e, 0xa8, 0x01,
+    0x81, 0x89, 0x82, 0xb0, 0x19, 0x09, 0x03, 0x80,
+    0x89, 0x80, 0xb1, 0x82, 0xa3, 0x20, 0x87, 0xbd,
+    0x80, 0x8b, 0x81, 0xb3, 0x88, 0x89, 0x19, 0x80,
+    0xde, 0x11, 0x00, 0x0d, 0x01, 0x80, 0x40, 0x9c,
+    0x02, 0x87, 0x94, 0x81, 0xb8, 0x0a, 0x80, 0xa4,
+    0x32, 0x84, 0xc5, 0x85, 0x8c, 0x00, 0x00, 0x80,
+    0x8d, 0x81, 0xd4, 0x39, 0x10, 0x80, 0x96, 0x80,
+    0xd3, 0x28, 0x03, 0x08, 0x81, 0x40, 0xed, 0x1d,
+    0x08, 0x81, 0x9a, 0x81, 0xd4, 0x39, 0x00, 0x81,
+    0xe9, 0x00, 0x01, 0x28, 0x80, 0xe4, 0x00, 0x01,
+    0x18, 0x84, 0x41, 0x02, 0x88, 0x01, 0x40, 0xff,
+    0x08, 0x03, 0x80, 0x40, 0x8f, 0x19, 0x0b, 0x80,
+    0x9f, 0x89, 0xa7, 0x29, 0x1f, 0x80, 0x88, 0x29,
+    0x82, 0xad, 0x8c, 0x01, 0x40, 0xc5, 0x00, 0x10,
+    0x80, 0x40, 0xc8, 0x30, 0x28, 0x80, 0xd1, 0x95,
+    0x0e, 0x01, 0x01, 0xf9, 0x2a, 0x00, 0x08, 0x30,
+    0x80, 0xc7, 0x0a, 0x00, 0x80, 0xc0, 0x80, 0x41,
+    0x18, 0x81, 0x8a, 0x81, 0xb3, 0x24, 0x00, 0x80,
+    0x96, 0x80, 0x54, 0xd4, 0x90, 0x85, 0x8e, 0x60,
+    0x2c, 0xc7, 0x8b, 0x12, 0x49, 0xbf, 0x84, 0xba,
+    0x86, 0x88, 0x83, 0x41, 0xfb, 0x82, 0xa7, 0x81,
+    0x41, 0xe1, 0x80, 0xbe, 0x90, 0xbf, 0x08, 0x81,
+    0x8c, 0x81, 0x60, 0x3f, 0xfb, 0x18, 0x30, 0x81,
+    0x4c, 0x9d, 0x08, 0x83, 0x52, 0x5b, 0xad, 0x81,
+    0x96, 0x42, 0x1f, 0x82, 0x88, 0x8f, 0x0e, 0x9d,
+    0x83, 0x40, 0x93, 0x82, 0x47, 0xba, 0xb6, 0x83,
+    0xb1, 0x38, 0x8d, 0x80, 0x95, 0x20, 0x8e, 0x45,
+    0x4f, 0x30, 0x90, 0x0e, 0x01, 0x04, 0x84, 0xbd,
+    0xa0, 0x80, 0x40, 0x9f, 0x8d, 0x41, 0x6f, 0x80,
+    0xbc, 0x83, 0x41, 0xfa, 0x84, 0x40, 0xfd, 0x81,
+    0x40, 0xf2, 0x01, 0x06, 0x0c, 0x80, 0x88, 0x80,
+    0x41, 0xcf, 0x86, 0xec, 0x87, 0x4a, 0xae, 0x84,
+    0x6c, 0x0c, 0x00, 0x80, 0x9d, 0xdf, 0xff, 0x40,
+    0xef,
 };
 
-static const uint8_t unicode_prop_Case_Ignorable_index[72] = {
+static const uint8_t unicode_prop_Case_Ignorable_index[75] = {
     0xbe, 0x05, 0x00, 0xfe, 0x07, 0x00, 0x52, 0x0a,
     0xa0, 0xc1, 0x0b, 0x00, 0x82, 0x0d, 0x00, 0x3f,
-    0x10, 0x80, 0xd4, 0x17, 0x40, 0xcf, 0x1a, 0x20,
-    0xf5, 0x1c, 0x00, 0x80, 0x20, 0x00, 0x16, 0xa0,
-    0x00, 0xc6, 0xa8, 0x00, 0xc2, 0xaa, 0x60, 0x56,
-    0xfe, 0x20, 0xb1, 0x07, 0x01, 0x02, 0x10, 0x01,
-    0x42, 0x12, 0x41, 0xc4, 0x14, 0x21, 0xe1, 0x19,
-    0x81, 0x48, 0x1d, 0x01, 0x44, 0x6b, 0x01, 0x83,
-    0xd1, 0x21, 0x3e, 0xe1, 0x01, 0xf0, 0x01, 0x0e,
+    0x10, 0x80, 0xd4, 0x17, 0x40, 0xde, 0x1a, 0x20,
+    0xe9, 0x1c, 0x00, 0x72, 0x20, 0x00, 0x16, 0xa0,
+    0x40, 0xc6, 0xa8, 0x40, 0xc2, 0xaa, 0xa0, 0x30,
+    0xfe, 0x00, 0xb1, 0x07, 0x41, 0x51, 0x0f, 0x01,
+    0xd0, 0x11, 0x01, 0x5f, 0x14, 0x01, 0x44, 0x19,
+    0x61, 0xa8, 0x1c, 0x01, 0x2a, 0x61, 0x61, 0xff,
+    0xaf, 0x01, 0x19, 0xe0, 0x61, 0x00, 0xe7, 0x01,
+    0xf0, 0x01, 0x0e,
 };
 
-static const uint8_t unicode_prop_ID_Start_table[1133] = {
+static const uint8_t unicode_prop_ID_Start_table[1146] = {
     0xc0, 0x99, 0x85, 0x99, 0xae, 0x80, 0x89, 0x03,
     0x04, 0x96, 0x80, 0x9e, 0x80, 0x41, 0xc9, 0x83,
     0x8b, 0x8d, 0x26, 0x00, 0x80, 0x40, 0x80, 0x20,
@@ -1430,7 +2792,7 @@ static const uint8_t unicode_prop_ID_Start_table[1133] = {
     0x89, 0x11, 0x80, 0x8f, 0x00, 0x9d, 0x9c, 0xd8,
     0x8a, 0x80, 0x97, 0xa0, 0x88, 0x0b, 0x04, 0x95,
     0x18, 0x88, 0x02, 0x80, 0x96, 0x98, 0x86, 0x8a,
-    0x84, 0x97, 0x05, 0x90, 0xa9, 0xb9, 0xb5, 0x10,
+    0x84, 0x97, 0x06, 0x8f, 0xa9, 0xb9, 0xb5, 0x10,
     0x91, 0x06, 0x89, 0x8e, 0x8f, 0x1f, 0x09, 0x81,
     0x95, 0x06, 0x00, 0x13, 0x10, 0x8f, 0x80, 0x8c,
     0x08, 0x82, 0x8d, 0x81, 0x89, 0x07, 0x2b, 0x09,
@@ -1441,9 +2803,9 @@ static const uint8_t unicode_prop_ID_Start_table[1133] = {
     0x10, 0x9d, 0x08, 0x82, 0x8e, 0x80, 0x90, 0x00,
     0x2a, 0x10, 0x1a, 0x08, 0x00, 0x0a, 0x0a, 0x12,
     0x8b, 0x95, 0x80, 0xb3, 0x38, 0x10, 0x96, 0x80,
-    0x8f, 0x10, 0x99, 0x11, 0x01, 0x81, 0x9d, 0x03,
-    0x38, 0x10, 0x96, 0x80, 0x89, 0x04, 0x10, 0x9e,
-    0x08, 0x81, 0x8e, 0x81, 0x90, 0x88, 0x02, 0x80,
+    0x8f, 0x10, 0x99, 0x10, 0x09, 0x81, 0x9d, 0x03,
+    0x38, 0x10, 0x96, 0x80, 0x89, 0x04, 0x10, 0x9d,
+    0x10, 0x81, 0x8e, 0x81, 0x90, 0x88, 0x02, 0x80,
     0xa8, 0x08, 0x8f, 0x04, 0x17, 0x82, 0x97, 0x2c,
     0x91, 0x82, 0x97, 0x80, 0x88, 0x00, 0x0e, 0xb9,
     0xaf, 0x01, 0x8b, 0x86, 0xb9, 0x08, 0x00, 0x20,
@@ -1479,89 +2841,91 @@ static const uint8_t unicode_prop_ID_Start_table[1133] = {
     0x41, 0xff, 0x59, 0xbf, 0xbf, 0x60, 0x56, 0x8c,
     0xc2, 0xad, 0x81, 0x41, 0x0c, 0x82, 0x8f, 0x89,
     0x81, 0x93, 0xae, 0x8f, 0x9e, 0x81, 0xcf, 0xa6,
-    0x88, 0x81, 0xe6, 0x81, 0xc2, 0x09, 0x00, 0x07,
-    0x94, 0x8f, 0x02, 0x03, 0x80, 0x96, 0x9c, 0xb3,
-    0x8d, 0xb1, 0xbd, 0x2a, 0x00, 0x81, 0x8a, 0x9b,
-    0x89, 0x96, 0x98, 0x9c, 0x86, 0xae, 0x9b, 0x80,
-    0x8f, 0x20, 0x89, 0x89, 0x20, 0xa8, 0x96, 0x10,
-    0x87, 0x93, 0x96, 0x10, 0x82, 0xb1, 0x00, 0x11,
-    0x0c, 0x08, 0x00, 0x97, 0x11, 0x8a, 0x32, 0x8b,
-    0x29, 0x29, 0x85, 0x88, 0x30, 0x30, 0xaa, 0x80,
-    0x8d, 0x85, 0xf2, 0x9c, 0x60, 0x2b, 0xa3, 0x8b,
-    0x96, 0x83, 0xb0, 0x60, 0x21, 0x03, 0x41, 0x6d,
-    0x81, 0xe9, 0xa5, 0x86, 0x8b, 0x24, 0x00, 0x89,
-    0x80, 0x8c, 0x04, 0x00, 0x01, 0x01, 0x80, 0xeb,
-    0xa0, 0x41, 0x6a, 0x91, 0xbf, 0x81, 0xb5, 0xa7,
-    0x8b, 0xf3, 0x20, 0x40, 0x86, 0xa3, 0x99, 0x85,
-    0x99, 0x8a, 0xd8, 0x15, 0x0d, 0x0d, 0x0a, 0xa2,
-    0x8b, 0x80, 0x99, 0x80, 0x92, 0x01, 0x80, 0x8e,
-    0x81, 0x8d, 0xa1, 0xfa, 0xc4, 0xb4, 0x41, 0x0a,
-    0x9c, 0x82, 0xb0, 0xae, 0x9f, 0x8c, 0x9d, 0x84,
-    0xa5, 0x89, 0x9d, 0x81, 0xa3, 0x1f, 0x04, 0xa9,
-    0x40, 0x9d, 0x91, 0xa3, 0x83, 0xa3, 0x83, 0xa7,
-    0x87, 0xb3, 0x8b, 0x8a, 0x80, 0x8e, 0x06, 0x01,
-    0x80, 0x8a, 0x80, 0x8e, 0x06, 0x01, 0x82, 0xb3,
-    0x8b, 0x41, 0x36, 0x88, 0x95, 0x89, 0x87, 0x97,
-    0x28, 0xa9, 0x80, 0x88, 0xc4, 0x29, 0x00, 0xab,
-    0x01, 0x10, 0x81, 0x96, 0x89, 0x96, 0x88, 0x9e,
-    0xc0, 0x92, 0x01, 0x89, 0x95, 0x89, 0x99, 0xc5,
-    0xb7, 0x29, 0xbf, 0x80, 0x8e, 0x18, 0x10, 0x9c,
-    0xa9, 0x9c, 0x82, 0x9c, 0xa2, 0x38, 0x9b, 0x9a,
-    0xb5, 0x89, 0x95, 0x89, 0x92, 0x8c, 0x91, 0xed,
-    0xc8, 0xb6, 0xb2, 0x8c, 0xb2, 0x8c, 0xa3, 0xa5,
-    0x9b, 0x88, 0x96, 0x40, 0xf9, 0xa9, 0x29, 0x8f,
-    0x82, 0xba, 0x9c, 0x89, 0x07, 0x95, 0xa9, 0x91,
-    0xad, 0x94, 0x9a, 0x96, 0x8b, 0xb4, 0xb8, 0x09,
-    0x80, 0x8c, 0xac, 0x9f, 0x98, 0x99, 0xa3, 0x9c,
-    0x01, 0x07, 0xa2, 0x10, 0x8b, 0xaf, 0x8d, 0x83,
-    0x94, 0x00, 0x80, 0xa2, 0x91, 0x80, 0x98, 0x92,
-    0x81, 0xbe, 0x30, 0x00, 0x18, 0x8e, 0x80, 0x89,
-    0x86, 0xae, 0xa5, 0x39, 0x09, 0x95, 0x06, 0x01,
-    0x04, 0x10, 0x91, 0x80, 0x8b, 0x84, 0x9d, 0x89,
-    0x00, 0x08, 0x80, 0xa5, 0x00, 0x98, 0x00, 0x80,
-    0xab, 0xb4, 0x91, 0x83, 0x93, 0x82, 0x9d, 0xaf,
-    0x93, 0x08, 0x80, 0x40, 0xb7, 0xae, 0xa8, 0x83,
-    0xa3, 0xaf, 0x93, 0x80, 0xba, 0xaa, 0x8c, 0x80,
-    0xc6, 0x9a, 0xa4, 0x86, 0x40, 0xb8, 0xab, 0xf3,
-    0xbf, 0x9e, 0x39, 0x01, 0x38, 0x08, 0x97, 0x8e,
-    0x00, 0x80, 0xdd, 0x39, 0xa6, 0x8f, 0x00, 0x80,
-    0x9b, 0x80, 0x89, 0xa7, 0x30, 0x94, 0x80, 0x8a,
-    0xad, 0x92, 0x80, 0x91, 0xc8, 0x40, 0xc6, 0xa0,
-    0x9e, 0x88, 0x80, 0xa4, 0x90, 0x80, 0xb0, 0x9d,
-    0xef, 0x30, 0x08, 0xa5, 0x94, 0x80, 0x98, 0x28,
-    0x08, 0x9f, 0x8d, 0x80, 0x41, 0x46, 0x92, 0x8e,
-    0x00, 0x8c, 0x80, 0xa1, 0xfb, 0x80, 0xce, 0x43,
-    0x99, 0xe5, 0xee, 0x90, 0x40, 0xc3, 0x4a, 0x4b,
-    0xe0, 0x8e, 0x44, 0x2f, 0x90, 0x85, 0x98, 0x4f,
-    0x9a, 0x84, 0x42, 0x46, 0x5a, 0xb8, 0x9d, 0x46,
-    0xe1, 0x42, 0x38, 0x86, 0x9e, 0x90, 0xce, 0x90,
-    0x9d, 0x91, 0xaf, 0x8f, 0x83, 0x9e, 0x94, 0x84,
-    0x92, 0x41, 0xaf, 0xac, 0x40, 0xd2, 0xbf, 0xff,
-    0xca, 0x20, 0xc1, 0x8c, 0xbf, 0x08, 0x80, 0x9b,
-    0x57, 0xf7, 0x87, 0x44, 0xd5, 0xa8, 0x89, 0x60,
-    0x22, 0xe6, 0x18, 0x30, 0x08, 0x41, 0x22, 0x8e,
-    0x80, 0x9c, 0x11, 0x80, 0x8d, 0x1f, 0x41, 0x8b,
-    0x49, 0x03, 0xea, 0x84, 0x8c, 0x82, 0x88, 0x86,
-    0x89, 0x57, 0x65, 0xd4, 0x80, 0xc6, 0x01, 0x08,
-    0x09, 0x0b, 0x80, 0x8b, 0x00, 0x06, 0x80, 0xc0,
-    0x03, 0x0f, 0x06, 0x80, 0x9b, 0x03, 0x04, 0x00,
-    0x16, 0x80, 0x41, 0x53, 0x81, 0x98, 0x80, 0x98,
-    0x80, 0x9e, 0x80, 0x98, 0x80, 0x9e, 0x80, 0x98,
-    0x80, 0x9e, 0x80, 0x98, 0x80, 0x9e, 0x80, 0x98,
-    0x07, 0x47, 0x33, 0x9e, 0x2d, 0x41, 0x04, 0xbd,
-    0x40, 0x91, 0xac, 0x89, 0x86, 0x8f, 0x80, 0x41,
-    0x40, 0x9d, 0x91, 0xab, 0x41, 0xe3, 0x9b, 0x40,
-    0xe3, 0x9d, 0x08, 0x41, 0xee, 0x30, 0x18, 0x08,
-    0x8e, 0x80, 0x40, 0xc4, 0xba, 0xc3, 0x30, 0x44,
-    0xb3, 0x18, 0x9a, 0x01, 0x00, 0x08, 0x80, 0x89,
-    0x03, 0x00, 0x00, 0x28, 0x18, 0x00, 0x00, 0x02,
-    0x01, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x01,
-    0x00, 0x0b, 0x06, 0x03, 0x03, 0x00, 0x80, 0x89,
-    0x80, 0x90, 0x22, 0x04, 0x80, 0x90, 0x51, 0x43,
-    0x60, 0xa6, 0xdf, 0x9f, 0x50, 0x39, 0x85, 0x40,
-    0xdd, 0x81, 0x56, 0x81, 0x8d, 0x5d, 0x30, 0x8e,
-    0x42, 0x6d, 0x49, 0xa1, 0x42, 0x1d, 0x45, 0xe1,
-    0x53, 0x4a, 0x84, 0x50, 0x5f,
+    0x88, 0x81, 0xe6, 0x81, 0xd1, 0x93, 0x90, 0x02,
+    0x03, 0x80, 0x96, 0x9c, 0xb3, 0x8d, 0xb1, 0xbd,
+    0x2a, 0x00, 0x81, 0x8a, 0x9b, 0x89, 0x96, 0x98,
+    0x9c, 0x86, 0xae, 0x9b, 0x80, 0x8f, 0x20, 0x89,
+    0x89, 0x20, 0xa8, 0x96, 0x10, 0x87, 0x93, 0x96,
+    0x10, 0x82, 0xb1, 0x00, 0x11, 0x0c, 0x08, 0x00,
+    0x97, 0x11, 0x8a, 0x32, 0x8b, 0x29, 0x29, 0x85,
+    0x88, 0x30, 0x30, 0xaa, 0x80, 0x8d, 0x85, 0xf2,
+    0x9c, 0x60, 0x2b, 0xa3, 0x8b, 0x96, 0x83, 0xb0,
+    0x60, 0x21, 0x03, 0x41, 0x6d, 0x81, 0xe9, 0xa5,
+    0x86, 0x8b, 0x24, 0x00, 0x89, 0x80, 0x8c, 0x04,
+    0x00, 0x01, 0x01, 0x80, 0xeb, 0xa0, 0x41, 0x6a,
+    0x91, 0xbf, 0x81, 0xb5, 0xa7, 0x8b, 0xf3, 0x20,
+    0x40, 0x86, 0xa3, 0x99, 0x85, 0x99, 0x8a, 0xd8,
+    0x15, 0x0d, 0x0d, 0x0a, 0xa2, 0x8b, 0x80, 0x99,
+    0x80, 0x92, 0x01, 0x80, 0x8e, 0x81, 0x8d, 0xa1,
+    0xfa, 0xc4, 0xb4, 0x41, 0x0a, 0x9c, 0x82, 0xb0,
+    0xae, 0x9f, 0x8c, 0x9d, 0x84, 0xa5, 0x89, 0x9d,
+    0x81, 0xa3, 0x1f, 0x04, 0xa9, 0x40, 0x9d, 0x91,
+    0xa3, 0x83, 0xa3, 0x83, 0xa7, 0x87, 0xb3, 0x8b,
+    0x8a, 0x80, 0x8e, 0x06, 0x01, 0x80, 0x8a, 0x80,
+    0x8e, 0x06, 0x01, 0x82, 0xb3, 0x8b, 0x41, 0x36,
+    0x88, 0x95, 0x89, 0x87, 0x97, 0x28, 0xa9, 0x80,
+    0x88, 0xc4, 0x29, 0x00, 0xab, 0x01, 0x10, 0x81,
+    0x96, 0x89, 0x96, 0x88, 0x9e, 0xc0, 0x92, 0x01,
+    0x89, 0x95, 0x89, 0x99, 0x85, 0x99, 0xa5, 0xb7,
+    0x29, 0xbf, 0x80, 0x8e, 0x18, 0x10, 0x9c, 0xa9,
+    0x9c, 0x82, 0x9c, 0xa2, 0x38, 0x9b, 0x9a, 0xb5,
+    0x89, 0x95, 0x89, 0x92, 0x8c, 0x91, 0xed, 0xc8,
+    0xb6, 0xb2, 0x8c, 0xb2, 0x8c, 0xa3, 0xa5, 0x9b,
+    0x88, 0x96, 0x40, 0xf9, 0xa9, 0x29, 0x8f, 0x85,
+    0xb7, 0x9c, 0x89, 0x07, 0x95, 0xa9, 0x91, 0xad,
+    0x94, 0x9a, 0x96, 0x8b, 0xb4, 0xb8, 0x09, 0x80,
+    0x8c, 0xac, 0x9f, 0x98, 0x99, 0xa3, 0x9c, 0x01,
+    0x07, 0xa2, 0x10, 0x8b, 0xaf, 0x8d, 0x83, 0x94,
+    0x00, 0x80, 0xa2, 0x91, 0x80, 0x98, 0x92, 0x81,
+    0xbe, 0x30, 0x00, 0x18, 0x8e, 0x80, 0x89, 0x86,
+    0xae, 0xa5, 0x39, 0x09, 0x95, 0x06, 0x01, 0x04,
+    0x10, 0x91, 0x80, 0x8b, 0x84, 0x9d, 0x89, 0x00,
+    0x08, 0x80, 0xa5, 0x00, 0x98, 0x00, 0x80, 0xab,
+    0xb4, 0x91, 0x83, 0x93, 0x82, 0x9d, 0xaf, 0x93,
+    0x08, 0x80, 0x40, 0xb7, 0xae, 0xa8, 0x83, 0xa3,
+    0xaf, 0x93, 0x80, 0xba, 0xaa, 0x8c, 0x80, 0xc6,
+    0x9a, 0xa4, 0x86, 0x40, 0xb8, 0xab, 0xf3, 0xbf,
+    0x9e, 0x39, 0x01, 0x38, 0x08, 0x97, 0x8e, 0x00,
+    0x80, 0xdd, 0x39, 0xa6, 0x8f, 0x00, 0x80, 0x9b,
+    0x80, 0x89, 0xa7, 0x30, 0x94, 0x80, 0x8a, 0xad,
+    0x92, 0x80, 0x91, 0xc8, 0x40, 0xc6, 0xa0, 0x9e,
+    0x88, 0x80, 0xa4, 0x90, 0x80, 0xb0, 0x9d, 0xef,
+    0x30, 0x08, 0xa5, 0x94, 0x80, 0x98, 0x28, 0x08,
+    0x9f, 0x8d, 0x80, 0x96, 0xab, 0x41, 0x03, 0x92,
+    0x8e, 0x00, 0x8c, 0x80, 0xa1, 0xfb, 0x80, 0xce,
+    0x43, 0x99, 0xe5, 0xee, 0x90, 0x40, 0xc3, 0x4a,
+    0x4b, 0xe0, 0x8e, 0x44, 0x2f, 0x90, 0x85, 0x98,
+    0x4f, 0x9a, 0x84, 0x42, 0x46, 0x5a, 0xb8, 0x9d,
+    0x46, 0xe1, 0x42, 0x38, 0x86, 0x9e, 0x90, 0xce,
+    0x90, 0x9d, 0x91, 0xaf, 0x8f, 0x83, 0x9e, 0x94,
+    0x84, 0x92, 0x41, 0xaf, 0xac, 0x40, 0xd2, 0xbf,
+    0x9f, 0x98, 0x81, 0x98, 0xab, 0xca, 0x20, 0xc1,
+    0x8c, 0xbf, 0x08, 0x80, 0x8d, 0x84, 0x88, 0x5c,
+    0xd5, 0xa8, 0x9f, 0xe0, 0xf2, 0x60, 0x21, 0xfc,
+    0x18, 0x30, 0x08, 0x41, 0x22, 0x8e, 0x80, 0x9c,
+    0x11, 0x80, 0x8d, 0x1f, 0x41, 0x8b, 0x49, 0x03,
+    0xea, 0x84, 0x8c, 0x82, 0x88, 0x86, 0x89, 0x57,
+    0x65, 0xd4, 0x80, 0xc6, 0x01, 0x08, 0x09, 0x0b,
+    0x80, 0x8b, 0x00, 0x06, 0x80, 0xc0, 0x03, 0x0f,
+    0x06, 0x80, 0x9b, 0x03, 0x04, 0x00, 0x16, 0x80,
+    0x41, 0x53, 0x81, 0x98, 0x80, 0x98, 0x80, 0x9e,
+    0x80, 0x98, 0x80, 0x9e, 0x80, 0x98, 0x80, 0x9e,
+    0x80, 0x98, 0x80, 0x9e, 0x80, 0x98, 0x07, 0x47,
+    0x33, 0x9e, 0x2d, 0x41, 0x04, 0xbd, 0x40, 0x91,
+    0xac, 0x89, 0x86, 0x8f, 0x80, 0x41, 0x40, 0x9d,
+    0x91, 0xab, 0x41, 0xe3, 0x9b, 0x40, 0xe3, 0x9d,
+    0x08, 0x40, 0xce, 0x9e, 0x02, 0x01, 0x06, 0x0c,
+    0x88, 0x81, 0x40, 0xdf, 0x30, 0x18, 0x08, 0x8e,
+    0x80, 0x40, 0xc4, 0xba, 0xc3, 0x30, 0x44, 0xb3,
+    0x18, 0x9a, 0x01, 0x00, 0x08, 0x80, 0x89, 0x03,
+    0x00, 0x00, 0x28, 0x18, 0x00, 0x00, 0x02, 0x01,
+    0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+    0x0b, 0x06, 0x03, 0x03, 0x00, 0x80, 0x89, 0x80,
+    0x90, 0x22, 0x04, 0x80, 0x90, 0x51, 0x43, 0x60,
+    0xa6, 0xdf, 0x9f, 0x51, 0x1d, 0x81, 0x56, 0x8d,
+    0x81, 0x5d, 0x30, 0x8e, 0x42, 0x6d, 0x49, 0xa1,
+    0x42, 0x1d, 0x45, 0xe1, 0x53, 0x4a, 0x84, 0x60,
+    0x21, 0x29,
 };
 
 static const uint8_t unicode_prop_ID_Start_index[108] = {
@@ -1570,18 +2934,18 @@ static const uint8_t unicode_prop_ID_Start_index[108] = {
     0x0d, 0x20, 0xc7, 0x0e, 0x20, 0x49, 0x12, 0x00,
     0x9b, 0x16, 0x00, 0xac, 0x19, 0x00, 0xc0, 0x1d,
     0x80, 0x80, 0x20, 0x20, 0x70, 0x2d, 0x00, 0x00,
-    0x32, 0x00, 0xdd, 0xa7, 0x00, 0x4c, 0xaa, 0x20,
-    0xc7, 0xd7, 0x20, 0xfc, 0xfd, 0x20, 0x9d, 0x02,
-    0x21, 0x96, 0x05, 0x01, 0x9f, 0x08, 0x01, 0x49,
-    0x0c, 0x21, 0x76, 0x10, 0x21, 0xa9, 0x12, 0x01,
-    0xb0, 0x14, 0x01, 0x42, 0x19, 0x41, 0x90, 0x1c,
-    0x01, 0xf1, 0x2f, 0x21, 0x90, 0x6b, 0x21, 0x33,
-    0xb1, 0x21, 0x06, 0xd5, 0x01, 0xc3, 0xd7, 0x01,
-    0xff, 0xe7, 0x21, 0x63, 0xee, 0x01, 0x5e, 0xee,
-    0x42, 0xb0, 0x23, 0x03,
+    0x32, 0x00, 0x06, 0xa8, 0x00, 0x77, 0xaa, 0x00,
+    0xfc, 0xd7, 0x00, 0xfd, 0xfe, 0x40, 0xd1, 0x02,
+    0x01, 0xb2, 0x05, 0x21, 0xf6, 0x08, 0x01, 0x49,
+    0x0c, 0x01, 0x76, 0x10, 0x01, 0xdf, 0x12, 0x21,
+    0xc8, 0x14, 0x41, 0x42, 0x19, 0x21, 0x31, 0x1d,
+    0x61, 0xf1, 0x2f, 0x41, 0x78, 0x6b, 0x01, 0x23,
+    0xb1, 0xa1, 0xad, 0xd4, 0x01, 0x6f, 0xd7, 0x01,
+    0xee, 0xe5, 0x01, 0x38, 0xee, 0x01, 0xe0, 0xa6,
+    0x42, 0x7a, 0x34, 0x03,
 };
 
-static const uint8_t unicode_prop_ID_Continue1_table[695] = {
+static const uint8_t unicode_prop_ID_Continue1_table[708] = {
     0xaf, 0x89, 0xa4, 0x80, 0xd6, 0x80, 0x42, 0x47,
     0xef, 0x96, 0x80, 0x40, 0xfa, 0x84, 0x41, 0x08,
     0xac, 0x00, 0x01, 0x01, 0x00, 0xc7, 0x8a, 0xaf,
@@ -1613,73 +2977,75 @@ static const uint8_t unicode_prop_ID_Continue1_table[695] = {
     0x01, 0x89, 0xa0, 0x10, 0x8a, 0x40, 0x8e, 0x80,
     0xf5, 0x8b, 0x83, 0x8b, 0x89, 0x89, 0xff, 0x8a,
     0xbb, 0x84, 0xb8, 0x89, 0x80, 0x9c, 0x81, 0x8a,
-    0x85, 0x89, 0x95, 0x8d, 0x80, 0x8f, 0xb0, 0x84,
-    0xae, 0x90, 0x8a, 0x89, 0x90, 0x88, 0x8b, 0x82,
-    0x9d, 0x8c, 0x81, 0x89, 0xab, 0x8d, 0xaf, 0x93,
-    0x87, 0x89, 0x85, 0x89, 0xf5, 0x10, 0x94, 0x18,
-    0x28, 0x0a, 0x40, 0xc5, 0xbf, 0x42, 0x0b, 0x81,
-    0xb0, 0x81, 0x92, 0x80, 0xfa, 0x8c, 0x18, 0x82,
-    0x8b, 0x4b, 0xfd, 0x82, 0x40, 0x8c, 0x80, 0xdf,
-    0x9f, 0x42, 0x29, 0x85, 0xe8, 0x81, 0xdf, 0x80,
-    0x60, 0x75, 0x23, 0x89, 0xc4, 0x03, 0x89, 0x9f,
-    0x81, 0xcf, 0x81, 0x41, 0x0f, 0x02, 0x03, 0x80,
-    0x96, 0x23, 0x80, 0xd2, 0x81, 0xb1, 0x91, 0x89,
-    0x89, 0x85, 0x91, 0x8c, 0x8a, 0x9b, 0x87, 0x98,
-    0x8c, 0xab, 0x83, 0xae, 0x8d, 0x8e, 0x89, 0x8a,
-    0x80, 0x89, 0x89, 0xae, 0x8d, 0x8b, 0x07, 0x09,
-    0x89, 0xa0, 0x82, 0xb1, 0x00, 0x11, 0x0c, 0x08,
-    0x80, 0xa8, 0x24, 0x81, 0x40, 0xeb, 0x38, 0x09,
-    0x89, 0x60, 0x4f, 0x23, 0x80, 0x42, 0xe0, 0x8f,
-    0x8f, 0x8f, 0x11, 0x97, 0x82, 0x40, 0xbf, 0x89,
-    0xa4, 0x80, 0xa4, 0x80, 0x42, 0x96, 0x80, 0x40,
-    0xe1, 0x80, 0x40, 0x94, 0x84, 0x41, 0x24, 0x89,
-    0x45, 0x56, 0x10, 0x0c, 0x83, 0xa7, 0x13, 0x80,
-    0x40, 0xa4, 0x81, 0x42, 0x3c, 0x1f, 0x89, 0x85,
-    0x89, 0x9e, 0x84, 0x41, 0x3c, 0x81, 0xce, 0x83,
-    0xc5, 0x8a, 0xb0, 0x83, 0xf9, 0x82, 0xb4, 0x8e,
-    0x9e, 0x8a, 0x09, 0x89, 0x83, 0xac, 0x8a, 0x30,
-    0xac, 0x89, 0x2a, 0xa3, 0x8d, 0x80, 0x89, 0x21,
-    0xab, 0x80, 0x8b, 0x82, 0xaf, 0x8d, 0x3b, 0x80,
-    0x8b, 0xd1, 0x8b, 0x28, 0x08, 0x40, 0x9c, 0x8b,
-    0x84, 0x89, 0x2b, 0xb6, 0x08, 0x31, 0x09, 0x82,
-    0x88, 0x80, 0x89, 0x09, 0x32, 0x84, 0xc2, 0x88,
-    0x00, 0x08, 0x03, 0x04, 0x00, 0x8d, 0x81, 0xd1,
-    0x91, 0x88, 0x89, 0x18, 0xd0, 0x93, 0x8b, 0x89,
-    0x40, 0xd4, 0x31, 0x88, 0x9a, 0x81, 0xd1, 0x90,
-    0x8e, 0x89, 0xd0, 0x8c, 0x87, 0x89, 0x85, 0x93,
-    0xb8, 0x8e, 0x83, 0x89, 0x40, 0xf1, 0x8e, 0x40,
-    0xa4, 0x89, 0xc5, 0x28, 0x09, 0x18, 0x00, 0x81,
-    0x8b, 0x89, 0xf6, 0x31, 0x32, 0x80, 0x9b, 0x89,
-    0xa7, 0x30, 0x1f, 0x80, 0x88, 0x8a, 0xad, 0x8f,
-    0x41, 0x55, 0x89, 0xb4, 0x38, 0x87, 0x8f, 0x89,
-    0xb7, 0x95, 0x80, 0x8d, 0xf9, 0x2a, 0x00, 0x08,
-    0x30, 0x07, 0x89, 0xaf, 0x20, 0x08, 0x27, 0x89,
-    0x41, 0x48, 0x83, 0x88, 0x08, 0x80, 0xaf, 0x32,
-    0x84, 0x8c, 0x8a, 0x54, 0xe4, 0x05, 0x8e, 0x60,
-    0x2c, 0xc7, 0x9b, 0x49, 0x25, 0x89, 0xd5, 0x89,
-    0xa5, 0x84, 0xba, 0x86, 0x98, 0x89, 0x42, 0x15,
-    0x89, 0x41, 0xd4, 0x00, 0xb6, 0x33, 0xd0, 0x80,
-    0x8a, 0x81, 0x60, 0x4c, 0xaa, 0x81, 0x50, 0x50,
-    0x89, 0x42, 0x05, 0xad, 0x81, 0x96, 0x42, 0x1d,
-    0x22, 0x2f, 0x39, 0x86, 0x9d, 0x83, 0x40, 0x93,
-    0x82, 0x45, 0x88, 0xb1, 0x41, 0xff, 0xb6, 0x83,
-    0xb1, 0x38, 0x8d, 0x80, 0x95, 0x20, 0x8e, 0x45,
-    0x4f, 0x30, 0x90, 0x0e, 0x01, 0x04, 0xe3, 0x80,
-    0x40, 0x9f, 0x86, 0x88, 0x89, 0x41, 0x63, 0x80,
-    0xbc, 0x8d, 0x41, 0xf1, 0x8d, 0x40, 0xf3, 0x08,
-    0x89, 0x42, 0xd4, 0x86, 0xec, 0x34, 0x89, 0x52,
-    0x95, 0x89, 0x6c, 0x05, 0x05, 0x40, 0xef,
+    0x85, 0x89, 0x95, 0x8d, 0x80, 0x9e, 0x81, 0x8b,
+    0x93, 0x84, 0xae, 0x90, 0x8a, 0x89, 0x90, 0x88,
+    0x8b, 0x82, 0x9d, 0x8c, 0x81, 0x89, 0xab, 0x8d,
+    0xaf, 0x93, 0x87, 0x89, 0x85, 0x89, 0xf5, 0x10,
+    0x94, 0x18, 0x28, 0x0a, 0x40, 0xc5, 0xbf, 0x42,
+    0x0b, 0x81, 0xb0, 0x81, 0x92, 0x80, 0xfa, 0x8c,
+    0x18, 0x82, 0x8b, 0x4b, 0xfd, 0x82, 0x40, 0x8c,
+    0x80, 0xdf, 0x9f, 0x42, 0x29, 0x85, 0xe8, 0x81,
+    0xdf, 0x80, 0x60, 0x75, 0x23, 0x89, 0xc4, 0x03,
+    0x89, 0x9f, 0x81, 0xcf, 0x81, 0x41, 0x0f, 0x02,
+    0x03, 0x80, 0x96, 0x23, 0x80, 0xd2, 0x81, 0xb1,
+    0x91, 0x89, 0x89, 0x85, 0x91, 0x8c, 0x8a, 0x9b,
+    0x87, 0x98, 0x8c, 0xab, 0x83, 0xae, 0x8d, 0x8e,
+    0x89, 0x8a, 0x80, 0x89, 0x89, 0xae, 0x8d, 0x8b,
+    0x07, 0x09, 0x89, 0xa0, 0x82, 0xb1, 0x00, 0x11,
+    0x0c, 0x08, 0x80, 0xa8, 0x24, 0x81, 0x40, 0xeb,
+    0x38, 0x09, 0x89, 0x60, 0x4f, 0x23, 0x80, 0x42,
+    0xe0, 0x8f, 0x8f, 0x8f, 0x11, 0x97, 0x82, 0x40,
+    0xbf, 0x89, 0xa4, 0x80, 0xa4, 0x80, 0x42, 0x96,
+    0x80, 0x40, 0xe1, 0x80, 0x40, 0x94, 0x84, 0x41,
+    0x24, 0x89, 0x45, 0x56, 0x10, 0x0c, 0x83, 0xa7,
+    0x13, 0x80, 0x40, 0xa4, 0x81, 0x42, 0x3c, 0x1f,
+    0x89, 0x85, 0x89, 0x9e, 0x84, 0x41, 0x3c, 0x81,
+    0xcc, 0x85, 0xc5, 0x8a, 0xb0, 0x83, 0xf9, 0x82,
+    0xb4, 0x8e, 0x9e, 0x8a, 0x09, 0x89, 0x83, 0xac,
+    0x8a, 0x30, 0xac, 0x89, 0x2a, 0xa3, 0x8d, 0x80,
+    0x89, 0x21, 0xab, 0x80, 0x8b, 0x82, 0xaf, 0x8d,
+    0x3b, 0x80, 0x8b, 0xd1, 0x8b, 0x28, 0x08, 0x40,
+    0x9c, 0x8b, 0x84, 0x89, 0x2b, 0xb6, 0x08, 0x31,
+    0x09, 0x82, 0x88, 0x80, 0x89, 0x09, 0x32, 0x84,
+    0xc2, 0x88, 0x00, 0x08, 0x03, 0x04, 0x00, 0x8d,
+    0x81, 0xd1, 0x91, 0x88, 0x89, 0x18, 0xd0, 0x93,
+    0x8b, 0x89, 0x40, 0xd4, 0x31, 0x88, 0x9a, 0x81,
+    0xd1, 0x90, 0x8e, 0x89, 0xd0, 0x8c, 0x87, 0x89,
+    0x85, 0x93, 0xb8, 0x8e, 0x83, 0x89, 0x40, 0xf1,
+    0x8e, 0x40, 0xa4, 0x89, 0xc5, 0x28, 0x09, 0x18,
+    0x00, 0x81, 0x8b, 0x89, 0xf6, 0x31, 0x32, 0x80,
+    0x9b, 0x89, 0xa7, 0x30, 0x1f, 0x80, 0x88, 0x8a,
+    0xad, 0x8f, 0x40, 0xc5, 0x87, 0x40, 0x87, 0x89,
+    0xb4, 0x38, 0x87, 0x8f, 0x89, 0xb7, 0x95, 0x80,
+    0x8d, 0xf9, 0x2a, 0x00, 0x08, 0x30, 0x07, 0x89,
+    0xaf, 0x20, 0x08, 0x27, 0x89, 0xb5, 0x89, 0x41,
+    0x08, 0x83, 0x88, 0x08, 0x80, 0xaf, 0x32, 0x84,
+    0x8c, 0x8a, 0x54, 0xe4, 0x05, 0x8e, 0x60, 0x2c,
+    0xc7, 0x9b, 0x49, 0x25, 0x89, 0xd5, 0x89, 0xa5,
+    0x84, 0xba, 0x86, 0x98, 0x89, 0x42, 0x15, 0x89,
+    0x41, 0xd4, 0x00, 0xb6, 0x33, 0xd0, 0x80, 0x8a,
+    0x81, 0x60, 0x4c, 0xaa, 0x81, 0x50, 0x50, 0x89,
+    0x42, 0x05, 0xad, 0x81, 0x96, 0x42, 0x1d, 0x22,
+    0x2f, 0x39, 0x86, 0x9d, 0x83, 0x40, 0x93, 0x82,
+    0x45, 0x88, 0xb1, 0x41, 0xff, 0xb6, 0x83, 0xb1,
+    0x38, 0x8d, 0x80, 0x95, 0x20, 0x8e, 0x45, 0x4f,
+    0x30, 0x90, 0x0e, 0x01, 0x04, 0xe3, 0x80, 0x40,
+    0x9f, 0x86, 0x88, 0x89, 0x41, 0x63, 0x80, 0xbc,
+    0x8d, 0x41, 0xf1, 0x8d, 0x40, 0xf3, 0x08, 0x89,
+    0x40, 0xe7, 0x01, 0x06, 0x0c, 0x80, 0x41, 0xd9,
+    0x86, 0xec, 0x34, 0x89, 0x52, 0x95, 0x89, 0x6c,
+    0x05, 0x05, 0x40, 0xef,
 };
 
 static const uint8_t unicode_prop_ID_Continue1_index[66] = {
     0xfa, 0x06, 0x00, 0x70, 0x09, 0x00, 0xf0, 0x0a,
     0x40, 0x57, 0x0c, 0x00, 0xf0, 0x0d, 0x60, 0xc7,
-    0x0f, 0x20, 0xea, 0x17, 0x40, 0x05, 0x1b, 0x00,
-    0x0e, 0x20, 0x00, 0xa0, 0xa6, 0x20, 0xe6, 0xa9,
-    0x20, 0x10, 0xfe, 0x00, 0x40, 0x0a, 0x01, 0xc3,
-    0x10, 0x01, 0x4e, 0x13, 0x01, 0x41, 0x16, 0x01,
-    0x0b, 0x1a, 0x01, 0xaa, 0x1d, 0x01, 0x7a, 0x6d,
-    0x21, 0x45, 0xd2, 0x21, 0xaf, 0xe2, 0x01, 0xf0,
+    0x0f, 0x20, 0xea, 0x17, 0x40, 0xec, 0x1a, 0x00,
+    0x0e, 0x20, 0x40, 0x7e, 0xa6, 0x20, 0xda, 0xa9,
+    0x20, 0x10, 0xfe, 0x40, 0x40, 0x0a, 0x41, 0xbb,
+    0x10, 0x21, 0x4e, 0x13, 0x41, 0xde, 0x15, 0x01,
+    0xe5, 0x19, 0x01, 0x5a, 0x1d, 0x01, 0xf5, 0x6a,
+    0x21, 0x8c, 0xd1, 0x61, 0x37, 0xe1, 0x41, 0xf0,
     0x01, 0x0e,
 };
 
@@ -1693,7 +3059,7 @@ static const uint8_t unicode_prop_White_Space_index[3] = {
     0x01, 0x30, 0x00,
 };
 
-static const uint8_t unicode_cc_table[916] = {
+static const uint8_t unicode_cc_table[937] = {
     0xb2, 0xcf, 0xd4, 0x00, 0xe8, 0x03, 0xdc, 0x00,
     0xe8, 0x00, 0xd8, 0x04, 0xdc, 0x01, 0xca, 0x03,
     0xdc, 0x01, 0xca, 0x0a, 0xdc, 0x04, 0x01, 0x03,
@@ -1746,83 +3112,87 @@ static const uint8_t unicode_cc_table[916] = {
     0xb0, 0x16, 0x00, 0x09, 0x93, 0xc7, 0x81, 0x00,
     0xdc, 0xaf, 0xc4, 0x05, 0xdc, 0xc1, 0x00, 0xdc,
     0x80, 0x01, 0xdc, 0xc1, 0x01, 0xdc, 0xc4, 0x00,
-    0xdc, 0xc3, 0xb0, 0x34, 0x00, 0x07, 0x8e, 0x00,
-    0x09, 0xa5, 0xc0, 0x00, 0xdc, 0xc6, 0xb0, 0x05,
-    0x01, 0x09, 0xb0, 0x09, 0x00, 0x07, 0x8a, 0x01,
-    0x09, 0xb0, 0x12, 0x00, 0x07, 0xb0, 0x67, 0xc2,
-    0x41, 0x00, 0x04, 0xdc, 0xc1, 0x03, 0xdc, 0xc0,
-    0x41, 0x00, 0x05, 0x01, 0x83, 0x00, 0xdc, 0x85,
-    0xc0, 0x82, 0xc1, 0xb0, 0x95, 0xc1, 0x00, 0xdc,
-    0xc6, 0x00, 0xdc, 0xc1, 0x00, 0xea, 0x00, 0xd6,
-    0x00, 0xdc, 0x00, 0xca, 0xe4, 0x00, 0xe8, 0x01,
-    0xe4, 0x00, 0xdc, 0x00, 0xda, 0xc0, 0x00, 0xe9,
-    0x00, 0xdc, 0xc0, 0x00, 0xdc, 0xb2, 0x9f, 0xc1,
-    0x01, 0x01, 0xc3, 0x02, 0x01, 0xc1, 0x83, 0xc0,
-    0x82, 0x01, 0x01, 0xc0, 0x00, 0xdc, 0xc0, 0x01,
-    0x01, 0x03, 0xdc, 0xc0, 0xb8, 0x03, 0xcd, 0xc2,
-    0xb0, 0x5c, 0x00, 0x09, 0xb0, 0x2f, 0xdf, 0xb1,
-    0xf9, 0x00, 0xda, 0x00, 0xe4, 0x00, 0xe8, 0x00,
-    0xde, 0x01, 0xe0, 0xb0, 0x38, 0x01, 0x08, 0xb8,
-    0x6d, 0xa3, 0xc0, 0x83, 0xc9, 0x9f, 0xc1, 0xb0,
-    0x1f, 0xc1, 0xb0, 0xe3, 0x00, 0x09, 0xa4, 0x00,
-    0x09, 0xb0, 0x66, 0x00, 0x09, 0x9a, 0xd1, 0xb0,
-    0x08, 0x02, 0xdc, 0xa4, 0x00, 0x09, 0xb0, 0x2e,
-    0x00, 0x07, 0x8b, 0x00, 0x09, 0xb0, 0xbe, 0xc0,
-    0x80, 0xc1, 0x00, 0xdc, 0x81, 0xc1, 0x84, 0xc1,
-    0x80, 0xc0, 0xb0, 0x03, 0x00, 0x09, 0xb0, 0xc5,
-    0x00, 0x09, 0xb8, 0x46, 0xff, 0x00, 0x1a, 0xb2,
-    0xd0, 0xc6, 0x06, 0xdc, 0xc1, 0xb3, 0x9c, 0x00,
-    0xdc, 0xb0, 0xb1, 0x00, 0xdc, 0xb0, 0x64, 0xc4,
-    0xb6, 0x61, 0x00, 0xdc, 0x80, 0xc0, 0xa7, 0xc0,
-    0x00, 0x01, 0x00, 0xdc, 0x83, 0x00, 0x09, 0xb0,
-    0x74, 0xc0, 0x00, 0xdc, 0xb2, 0x0c, 0xc3, 0xb0,
-    0x10, 0xc4, 0xb1, 0x0c, 0xc1, 0xb0, 0x1f, 0x02,
-    0xdc, 0xb0, 0x15, 0x01, 0xdc, 0xc2, 0x00, 0xdc,
-    0xc0, 0x03, 0xdc, 0xb0, 0x00, 0xc0, 0x00, 0xdc,
-    0xc0, 0x00, 0xdc, 0xb0, 0x8f, 0x00, 0x09, 0xa8,
-    0x00, 0x09, 0x8d, 0x00, 0x09, 0xb0, 0x08, 0x00,
-    0x09, 0x00, 0x07, 0xb0, 0x14, 0xc2, 0xaf, 0x01,
-    0x09, 0xb0, 0x0d, 0x00, 0x07, 0xb0, 0x1b, 0x00,
-    0x09, 0x88, 0x00, 0x07, 0xb0, 0x39, 0x00, 0x09,
-    0x00, 0x07, 0xb0, 0x81, 0x00, 0x07, 0x00, 0x09,
-    0xb0, 0x1f, 0x01, 0x07, 0x8f, 0x00, 0x09, 0x97,
-    0xc6, 0x82, 0xc4, 0xb0, 0x28, 0x02, 0x09, 0xb0,
-    0x40, 0x00, 0x09, 0x82, 0x00, 0x07, 0x96, 0xc0,
-    0xb0, 0x32, 0x00, 0x09, 0x00, 0x07, 0xb0, 0xca,
-    0x00, 0x09, 0x00, 0x07, 0xb0, 0x4d, 0x00, 0x09,
-    0xb0, 0x45, 0x00, 0x09, 0x00, 0x07, 0xb0, 0x42,
-    0x00, 0x09, 0xb0, 0xdc, 0x00, 0x09, 0x00, 0x07,
-    0xb0, 0xd1, 0x01, 0x09, 0x83, 0x00, 0x07, 0xb0,
-    0x6b, 0x00, 0x09, 0xb0, 0x22, 0x00, 0x09, 0x91,
-    0x00, 0x09, 0xb0, 0x20, 0x00, 0x09, 0xb1, 0x74,
-    0x00, 0x09, 0xb0, 0xd1, 0x00, 0x07, 0x80, 0x01,
-    0x09, 0xb0, 0x20, 0x00, 0x09, 0xb1, 0x78, 0x01,
-    0x09, 0xb8, 0x39, 0xbb, 0x00, 0x09, 0xb8, 0x01,
-    0x8f, 0x04, 0x01, 0xb0, 0x0a, 0xc6, 0xb4, 0x88,
-    0x01, 0x06, 0xb8, 0x44, 0x7b, 0x00, 0x01, 0xb8,
-    0x0c, 0x95, 0x01, 0xd8, 0x02, 0x01, 0x82, 0x00,
-    0xe2, 0x04, 0xd8, 0x87, 0x07, 0xdc, 0x81, 0xc4,
-    0x01, 0xdc, 0x9d, 0xc3, 0xb0, 0x63, 0xc2, 0xb8,
-    0x05, 0x8a, 0xc6, 0x80, 0xd0, 0x81, 0xc6, 0x80,
-    0xc1, 0x80, 0xc4, 0xb0, 0x33, 0xc0, 0xb0, 0x6f,
-    0xc6, 0xb1, 0x46, 0xc0, 0xb0, 0x0c, 0xc3, 0xb1,
-    0xcb, 0x01, 0xe8, 0x00, 0xdc, 0xc0, 0xb0, 0xcd,
-    0xc0, 0x00, 0xdc, 0xb2, 0xaf, 0x06, 0xdc, 0xb0,
-    0x3c, 0xc5, 0x00, 0x07,
+    0xdc, 0xd1, 0x00, 0xdc, 0x81, 0xc5, 0x00, 0xdc,
+    0xc3, 0x00, 0xea, 0xb0, 0x17, 0x00, 0x07, 0x8e,
+    0x00, 0x09, 0xa5, 0xc0, 0x00, 0xdc, 0xc6, 0xb0,
+    0x05, 0x01, 0x09, 0xb0, 0x09, 0x00, 0x07, 0x8a,
+    0x01, 0x09, 0xb0, 0x12, 0x00, 0x07, 0xb0, 0x67,
+    0xc2, 0x41, 0x00, 0x04, 0xdc, 0xc1, 0x03, 0xdc,
+    0xc0, 0x41, 0x00, 0x05, 0x01, 0x83, 0x00, 0xdc,
+    0x85, 0xc0, 0x82, 0xc1, 0xb0, 0x95, 0xc1, 0x00,
+    0xdc, 0xc6, 0x00, 0xdc, 0xc1, 0x00, 0xea, 0x00,
+    0xd6, 0x00, 0xdc, 0x00, 0xca, 0xe4, 0x00, 0xe8,
+    0x01, 0xe4, 0x00, 0xdc, 0x00, 0xda, 0xc0, 0x00,
+    0xe9, 0x00, 0xdc, 0xc0, 0x00, 0xdc, 0xb2, 0x9f,
+    0xc1, 0x01, 0x01, 0xc3, 0x02, 0x01, 0xc1, 0x83,
+    0xc0, 0x82, 0x01, 0x01, 0xc0, 0x00, 0xdc, 0xc0,
+    0x01, 0x01, 0x03, 0xdc, 0xc0, 0xb8, 0x03, 0xcd,
+    0xc2, 0xb0, 0x5c, 0x00, 0x09, 0xb0, 0x2f, 0xdf,
+    0xb1, 0xf9, 0x00, 0xda, 0x00, 0xe4, 0x00, 0xe8,
+    0x00, 0xde, 0x01, 0xe0, 0xb0, 0x38, 0x01, 0x08,
+    0xb8, 0x6d, 0xa3, 0xc0, 0x83, 0xc9, 0x9f, 0xc1,
+    0xb0, 0x1f, 0xc1, 0xb0, 0xe3, 0x00, 0x09, 0xa4,
+    0x00, 0x09, 0xb0, 0x66, 0x00, 0x09, 0x9a, 0xd1,
+    0xb0, 0x08, 0x02, 0xdc, 0xa4, 0x00, 0x09, 0xb0,
+    0x2e, 0x00, 0x07, 0x8b, 0x00, 0x09, 0xb0, 0xbe,
+    0xc0, 0x80, 0xc1, 0x00, 0xdc, 0x81, 0xc1, 0x84,
+    0xc1, 0x80, 0xc0, 0xb0, 0x03, 0x00, 0x09, 0xb0,
+    0xc5, 0x00, 0x09, 0xb8, 0x46, 0xff, 0x00, 0x1a,
+    0xb2, 0xd0, 0xc6, 0x06, 0xdc, 0xc1, 0xb3, 0x9c,
+    0x00, 0xdc, 0xb0, 0xb1, 0x00, 0xdc, 0xb0, 0x64,
+    0xc4, 0xb6, 0x61, 0x00, 0xdc, 0x80, 0xc0, 0xa7,
+    0xc0, 0x00, 0x01, 0x00, 0xdc, 0x83, 0x00, 0x09,
+    0xb0, 0x74, 0xc0, 0x00, 0xdc, 0xb2, 0x0c, 0xc3,
+    0xb0, 0x10, 0xc4, 0xb1, 0x0c, 0xc1, 0xb0, 0x1c,
+    0x01, 0xdc, 0x80, 0x02, 0xdc, 0xb0, 0x15, 0x01,
+    0xdc, 0xc2, 0x00, 0xdc, 0xc0, 0x03, 0xdc, 0xb0,
+    0x00, 0xc0, 0x00, 0xdc, 0xc0, 0x00, 0xdc, 0xb0,
+    0x8f, 0x00, 0x09, 0xa8, 0x00, 0x09, 0x8d, 0x00,
+    0x09, 0xb0, 0x08, 0x00, 0x09, 0x00, 0x07, 0xb0,
+    0x14, 0xc2, 0xaf, 0x01, 0x09, 0xb0, 0x0d, 0x00,
+    0x07, 0xb0, 0x1b, 0x00, 0x09, 0x88, 0x00, 0x07,
+    0xb0, 0x39, 0x00, 0x09, 0x00, 0x07, 0xb0, 0x81,
+    0x00, 0x07, 0x00, 0x09, 0xb0, 0x1f, 0x01, 0x07,
+    0x8f, 0x00, 0x09, 0x97, 0xc6, 0x82, 0xc4, 0xb0,
+    0x28, 0x02, 0x09, 0xb0, 0x40, 0x00, 0x09, 0x82,
+    0x00, 0x07, 0x96, 0xc0, 0xb0, 0x32, 0x00, 0x09,
+    0x00, 0x07, 0xb0, 0xca, 0x00, 0x09, 0x00, 0x07,
+    0xb0, 0x4d, 0x00, 0x09, 0xb0, 0x45, 0x00, 0x09,
+    0x00, 0x07, 0xb0, 0x42, 0x00, 0x09, 0xb0, 0xdc,
+    0x00, 0x09, 0x00, 0x07, 0xb0, 0xd1, 0x01, 0x09,
+    0x83, 0x00, 0x07, 0xb0, 0x6b, 0x00, 0x09, 0xb0,
+    0x22, 0x00, 0x09, 0x91, 0x00, 0x09, 0xb0, 0x20,
+    0x00, 0x09, 0xb1, 0x74, 0x00, 0x09, 0xb0, 0xd1,
+    0x00, 0x07, 0x80, 0x01, 0x09, 0xb0, 0x20, 0x00,
+    0x09, 0xb1, 0x78, 0x01, 0x09, 0xb8, 0x39, 0xbb,
+    0x00, 0x09, 0xb8, 0x01, 0x8f, 0x04, 0x01, 0xb0,
+    0x0a, 0xc6, 0xb4, 0x88, 0x01, 0x06, 0xb8, 0x44,
+    0x7b, 0x00, 0x01, 0xb8, 0x0c, 0x95, 0x01, 0xd8,
+    0x02, 0x01, 0x82, 0x00, 0xe2, 0x04, 0xd8, 0x87,
+    0x07, 0xdc, 0x81, 0xc4, 0x01, 0xdc, 0x9d, 0xc3,
+    0xb0, 0x63, 0xc2, 0xb8, 0x05, 0x8a, 0xc6, 0x80,
+    0xd0, 0x81, 0xc6, 0x80, 0xc1, 0x80, 0xc4, 0xb0,
+    0x33, 0xc0, 0xb0, 0x6f, 0xc6, 0xb1, 0x46, 0xc0,
+    0xb0, 0x0c, 0xc3, 0xb1, 0xcb, 0x01, 0xe8, 0x00,
+    0xdc, 0xc0, 0xb0, 0xcd, 0xc0, 0x00, 0xdc, 0xb0,
+    0xc2, 0xc0, 0x81, 0xc0, 0x86, 0xc1, 0x84, 0xc0,
+    0xb1, 0xa9, 0x06, 0xdc, 0xb0, 0x3c, 0xc5, 0x00,
+    0x07,
 };
 
-static const uint8_t unicode_cc_index[87] = {
+static const uint8_t unicode_cc_index[90] = {
     0x4d, 0x03, 0x00, 0x97, 0x05, 0x20, 0xc6, 0x05,
     0x00, 0xe7, 0x06, 0x00, 0x45, 0x07, 0x00, 0x9c,
     0x08, 0x00, 0x4d, 0x09, 0x00, 0x3c, 0x0b, 0x00,
     0x3d, 0x0d, 0x00, 0x36, 0x0f, 0x00, 0x38, 0x10,
-    0x20, 0x3a, 0x19, 0x00, 0xcb, 0x1a, 0x20, 0xd3,
-    0x1c, 0x00, 0xcf, 0x1d, 0x00, 0xe2, 0x20, 0x00,
-    0x2e, 0x30, 0x20, 0x2b, 0xa9, 0x20, 0xed, 0xab,
-    0x00, 0x39, 0x0a, 0x01, 0x4c, 0x0f, 0x01, 0x35,
-    0x11, 0x21, 0x66, 0x13, 0x01, 0x40, 0x16, 0x01,
-    0x47, 0x1a, 0x01, 0xf0, 0x6a, 0x21, 0x8a, 0xd1,
-    0x01, 0xec, 0xe4, 0x21, 0x4b, 0xe9, 0x01,
+    0x20, 0x3a, 0x19, 0x00, 0xcb, 0x1a, 0x20, 0xf2,
+    0x1b, 0x00, 0xc3, 0x1d, 0x20, 0xd0, 0x20, 0x00,
+    0x00, 0x2e, 0x00, 0x2c, 0xa8, 0x00, 0xbe, 0xaa,
+    0x00, 0x76, 0x03, 0x01, 0xfa, 0x0e, 0x01, 0x80,
+    0x10, 0x21, 0xe9, 0x12, 0x01, 0xc3, 0x14, 0x01,
+    0x3f, 0x19, 0x01, 0x98, 0x1d, 0x21, 0x67, 0xd1,
+    0x01, 0x8f, 0xe0, 0x21, 0xf6, 0xe6, 0x01, 0x4b,
+    0xe9, 0x01,
 };
 
 static const uint32_t unicode_decomp_table1[709] = {
@@ -1952,7 +3322,7 @@ static const uint32_t unicode_decomp_table1[709] = {
     0x0cf54119, 0x0cf5c097, 0x0cf6009b, 0x0cf64099,
     0x0cf68217, 0x0cf78119, 0x0cf804a1, 0x0cfa4525,
     0x0cfcc525, 0x0cff4125, 0x0cffc099, 0x29a70103,
-    0x29dc0081, 0x29fc8195, 0x29fe0103, 0x2ad70203,
+    0x29dc0081, 0x29fc4215, 0x29fe0103, 0x2ad70203,
     0x2ada4081, 0x3e401482, 0x3e4a7f82, 0x3e6a3f82,
     0x3e8aa102, 0x3e9b0110, 0x3e9c2f82, 0x3eb3c590,
     0x3ec00197, 0x3ec0c119, 0x3ec1413f, 0x3ec4c2af,
@@ -2070,35 +3440,35 @@ static const uint16_t unicode_decomp_table2[709] = {
     0x10f4, 0x1100, 0x1105, 0x1111, 0x1141, 0x1149, 0x114d, 0x1153,
     0x1157, 0x115a, 0x116e, 0x1171, 0x1175, 0x117b, 0x117d, 0x1181,
     0x1184, 0x118c, 0x1192, 0x1196, 0x119c, 0x11a2, 0x11a8, 0x11ab,
-    0xa76f, 0x11af, 0x11b2, 0x11b6, 0x028d, 0x11be, 0x1210, 0x130e,
-    0x140c, 0x1490, 0x1495, 0x1553, 0x156c, 0x1572, 0x1578, 0x157e,
-    0x158a, 0x1596, 0x002b, 0x15a1, 0x15b9, 0x15bd, 0x15c1, 0x15c5,
-    0x15c9, 0x15cd, 0x15e1, 0x15e5, 0x1649, 0x1662, 0x1688, 0x168e,
-    0x174c, 0x1752, 0x1757, 0x1777, 0x1877, 0x187d, 0x1911, 0x19d3,
-    0x1a77, 0x1a7f, 0x1a9d, 0x1aa2, 0x1ab6, 0x1ac0, 0x1ac6, 0x1ada,
-    0x1adf, 0x1ae5, 0x1af3, 0x1b23, 0x1b30, 0x1b38, 0x1b3c, 0x1b52,
-    0x1bc9, 0x1bdb, 0x1bdd, 0x1bdf, 0x3164, 0x1c20, 0x1c22, 0x1c24,
-    0x1c26, 0x1c28, 0x1c2a, 0x1c48, 0x1c4d, 0x1c52, 0x1c88, 0x1cce,
-    0x1cdc, 0x1ce1, 0x1cea, 0x1cf3, 0x1d01, 0x1d06, 0x1d0b, 0x1d1d,
-    0x1d2f, 0x1d38, 0x1d3d, 0x1d61, 0x1d6f, 0x1d71, 0x1d73, 0x1d93,
-    0x1dae, 0x1db0, 0x1db2, 0x1db4, 0x1db6, 0x1db8, 0x1dba, 0x1dbc,
-    0x1ddc, 0x1dde, 0x1de0, 0x1de2, 0x1de4, 0x1deb, 0x1ded, 0x1def,
-    0x1df1, 0x1e00, 0x1e02, 0x1e04, 0x1e06, 0x1e08, 0x1e0a, 0x1e0c,
-    0x1e0e, 0x1e10, 0x1e12, 0x1e14, 0x1e16, 0x1e18, 0x1e1a, 0x1e1c,
-    0x1e20, 0x03f4, 0x1e22, 0x2207, 0x1e24, 0x2202, 0x1e26, 0x1e2e,
-    0x03f4, 0x1e30, 0x2207, 0x1e32, 0x2202, 0x1e34, 0x1e3c, 0x03f4,
-    0x1e3e, 0x2207, 0x1e40, 0x2202, 0x1e42, 0x1e4a, 0x03f4, 0x1e4c,
-    0x2207, 0x1e4e, 0x2202, 0x1e50, 0x1e58, 0x03f4, 0x1e5a, 0x2207,
-    0x1e5c, 0x2202, 0x1e5e, 0x1e68, 0x1e6a, 0x1e6c, 0x1e6e, 0x1e70,
-    0x1e72, 0x1e74, 0x1e76, 0x1e78, 0x1e80, 0x1ea3, 0x1ea7, 0x1ead,
-    0x1eca, 0x062d, 0x1ed2, 0x1ede, 0x062c, 0x1eee, 0x1f5e, 0x1f6a,
-    0x1f7d, 0x1f8f, 0x1fa2, 0x1fa4, 0x1fa8, 0x1fae, 0x1fb4, 0x1fb6,
-    0x1fba, 0x1fbc, 0x1fc4, 0x1fc7, 0x1fc9, 0x1fcf, 0x1fd1, 0x30b5,
-    0x1fd7, 0x202f, 0x2045, 0x2049, 0x204b, 0x2050, 0x209d, 0x20ae,
-    0x21af, 0x21bf, 0x21c5, 0x22bf, 0x23dd,
+    0xa76f, 0x11af, 0x11b3, 0x11b7, 0x028d, 0x11bf, 0x1211, 0x130f,
+    0x140d, 0x1491, 0x1496, 0x1554, 0x156d, 0x1573, 0x1579, 0x157f,
+    0x158b, 0x1597, 0x002b, 0x15a2, 0x15ba, 0x15be, 0x15c2, 0x15c6,
+    0x15ca, 0x15ce, 0x15e2, 0x15e6, 0x164a, 0x1663, 0x1689, 0x168f,
+    0x174d, 0x1753, 0x1758, 0x1778, 0x1878, 0x187e, 0x1912, 0x19d4,
+    0x1a78, 0x1a80, 0x1a9e, 0x1aa3, 0x1ab7, 0x1ac1, 0x1ac7, 0x1adb,
+    0x1ae0, 0x1ae6, 0x1af4, 0x1b24, 0x1b31, 0x1b39, 0x1b3d, 0x1b53,
+    0x1bca, 0x1bdc, 0x1bde, 0x1be0, 0x3164, 0x1c21, 0x1c23, 0x1c25,
+    0x1c27, 0x1c29, 0x1c2b, 0x1c49, 0x1c4e, 0x1c53, 0x1c89, 0x1ccf,
+    0x1cdd, 0x1ce2, 0x1ceb, 0x1cf4, 0x1d02, 0x1d07, 0x1d0c, 0x1d1e,
+    0x1d30, 0x1d39, 0x1d3e, 0x1d62, 0x1d70, 0x1d72, 0x1d74, 0x1d94,
+    0x1daf, 0x1db1, 0x1db3, 0x1db5, 0x1db7, 0x1db9, 0x1dbb, 0x1dbd,
+    0x1ddd, 0x1ddf, 0x1de1, 0x1de3, 0x1de5, 0x1dec, 0x1dee, 0x1df0,
+    0x1df2, 0x1e01, 0x1e03, 0x1e05, 0x1e07, 0x1e09, 0x1e0b, 0x1e0d,
+    0x1e0f, 0x1e11, 0x1e13, 0x1e15, 0x1e17, 0x1e19, 0x1e1b, 0x1e1d,
+    0x1e21, 0x03f4, 0x1e23, 0x2207, 0x1e25, 0x2202, 0x1e27, 0x1e2f,
+    0x03f4, 0x1e31, 0x2207, 0x1e33, 0x2202, 0x1e35, 0x1e3d, 0x03f4,
+    0x1e3f, 0x2207, 0x1e41, 0x2202, 0x1e43, 0x1e4b, 0x03f4, 0x1e4d,
+    0x2207, 0x1e4f, 0x2202, 0x1e51, 0x1e59, 0x03f4, 0x1e5b, 0x2207,
+    0x1e5d, 0x2202, 0x1e5f, 0x1e69, 0x1e6b, 0x1e6d, 0x1e6f, 0x1e71,
+    0x1e73, 0x1e75, 0x1e77, 0x1e79, 0x1e81, 0x1ea4, 0x1ea8, 0x1eae,
+    0x1ecb, 0x062d, 0x1ed3, 0x1edf, 0x062c, 0x1eef, 0x1f5f, 0x1f6b,
+    0x1f7e, 0x1f90, 0x1fa3, 0x1fa5, 0x1fa9, 0x1faf, 0x1fb5, 0x1fb7,
+    0x1fbb, 0x1fbd, 0x1fc5, 0x1fc8, 0x1fca, 0x1fd0, 0x1fd2, 0x30b5,
+    0x1fd8, 0x2030, 0x2046, 0x204a, 0x204c, 0x2051, 0x209e, 0x20af,
+    0x21b0, 0x21c0, 0x21c6, 0x22c0, 0x23de,
 };
 
-static const uint8_t unicode_decomp_data[9451] = {
+static const uint8_t unicode_decomp_data[9452] = {
     0x20, 0x88, 0x20, 0x84, 0x32, 0x33, 0x20, 0x81,
     0x20, 0xa7, 0x31, 0x6f, 0x31, 0xd0, 0x34, 0x31,
     0xd0, 0x32, 0x33, 0xd0, 0x34, 0x41, 0x80, 0x41,
@@ -2664,623 +4034,623 @@ static const uint8_t unicode_decomp_data[9451] = {
     0xd1, 0x6d, 0x31, 0x00, 0xe5, 0x65, 0x31, 0x00,
     0x30, 0x00, 0xe5, 0x65, 0x32, 0x00, 0x30, 0x00,
     0xe5, 0x65, 0x33, 0x00, 0x30, 0x00, 0xe5, 0x65,
-    0x67, 0x61, 0x6c, 0x4a, 0x04, 0x4c, 0x04, 0x43,
-    0x46, 0x51, 0x26, 0x01, 0x53, 0x01, 0x27, 0xa7,
-    0x37, 0xab, 0x6b, 0x02, 0x52, 0xab, 0x48, 0x8c,
-    0xf4, 0x66, 0xca, 0x8e, 0xc8, 0x8c, 0xd1, 0x6e,
-    0x32, 0x4e, 0xe5, 0x53, 0x9c, 0x9f, 0x9c, 0x9f,
-    0x51, 0x59, 0xd1, 0x91, 0x87, 0x55, 0x48, 0x59,
-    0xf6, 0x61, 0x69, 0x76, 0x85, 0x7f, 0x3f, 0x86,
-    0xba, 0x87, 0xf8, 0x88, 0x8f, 0x90, 0x02, 0x6a,
-    0x1b, 0x6d, 0xd9, 0x70, 0xde, 0x73, 0x3d, 0x84,
-    0x6a, 0x91, 0xf1, 0x99, 0x82, 0x4e, 0x75, 0x53,
-    0x04, 0x6b, 0x1b, 0x72, 0x2d, 0x86, 0x1e, 0x9e,
-    0x50, 0x5d, 0xeb, 0x6f, 0xcd, 0x85, 0x64, 0x89,
-    0xc9, 0x62, 0xd8, 0x81, 0x1f, 0x88, 0xca, 0x5e,
-    0x17, 0x67, 0x6a, 0x6d, 0xfc, 0x72, 0xce, 0x90,
-    0x86, 0x4f, 0xb7, 0x51, 0xde, 0x52, 0xc4, 0x64,
-    0xd3, 0x6a, 0x10, 0x72, 0xe7, 0x76, 0x01, 0x80,
-    0x06, 0x86, 0x5c, 0x86, 0xef, 0x8d, 0x32, 0x97,
-    0x6f, 0x9b, 0xfa, 0x9d, 0x8c, 0x78, 0x7f, 0x79,
-    0xa0, 0x7d, 0xc9, 0x83, 0x04, 0x93, 0x7f, 0x9e,
-    0xd6, 0x8a, 0xdf, 0x58, 0x04, 0x5f, 0x60, 0x7c,
-    0x7e, 0x80, 0x62, 0x72, 0xca, 0x78, 0xc2, 0x8c,
-    0xf7, 0x96, 0xd8, 0x58, 0x62, 0x5c, 0x13, 0x6a,
-    0xda, 0x6d, 0x0f, 0x6f, 0x2f, 0x7d, 0x37, 0x7e,
-    0x4b, 0x96, 0xd2, 0x52, 0x8b, 0x80, 0xdc, 0x51,
-    0xcc, 0x51, 0x1c, 0x7a, 0xbe, 0x7d, 0xf1, 0x83,
-    0x75, 0x96, 0x80, 0x8b, 0xcf, 0x62, 0x02, 0x6a,
-    0xfe, 0x8a, 0x39, 0x4e, 0xe7, 0x5b, 0x12, 0x60,
-    0x87, 0x73, 0x70, 0x75, 0x17, 0x53, 0xfb, 0x78,
-    0xbf, 0x4f, 0xa9, 0x5f, 0x0d, 0x4e, 0xcc, 0x6c,
-    0x78, 0x65, 0x22, 0x7d, 0xc3, 0x53, 0x5e, 0x58,
-    0x01, 0x77, 0x49, 0x84, 0xaa, 0x8a, 0xba, 0x6b,
-    0xb0, 0x8f, 0x88, 0x6c, 0xfe, 0x62, 0xe5, 0x82,
-    0xa0, 0x63, 0x65, 0x75, 0xae, 0x4e, 0x69, 0x51,
-    0xc9, 0x51, 0x81, 0x68, 0xe7, 0x7c, 0x6f, 0x82,
-    0xd2, 0x8a, 0xcf, 0x91, 0xf5, 0x52, 0x42, 0x54,
-    0x73, 0x59, 0xec, 0x5e, 0xc5, 0x65, 0xfe, 0x6f,
-    0x2a, 0x79, 0xad, 0x95, 0x6a, 0x9a, 0x97, 0x9e,
-    0xce, 0x9e, 0x9b, 0x52, 0xc6, 0x66, 0x77, 0x6b,
-    0x62, 0x8f, 0x74, 0x5e, 0x90, 0x61, 0x00, 0x62,
-    0x9a, 0x64, 0x23, 0x6f, 0x49, 0x71, 0x89, 0x74,
-    0xca, 0x79, 0xf4, 0x7d, 0x6f, 0x80, 0x26, 0x8f,
-    0xee, 0x84, 0x23, 0x90, 0x4a, 0x93, 0x17, 0x52,
-    0xa3, 0x52, 0xbd, 0x54, 0xc8, 0x70, 0xc2, 0x88,
-    0xaa, 0x8a, 0xc9, 0x5e, 0xf5, 0x5f, 0x7b, 0x63,
-    0xae, 0x6b, 0x3e, 0x7c, 0x75, 0x73, 0xe4, 0x4e,
-    0xf9, 0x56, 0xe7, 0x5b, 0xba, 0x5d, 0x1c, 0x60,
-    0xb2, 0x73, 0x69, 0x74, 0x9a, 0x7f, 0x46, 0x80,
-    0x34, 0x92, 0xf6, 0x96, 0x48, 0x97, 0x18, 0x98,
-    0x8b, 0x4f, 0xae, 0x79, 0xb4, 0x91, 0xb8, 0x96,
-    0xe1, 0x60, 0x86, 0x4e, 0xda, 0x50, 0xee, 0x5b,
-    0x3f, 0x5c, 0x99, 0x65, 0x02, 0x6a, 0xce, 0x71,
-    0x42, 0x76, 0xfc, 0x84, 0x7c, 0x90, 0x8d, 0x9f,
-    0x88, 0x66, 0x2e, 0x96, 0x89, 0x52, 0x7b, 0x67,
-    0xf3, 0x67, 0x41, 0x6d, 0x9c, 0x6e, 0x09, 0x74,
-    0x59, 0x75, 0x6b, 0x78, 0x10, 0x7d, 0x5e, 0x98,
-    0x6d, 0x51, 0x2e, 0x62, 0x78, 0x96, 0x2b, 0x50,
-    0x19, 0x5d, 0xea, 0x6d, 0x2a, 0x8f, 0x8b, 0x5f,
-    0x44, 0x61, 0x17, 0x68, 0x87, 0x73, 0x86, 0x96,
-    0x29, 0x52, 0x0f, 0x54, 0x65, 0x5c, 0x13, 0x66,
-    0x4e, 0x67, 0xa8, 0x68, 0xe5, 0x6c, 0x06, 0x74,
-    0xe2, 0x75, 0x79, 0x7f, 0xcf, 0x88, 0xe1, 0x88,
-    0xcc, 0x91, 0xe2, 0x96, 0x3f, 0x53, 0xba, 0x6e,
-    0x1d, 0x54, 0xd0, 0x71, 0x98, 0x74, 0xfa, 0x85,
-    0xa3, 0x96, 0x57, 0x9c, 0x9f, 0x9e, 0x97, 0x67,
-    0xcb, 0x6d, 0xe8, 0x81, 0xcb, 0x7a, 0x20, 0x7b,
-    0x92, 0x7c, 0xc0, 0x72, 0x99, 0x70, 0x58, 0x8b,
-    0xc0, 0x4e, 0x36, 0x83, 0x3a, 0x52, 0x07, 0x52,
-    0xa6, 0x5e, 0xd3, 0x62, 0xd6, 0x7c, 0x85, 0x5b,
-    0x1e, 0x6d, 0xb4, 0x66, 0x3b, 0x8f, 0x4c, 0x88,
-    0x4d, 0x96, 0x8b, 0x89, 0xd3, 0x5e, 0x40, 0x51,
-    0xc0, 0x55, 0x00, 0x00, 0x00, 0x00, 0x5a, 0x58,
-    0x00, 0x00, 0x74, 0x66, 0x00, 0x00, 0x00, 0x00,
-    0xde, 0x51, 0x2a, 0x73, 0xca, 0x76, 0x3c, 0x79,
-    0x5e, 0x79, 0x65, 0x79, 0x8f, 0x79, 0x56, 0x97,
-    0xbe, 0x7c, 0xbd, 0x7f, 0x00, 0x00, 0x12, 0x86,
-    0x00, 0x00, 0xf8, 0x8a, 0x00, 0x00, 0x00, 0x00,
-    0x38, 0x90, 0xfd, 0x90, 0xef, 0x98, 0xfc, 0x98,
-    0x28, 0x99, 0xb4, 0x9d, 0xde, 0x90, 0xb7, 0x96,
-    0xae, 0x4f, 0xe7, 0x50, 0x4d, 0x51, 0xc9, 0x52,
-    0xe4, 0x52, 0x51, 0x53, 0x9d, 0x55, 0x06, 0x56,
-    0x68, 0x56, 0x40, 0x58, 0xa8, 0x58, 0x64, 0x5c,
-    0x6e, 0x5c, 0x94, 0x60, 0x68, 0x61, 0x8e, 0x61,
-    0xf2, 0x61, 0x4f, 0x65, 0xe2, 0x65, 0x91, 0x66,
-    0x85, 0x68, 0x77, 0x6d, 0x1a, 0x6e, 0x22, 0x6f,
-    0x6e, 0x71, 0x2b, 0x72, 0x22, 0x74, 0x91, 0x78,
-    0x3e, 0x79, 0x49, 0x79, 0x48, 0x79, 0x50, 0x79,
-    0x56, 0x79, 0x5d, 0x79, 0x8d, 0x79, 0x8e, 0x79,
-    0x40, 0x7a, 0x81, 0x7a, 0xc0, 0x7b, 0xf4, 0x7d,
-    0x09, 0x7e, 0x41, 0x7e, 0x72, 0x7f, 0x05, 0x80,
-    0xed, 0x81, 0x79, 0x82, 0x79, 0x82, 0x57, 0x84,
-    0x10, 0x89, 0x96, 0x89, 0x01, 0x8b, 0x39, 0x8b,
-    0xd3, 0x8c, 0x08, 0x8d, 0xb6, 0x8f, 0x38, 0x90,
-    0xe3, 0x96, 0xff, 0x97, 0x3b, 0x98, 0x75, 0x60,
-    0xee, 0x42, 0x18, 0x82, 0x02, 0x26, 0x4e, 0xb5,
-    0x51, 0x68, 0x51, 0x80, 0x4f, 0x45, 0x51, 0x80,
-    0x51, 0xc7, 0x52, 0xfa, 0x52, 0x9d, 0x55, 0x55,
-    0x55, 0x99, 0x55, 0xe2, 0x55, 0x5a, 0x58, 0xb3,
-    0x58, 0x44, 0x59, 0x54, 0x59, 0x62, 0x5a, 0x28,
-    0x5b, 0xd2, 0x5e, 0xd9, 0x5e, 0x69, 0x5f, 0xad,
-    0x5f, 0xd8, 0x60, 0x4e, 0x61, 0x08, 0x61, 0x8e,
-    0x61, 0x60, 0x61, 0xf2, 0x61, 0x34, 0x62, 0xc4,
-    0x63, 0x1c, 0x64, 0x52, 0x64, 0x56, 0x65, 0x74,
-    0x66, 0x17, 0x67, 0x1b, 0x67, 0x56, 0x67, 0x79,
-    0x6b, 0xba, 0x6b, 0x41, 0x6d, 0xdb, 0x6e, 0xcb,
-    0x6e, 0x22, 0x6f, 0x1e, 0x70, 0x6e, 0x71, 0xa7,
-    0x77, 0x35, 0x72, 0xaf, 0x72, 0x2a, 0x73, 0x71,
-    0x74, 0x06, 0x75, 0x3b, 0x75, 0x1d, 0x76, 0x1f,
-    0x76, 0xca, 0x76, 0xdb, 0x76, 0xf4, 0x76, 0x4a,
-    0x77, 0x40, 0x77, 0xcc, 0x78, 0xb1, 0x7a, 0xc0,
-    0x7b, 0x7b, 0x7c, 0x5b, 0x7d, 0xf4, 0x7d, 0x3e,
-    0x7f, 0x05, 0x80, 0x52, 0x83, 0xef, 0x83, 0x79,
-    0x87, 0x41, 0x89, 0x86, 0x89, 0x96, 0x89, 0xbf,
-    0x8a, 0xf8, 0x8a, 0xcb, 0x8a, 0x01, 0x8b, 0xfe,
-    0x8a, 0xed, 0x8a, 0x39, 0x8b, 0x8a, 0x8b, 0x08,
-    0x8d, 0x38, 0x8f, 0x72, 0x90, 0x99, 0x91, 0x76,
-    0x92, 0x7c, 0x96, 0xe3, 0x96, 0x56, 0x97, 0xdb,
-    0x97, 0xff, 0x97, 0x0b, 0x98, 0x3b, 0x98, 0x12,
-    0x9b, 0x9c, 0x9f, 0x4a, 0x28, 0x44, 0x28, 0xd5,
-    0x33, 0x9d, 0x3b, 0x18, 0x40, 0x39, 0x40, 0x49,
-    0x52, 0xd0, 0x5c, 0xd3, 0x7e, 0x43, 0x9f, 0x8e,
-    0x9f, 0x2a, 0xa0, 0x02, 0x66, 0x66, 0x66, 0x69,
-    0x66, 0x6c, 0x66, 0x66, 0x69, 0x66, 0x66, 0x6c,
-    0x7f, 0x01, 0x74, 0x73, 0x00, 0x74, 0x65, 0x05,
-    0x0f, 0x11, 0x0f, 0x00, 0x0f, 0x06, 0x19, 0x11,
-    0x0f, 0x08, 0xd9, 0x05, 0xb4, 0x05, 0x00, 0x00,
-    0x00, 0x00, 0xf2, 0x05, 0xb7, 0x05, 0xd0, 0x05,
-    0x12, 0x00, 0x03, 0x04, 0x0b, 0x0c, 0x0d, 0x18,
-    0x1a, 0xe9, 0x05, 0xc1, 0x05, 0xe9, 0x05, 0xc2,
-    0x05, 0x49, 0xfb, 0xc1, 0x05, 0x49, 0xfb, 0xc2,
-    0x05, 0xd0, 0x05, 0xb7, 0x05, 0xd0, 0x05, 0xb8,
-    0x05, 0xd0, 0x05, 0xbc, 0x05, 0xd8, 0x05, 0xbc,
-    0x05, 0xde, 0x05, 0xbc, 0x05, 0xe0, 0x05, 0xbc,
-    0x05, 0xe3, 0x05, 0xbc, 0x05, 0xb9, 0x05, 0x2d,
-    0x03, 0x2e, 0x03, 0x2f, 0x03, 0x30, 0x03, 0x31,
-    0x03, 0x1c, 0x00, 0x18, 0x06, 0x22, 0x06, 0x2b,
-    0x06, 0xd0, 0x05, 0xdc, 0x05, 0x71, 0x06, 0x00,
-    0x00, 0x0a, 0x0a, 0x0a, 0x0a, 0x0d, 0x0d, 0x0d,
-    0x0d, 0x0f, 0x0f, 0x0f, 0x0f, 0x09, 0x09, 0x09,
-    0x09, 0x0e, 0x0e, 0x0e, 0x0e, 0x08, 0x08, 0x08,
-    0x08, 0x33, 0x33, 0x33, 0x33, 0x35, 0x35, 0x35,
-    0x35, 0x13, 0x13, 0x13, 0x13, 0x12, 0x12, 0x12,
-    0x12, 0x15, 0x15, 0x15, 0x15, 0x16, 0x16, 0x16,
-    0x16, 0x1c, 0x1c, 0x1b, 0x1b, 0x1d, 0x1d, 0x17,
-    0x17, 0x27, 0x27, 0x20, 0x20, 0x38, 0x38, 0x38,
-    0x38, 0x3e, 0x3e, 0x3e, 0x3e, 0x42, 0x42, 0x42,
-    0x42, 0x40, 0x40, 0x40, 0x40, 0x49, 0x49, 0x4a,
-    0x4a, 0x4a, 0x4a, 0x4f, 0x4f, 0x50, 0x50, 0x50,
-    0x50, 0x4d, 0x4d, 0x4d, 0x4d, 0x61, 0x61, 0x62,
-    0x62, 0x49, 0x06, 0x64, 0x64, 0x64, 0x64, 0x7e,
-    0x7e, 0x7d, 0x7d, 0x7f, 0x7f, 0x2e, 0x82, 0x82,
-    0x7c, 0x7c, 0x80, 0x80, 0x87, 0x87, 0x87, 0x87,
-    0x00, 0x00, 0x26, 0x06, 0x00, 0x01, 0x00, 0x01,
-    0x00, 0xaf, 0x00, 0xaf, 0x00, 0x22, 0x00, 0x22,
-    0x00, 0xa1, 0x00, 0xa1, 0x00, 0xa0, 0x00, 0xa0,
-    0x00, 0xa2, 0x00, 0xa2, 0x00, 0xaa, 0x00, 0xaa,
-    0x00, 0xaa, 0x00, 0x23, 0x00, 0x23, 0x00, 0x23,
-    0xcc, 0x06, 0x00, 0x00, 0x00, 0x00, 0x26, 0x06,
-    0x00, 0x06, 0x00, 0x07, 0x00, 0x1f, 0x00, 0x23,
-    0x00, 0x24, 0x02, 0x06, 0x02, 0x07, 0x02, 0x08,
-    0x02, 0x1f, 0x02, 0x23, 0x02, 0x24, 0x04, 0x06,
-    0x04, 0x07, 0x04, 0x08, 0x04, 0x1f, 0x04, 0x23,
-    0x04, 0x24, 0x05, 0x06, 0x05, 0x1f, 0x05, 0x23,
-    0x05, 0x24, 0x06, 0x07, 0x06, 0x1f, 0x07, 0x06,
-    0x07, 0x1f, 0x08, 0x06, 0x08, 0x07, 0x08, 0x1f,
-    0x0d, 0x06, 0x0d, 0x07, 0x0d, 0x08, 0x0d, 0x1f,
-    0x0f, 0x07, 0x0f, 0x1f, 0x10, 0x06, 0x10, 0x07,
-    0x10, 0x08, 0x10, 0x1f, 0x11, 0x07, 0x11, 0x1f,
-    0x12, 0x1f, 0x13, 0x06, 0x13, 0x1f, 0x14, 0x06,
-    0x14, 0x1f, 0x1b, 0x06, 0x1b, 0x07, 0x1b, 0x08,
-    0x1b, 0x1f, 0x1b, 0x23, 0x1b, 0x24, 0x1c, 0x07,
-    0x1c, 0x1f, 0x1c, 0x23, 0x1c, 0x24, 0x1d, 0x01,
-    0x1d, 0x06, 0x1d, 0x07, 0x1d, 0x08, 0x1d, 0x1e,
-    0x1d, 0x1f, 0x1d, 0x23, 0x1d, 0x24, 0x1e, 0x06,
-    0x1e, 0x07, 0x1e, 0x08, 0x1e, 0x1f, 0x1e, 0x23,
-    0x1e, 0x24, 0x1f, 0x06, 0x1f, 0x07, 0x1f, 0x08,
-    0x1f, 0x1f, 0x1f, 0x23, 0x1f, 0x24, 0x20, 0x06,
-    0x20, 0x07, 0x20, 0x08, 0x20, 0x1f, 0x20, 0x23,
-    0x20, 0x24, 0x21, 0x06, 0x21, 0x1f, 0x21, 0x23,
-    0x21, 0x24, 0x24, 0x06, 0x24, 0x07, 0x24, 0x08,
-    0x24, 0x1f, 0x24, 0x23, 0x24, 0x24, 0x0a, 0x4a,
-    0x0b, 0x4a, 0x23, 0x4a, 0x20, 0x00, 0x4c, 0x06,
-    0x51, 0x06, 0x51, 0x06, 0xff, 0x00, 0x1f, 0x26,
-    0x06, 0x00, 0x0b, 0x00, 0x0c, 0x00, 0x1f, 0x00,
-    0x20, 0x00, 0x23, 0x00, 0x24, 0x02, 0x0b, 0x02,
-    0x0c, 0x02, 0x1f, 0x02, 0x20, 0x02, 0x23, 0x02,
-    0x24, 0x04, 0x0b, 0x04, 0x0c, 0x04, 0x1f, 0x26,
-    0x06, 0x04, 0x20, 0x04, 0x23, 0x04, 0x24, 0x05,
-    0x0b, 0x05, 0x0c, 0x05, 0x1f, 0x05, 0x20, 0x05,
-    0x23, 0x05, 0x24, 0x1b, 0x23, 0x1b, 0x24, 0x1c,
-    0x23, 0x1c, 0x24, 0x1d, 0x01, 0x1d, 0x1e, 0x1d,
-    0x1f, 0x1d, 0x23, 0x1d, 0x24, 0x1e, 0x1f, 0x1e,
-    0x23, 0x1e, 0x24, 0x1f, 0x01, 0x1f, 0x1f, 0x20,
-    0x0b, 0x20, 0x0c, 0x20, 0x1f, 0x20, 0x20, 0x20,
-    0x23, 0x20, 0x24, 0x23, 0x4a, 0x24, 0x0b, 0x24,
-    0x0c, 0x24, 0x1f, 0x24, 0x20, 0x24, 0x23, 0x24,
-    0x24, 0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x00,
-    0x1f, 0x00, 0x21, 0x02, 0x06, 0x02, 0x07, 0x02,
-    0x08, 0x02, 0x1f, 0x02, 0x21, 0x04, 0x06, 0x04,
-    0x07, 0x04, 0x08, 0x04, 0x1f, 0x04, 0x21, 0x05,
-    0x1f, 0x06, 0x07, 0x06, 0x1f, 0x07, 0x06, 0x07,
-    0x1f, 0x08, 0x06, 0x08, 0x1f, 0x0d, 0x06, 0x0d,
-    0x07, 0x0d, 0x08, 0x0d, 0x1f, 0x0f, 0x07, 0x0f,
-    0x08, 0x0f, 0x1f, 0x10, 0x06, 0x10, 0x07, 0x10,
-    0x08, 0x10, 0x1f, 0x11, 0x07, 0x12, 0x1f, 0x13,
-    0x06, 0x13, 0x1f, 0x14, 0x06, 0x14, 0x1f, 0x1b,
-    0x06, 0x1b, 0x07, 0x1b, 0x08, 0x1b, 0x1f, 0x1c,
-    0x07, 0x1c, 0x1f, 0x1d, 0x06, 0x1d, 0x07, 0x1d,
-    0x08, 0x1d, 0x1e, 0x1d, 0x1f, 0x1e, 0x06, 0x1e,
-    0x07, 0x1e, 0x08, 0x1e, 0x1f, 0x1e, 0x21, 0x1f,
-    0x06, 0x1f, 0x07, 0x1f, 0x08, 0x1f, 0x1f, 0x20,
+    0x67, 0x61, 0x6c, 0x4a, 0x04, 0x4c, 0x04, 0x53,
+    0x43, 0x46, 0x51, 0x26, 0x01, 0x53, 0x01, 0x27,
+    0xa7, 0x37, 0xab, 0x6b, 0x02, 0x52, 0xab, 0x48,
+    0x8c, 0xf4, 0x66, 0xca, 0x8e, 0xc8, 0x8c, 0xd1,
+    0x6e, 0x32, 0x4e, 0xe5, 0x53, 0x9c, 0x9f, 0x9c,
+    0x9f, 0x51, 0x59, 0xd1, 0x91, 0x87, 0x55, 0x48,
+    0x59, 0xf6, 0x61, 0x69, 0x76, 0x85, 0x7f, 0x3f,
+    0x86, 0xba, 0x87, 0xf8, 0x88, 0x8f, 0x90, 0x02,
+    0x6a, 0x1b, 0x6d, 0xd9, 0x70, 0xde, 0x73, 0x3d,
+    0x84, 0x6a, 0x91, 0xf1, 0x99, 0x82, 0x4e, 0x75,
+    0x53, 0x04, 0x6b, 0x1b, 0x72, 0x2d, 0x86, 0x1e,
+    0x9e, 0x50, 0x5d, 0xeb, 0x6f, 0xcd, 0x85, 0x64,
+    0x89, 0xc9, 0x62, 0xd8, 0x81, 0x1f, 0x88, 0xca,
+    0x5e, 0x17, 0x67, 0x6a, 0x6d, 0xfc, 0x72, 0xce,
+    0x90, 0x86, 0x4f, 0xb7, 0x51, 0xde, 0x52, 0xc4,
+    0x64, 0xd3, 0x6a, 0x10, 0x72, 0xe7, 0x76, 0x01,
+    0x80, 0x06, 0x86, 0x5c, 0x86, 0xef, 0x8d, 0x32,
+    0x97, 0x6f, 0x9b, 0xfa, 0x9d, 0x8c, 0x78, 0x7f,
+    0x79, 0xa0, 0x7d, 0xc9, 0x83, 0x04, 0x93, 0x7f,
+    0x9e, 0xd6, 0x8a, 0xdf, 0x58, 0x04, 0x5f, 0x60,
+    0x7c, 0x7e, 0x80, 0x62, 0x72, 0xca, 0x78, 0xc2,
+    0x8c, 0xf7, 0x96, 0xd8, 0x58, 0x62, 0x5c, 0x13,
+    0x6a, 0xda, 0x6d, 0x0f, 0x6f, 0x2f, 0x7d, 0x37,
+    0x7e, 0x4b, 0x96, 0xd2, 0x52, 0x8b, 0x80, 0xdc,
+    0x51, 0xcc, 0x51, 0x1c, 0x7a, 0xbe, 0x7d, 0xf1,
+    0x83, 0x75, 0x96, 0x80, 0x8b, 0xcf, 0x62, 0x02,
+    0x6a, 0xfe, 0x8a, 0x39, 0x4e, 0xe7, 0x5b, 0x12,
+    0x60, 0x87, 0x73, 0x70, 0x75, 0x17, 0x53, 0xfb,
+    0x78, 0xbf, 0x4f, 0xa9, 0x5f, 0x0d, 0x4e, 0xcc,
+    0x6c, 0x78, 0x65, 0x22, 0x7d, 0xc3, 0x53, 0x5e,
+    0x58, 0x01, 0x77, 0x49, 0x84, 0xaa, 0x8a, 0xba,
+    0x6b, 0xb0, 0x8f, 0x88, 0x6c, 0xfe, 0x62, 0xe5,
+    0x82, 0xa0, 0x63, 0x65, 0x75, 0xae, 0x4e, 0x69,
+    0x51, 0xc9, 0x51, 0x81, 0x68, 0xe7, 0x7c, 0x6f,
+    0x82, 0xd2, 0x8a, 0xcf, 0x91, 0xf5, 0x52, 0x42,
+    0x54, 0x73, 0x59, 0xec, 0x5e, 0xc5, 0x65, 0xfe,
+    0x6f, 0x2a, 0x79, 0xad, 0x95, 0x6a, 0x9a, 0x97,
+    0x9e, 0xce, 0x9e, 0x9b, 0x52, 0xc6, 0x66, 0x77,
+    0x6b, 0x62, 0x8f, 0x74, 0x5e, 0x90, 0x61, 0x00,
+    0x62, 0x9a, 0x64, 0x23, 0x6f, 0x49, 0x71, 0x89,
+    0x74, 0xca, 0x79, 0xf4, 0x7d, 0x6f, 0x80, 0x26,
+    0x8f, 0xee, 0x84, 0x23, 0x90, 0x4a, 0x93, 0x17,
+    0x52, 0xa3, 0x52, 0xbd, 0x54, 0xc8, 0x70, 0xc2,
+    0x88, 0xaa, 0x8a, 0xc9, 0x5e, 0xf5, 0x5f, 0x7b,
+    0x63, 0xae, 0x6b, 0x3e, 0x7c, 0x75, 0x73, 0xe4,
+    0x4e, 0xf9, 0x56, 0xe7, 0x5b, 0xba, 0x5d, 0x1c,
+    0x60, 0xb2, 0x73, 0x69, 0x74, 0x9a, 0x7f, 0x46,
+    0x80, 0x34, 0x92, 0xf6, 0x96, 0x48, 0x97, 0x18,
+    0x98, 0x8b, 0x4f, 0xae, 0x79, 0xb4, 0x91, 0xb8,
+    0x96, 0xe1, 0x60, 0x86, 0x4e, 0xda, 0x50, 0xee,
+    0x5b, 0x3f, 0x5c, 0x99, 0x65, 0x02, 0x6a, 0xce,
+    0x71, 0x42, 0x76, 0xfc, 0x84, 0x7c, 0x90, 0x8d,
+    0x9f, 0x88, 0x66, 0x2e, 0x96, 0x89, 0x52, 0x7b,
+    0x67, 0xf3, 0x67, 0x41, 0x6d, 0x9c, 0x6e, 0x09,
+    0x74, 0x59, 0x75, 0x6b, 0x78, 0x10, 0x7d, 0x5e,
+    0x98, 0x6d, 0x51, 0x2e, 0x62, 0x78, 0x96, 0x2b,
+    0x50, 0x19, 0x5d, 0xea, 0x6d, 0x2a, 0x8f, 0x8b,
+    0x5f, 0x44, 0x61, 0x17, 0x68, 0x87, 0x73, 0x86,
+    0x96, 0x29, 0x52, 0x0f, 0x54, 0x65, 0x5c, 0x13,
+    0x66, 0x4e, 0x67, 0xa8, 0x68, 0xe5, 0x6c, 0x06,
+    0x74, 0xe2, 0x75, 0x79, 0x7f, 0xcf, 0x88, 0xe1,
+    0x88, 0xcc, 0x91, 0xe2, 0x96, 0x3f, 0x53, 0xba,
+    0x6e, 0x1d, 0x54, 0xd0, 0x71, 0x98, 0x74, 0xfa,
+    0x85, 0xa3, 0x96, 0x57, 0x9c, 0x9f, 0x9e, 0x97,
+    0x67, 0xcb, 0x6d, 0xe8, 0x81, 0xcb, 0x7a, 0x20,
+    0x7b, 0x92, 0x7c, 0xc0, 0x72, 0x99, 0x70, 0x58,
+    0x8b, 0xc0, 0x4e, 0x36, 0x83, 0x3a, 0x52, 0x07,
+    0x52, 0xa6, 0x5e, 0xd3, 0x62, 0xd6, 0x7c, 0x85,
+    0x5b, 0x1e, 0x6d, 0xb4, 0x66, 0x3b, 0x8f, 0x4c,
+    0x88, 0x4d, 0x96, 0x8b, 0x89, 0xd3, 0x5e, 0x40,
+    0x51, 0xc0, 0x55, 0x00, 0x00, 0x00, 0x00, 0x5a,
+    0x58, 0x00, 0x00, 0x74, 0x66, 0x00, 0x00, 0x00,
+    0x00, 0xde, 0x51, 0x2a, 0x73, 0xca, 0x76, 0x3c,
+    0x79, 0x5e, 0x79, 0x65, 0x79, 0x8f, 0x79, 0x56,
+    0x97, 0xbe, 0x7c, 0xbd, 0x7f, 0x00, 0x00, 0x12,
+    0x86, 0x00, 0x00, 0xf8, 0x8a, 0x00, 0x00, 0x00,
+    0x00, 0x38, 0x90, 0xfd, 0x90, 0xef, 0x98, 0xfc,
+    0x98, 0x28, 0x99, 0xb4, 0x9d, 0xde, 0x90, 0xb7,
+    0x96, 0xae, 0x4f, 0xe7, 0x50, 0x4d, 0x51, 0xc9,
+    0x52, 0xe4, 0x52, 0x51, 0x53, 0x9d, 0x55, 0x06,
+    0x56, 0x68, 0x56, 0x40, 0x58, 0xa8, 0x58, 0x64,
+    0x5c, 0x6e, 0x5c, 0x94, 0x60, 0x68, 0x61, 0x8e,
+    0x61, 0xf2, 0x61, 0x4f, 0x65, 0xe2, 0x65, 0x91,
+    0x66, 0x85, 0x68, 0x77, 0x6d, 0x1a, 0x6e, 0x22,
+    0x6f, 0x6e, 0x71, 0x2b, 0x72, 0x22, 0x74, 0x91,
+    0x78, 0x3e, 0x79, 0x49, 0x79, 0x48, 0x79, 0x50,
+    0x79, 0x56, 0x79, 0x5d, 0x79, 0x8d, 0x79, 0x8e,
+    0x79, 0x40, 0x7a, 0x81, 0x7a, 0xc0, 0x7b, 0xf4,
+    0x7d, 0x09, 0x7e, 0x41, 0x7e, 0x72, 0x7f, 0x05,
+    0x80, 0xed, 0x81, 0x79, 0x82, 0x79, 0x82, 0x57,
+    0x84, 0x10, 0x89, 0x96, 0x89, 0x01, 0x8b, 0x39,
+    0x8b, 0xd3, 0x8c, 0x08, 0x8d, 0xb6, 0x8f, 0x38,
+    0x90, 0xe3, 0x96, 0xff, 0x97, 0x3b, 0x98, 0x75,
+    0x60, 0xee, 0x42, 0x18, 0x82, 0x02, 0x26, 0x4e,
+    0xb5, 0x51, 0x68, 0x51, 0x80, 0x4f, 0x45, 0x51,
+    0x80, 0x51, 0xc7, 0x52, 0xfa, 0x52, 0x9d, 0x55,
+    0x55, 0x55, 0x99, 0x55, 0xe2, 0x55, 0x5a, 0x58,
+    0xb3, 0x58, 0x44, 0x59, 0x54, 0x59, 0x62, 0x5a,
+    0x28, 0x5b, 0xd2, 0x5e, 0xd9, 0x5e, 0x69, 0x5f,
+    0xad, 0x5f, 0xd8, 0x60, 0x4e, 0x61, 0x08, 0x61,
+    0x8e, 0x61, 0x60, 0x61, 0xf2, 0x61, 0x34, 0x62,
+    0xc4, 0x63, 0x1c, 0x64, 0x52, 0x64, 0x56, 0x65,
+    0x74, 0x66, 0x17, 0x67, 0x1b, 0x67, 0x56, 0x67,
+    0x79, 0x6b, 0xba, 0x6b, 0x41, 0x6d, 0xdb, 0x6e,
+    0xcb, 0x6e, 0x22, 0x6f, 0x1e, 0x70, 0x6e, 0x71,
+    0xa7, 0x77, 0x35, 0x72, 0xaf, 0x72, 0x2a, 0x73,
+    0x71, 0x74, 0x06, 0x75, 0x3b, 0x75, 0x1d, 0x76,
+    0x1f, 0x76, 0xca, 0x76, 0xdb, 0x76, 0xf4, 0x76,
+    0x4a, 0x77, 0x40, 0x77, 0xcc, 0x78, 0xb1, 0x7a,
+    0xc0, 0x7b, 0x7b, 0x7c, 0x5b, 0x7d, 0xf4, 0x7d,
+    0x3e, 0x7f, 0x05, 0x80, 0x52, 0x83, 0xef, 0x83,
+    0x79, 0x87, 0x41, 0x89, 0x86, 0x89, 0x96, 0x89,
+    0xbf, 0x8a, 0xf8, 0x8a, 0xcb, 0x8a, 0x01, 0x8b,
+    0xfe, 0x8a, 0xed, 0x8a, 0x39, 0x8b, 0x8a, 0x8b,
+    0x08, 0x8d, 0x38, 0x8f, 0x72, 0x90, 0x99, 0x91,
+    0x76, 0x92, 0x7c, 0x96, 0xe3, 0x96, 0x56, 0x97,
+    0xdb, 0x97, 0xff, 0x97, 0x0b, 0x98, 0x3b, 0x98,
+    0x12, 0x9b, 0x9c, 0x9f, 0x4a, 0x28, 0x44, 0x28,
+    0xd5, 0x33, 0x9d, 0x3b, 0x18, 0x40, 0x39, 0x40,
+    0x49, 0x52, 0xd0, 0x5c, 0xd3, 0x7e, 0x43, 0x9f,
+    0x8e, 0x9f, 0x2a, 0xa0, 0x02, 0x66, 0x66, 0x66,
+    0x69, 0x66, 0x6c, 0x66, 0x66, 0x69, 0x66, 0x66,
+    0x6c, 0x7f, 0x01, 0x74, 0x73, 0x00, 0x74, 0x65,
+    0x05, 0x0f, 0x11, 0x0f, 0x00, 0x0f, 0x06, 0x19,
+    0x11, 0x0f, 0x08, 0xd9, 0x05, 0xb4, 0x05, 0x00,
+    0x00, 0x00, 0x00, 0xf2, 0x05, 0xb7, 0x05, 0xd0,
+    0x05, 0x12, 0x00, 0x03, 0x04, 0x0b, 0x0c, 0x0d,
+    0x18, 0x1a, 0xe9, 0x05, 0xc1, 0x05, 0xe9, 0x05,
+    0xc2, 0x05, 0x49, 0xfb, 0xc1, 0x05, 0x49, 0xfb,
+    0xc2, 0x05, 0xd0, 0x05, 0xb7, 0x05, 0xd0, 0x05,
+    0xb8, 0x05, 0xd0, 0x05, 0xbc, 0x05, 0xd8, 0x05,
+    0xbc, 0x05, 0xde, 0x05, 0xbc, 0x05, 0xe0, 0x05,
+    0xbc, 0x05, 0xe3, 0x05, 0xbc, 0x05, 0xb9, 0x05,
+    0x2d, 0x03, 0x2e, 0x03, 0x2f, 0x03, 0x30, 0x03,
+    0x31, 0x03, 0x1c, 0x00, 0x18, 0x06, 0x22, 0x06,
+    0x2b, 0x06, 0xd0, 0x05, 0xdc, 0x05, 0x71, 0x06,
+    0x00, 0x00, 0x0a, 0x0a, 0x0a, 0x0a, 0x0d, 0x0d,
+    0x0d, 0x0d, 0x0f, 0x0f, 0x0f, 0x0f, 0x09, 0x09,
+    0x09, 0x09, 0x0e, 0x0e, 0x0e, 0x0e, 0x08, 0x08,
+    0x08, 0x08, 0x33, 0x33, 0x33, 0x33, 0x35, 0x35,
+    0x35, 0x35, 0x13, 0x13, 0x13, 0x13, 0x12, 0x12,
+    0x12, 0x12, 0x15, 0x15, 0x15, 0x15, 0x16, 0x16,
+    0x16, 0x16, 0x1c, 0x1c, 0x1b, 0x1b, 0x1d, 0x1d,
+    0x17, 0x17, 0x27, 0x27, 0x20, 0x20, 0x38, 0x38,
+    0x38, 0x38, 0x3e, 0x3e, 0x3e, 0x3e, 0x42, 0x42,
+    0x42, 0x42, 0x40, 0x40, 0x40, 0x40, 0x49, 0x49,
+    0x4a, 0x4a, 0x4a, 0x4a, 0x4f, 0x4f, 0x50, 0x50,
+    0x50, 0x50, 0x4d, 0x4d, 0x4d, 0x4d, 0x61, 0x61,
+    0x62, 0x62, 0x49, 0x06, 0x64, 0x64, 0x64, 0x64,
+    0x7e, 0x7e, 0x7d, 0x7d, 0x7f, 0x7f, 0x2e, 0x82,
+    0x82, 0x7c, 0x7c, 0x80, 0x80, 0x87, 0x87, 0x87,
+    0x87, 0x00, 0x00, 0x26, 0x06, 0x00, 0x01, 0x00,
+    0x01, 0x00, 0xaf, 0x00, 0xaf, 0x00, 0x22, 0x00,
+    0x22, 0x00, 0xa1, 0x00, 0xa1, 0x00, 0xa0, 0x00,
+    0xa0, 0x00, 0xa2, 0x00, 0xa2, 0x00, 0xaa, 0x00,
+    0xaa, 0x00, 0xaa, 0x00, 0x23, 0x00, 0x23, 0x00,
+    0x23, 0xcc, 0x06, 0x00, 0x00, 0x00, 0x00, 0x26,
+    0x06, 0x00, 0x06, 0x00, 0x07, 0x00, 0x1f, 0x00,
+    0x23, 0x00, 0x24, 0x02, 0x06, 0x02, 0x07, 0x02,
+    0x08, 0x02, 0x1f, 0x02, 0x23, 0x02, 0x24, 0x04,
+    0x06, 0x04, 0x07, 0x04, 0x08, 0x04, 0x1f, 0x04,
+    0x23, 0x04, 0x24, 0x05, 0x06, 0x05, 0x1f, 0x05,
+    0x23, 0x05, 0x24, 0x06, 0x07, 0x06, 0x1f, 0x07,
+    0x06, 0x07, 0x1f, 0x08, 0x06, 0x08, 0x07, 0x08,
+    0x1f, 0x0d, 0x06, 0x0d, 0x07, 0x0d, 0x08, 0x0d,
+    0x1f, 0x0f, 0x07, 0x0f, 0x1f, 0x10, 0x06, 0x10,
+    0x07, 0x10, 0x08, 0x10, 0x1f, 0x11, 0x07, 0x11,
+    0x1f, 0x12, 0x1f, 0x13, 0x06, 0x13, 0x1f, 0x14,
+    0x06, 0x14, 0x1f, 0x1b, 0x06, 0x1b, 0x07, 0x1b,
+    0x08, 0x1b, 0x1f, 0x1b, 0x23, 0x1b, 0x24, 0x1c,
+    0x07, 0x1c, 0x1f, 0x1c, 0x23, 0x1c, 0x24, 0x1d,
+    0x01, 0x1d, 0x06, 0x1d, 0x07, 0x1d, 0x08, 0x1d,
+    0x1e, 0x1d, 0x1f, 0x1d, 0x23, 0x1d, 0x24, 0x1e,
+    0x06, 0x1e, 0x07, 0x1e, 0x08, 0x1e, 0x1f, 0x1e,
+    0x23, 0x1e, 0x24, 0x1f, 0x06, 0x1f, 0x07, 0x1f,
+    0x08, 0x1f, 0x1f, 0x1f, 0x23, 0x1f, 0x24, 0x20,
     0x06, 0x20, 0x07, 0x20, 0x08, 0x20, 0x1f, 0x20,
-    0x21, 0x21, 0x06, 0x21, 0x1f, 0x21, 0x4a, 0x24,
-    0x06, 0x24, 0x07, 0x24, 0x08, 0x24, 0x1f, 0x24,
-    0x21, 0x00, 0x1f, 0x00, 0x21, 0x02, 0x1f, 0x02,
-    0x21, 0x04, 0x1f, 0x04, 0x21, 0x05, 0x1f, 0x05,
-    0x21, 0x0d, 0x1f, 0x0d, 0x21, 0x0e, 0x1f, 0x0e,
-    0x21, 0x1d, 0x1e, 0x1d, 0x1f, 0x1e, 0x1f, 0x20,
-    0x1f, 0x20, 0x21, 0x24, 0x1f, 0x24, 0x21, 0x40,
-    0x06, 0x4e, 0x06, 0x51, 0x06, 0x27, 0x06, 0x10,
-    0x22, 0x10, 0x23, 0x12, 0x22, 0x12, 0x23, 0x13,
-    0x22, 0x13, 0x23, 0x0c, 0x22, 0x0c, 0x23, 0x0d,
-    0x22, 0x0d, 0x23, 0x06, 0x22, 0x06, 0x23, 0x05,
-    0x22, 0x05, 0x23, 0x07, 0x22, 0x07, 0x23, 0x0e,
-    0x22, 0x0e, 0x23, 0x0f, 0x22, 0x0f, 0x23, 0x0d,
-    0x05, 0x0d, 0x06, 0x0d, 0x07, 0x0d, 0x1e, 0x0d,
-    0x0a, 0x0c, 0x0a, 0x0e, 0x0a, 0x0f, 0x0a, 0x10,
-    0x22, 0x10, 0x23, 0x12, 0x22, 0x12, 0x23, 0x13,
-    0x22, 0x13, 0x23, 0x0c, 0x22, 0x0c, 0x23, 0x0d,
-    0x22, 0x0d, 0x23, 0x06, 0x22, 0x06, 0x23, 0x05,
-    0x22, 0x05, 0x23, 0x07, 0x22, 0x07, 0x23, 0x0e,
-    0x22, 0x0e, 0x23, 0x0f, 0x22, 0x0f, 0x23, 0x0d,
-    0x05, 0x0d, 0x06, 0x0d, 0x07, 0x0d, 0x1e, 0x0d,
-    0x0a, 0x0c, 0x0a, 0x0e, 0x0a, 0x0f, 0x0a, 0x0d,
-    0x05, 0x0d, 0x06, 0x0d, 0x07, 0x0d, 0x1e, 0x0c,
-    0x20, 0x0d, 0x20, 0x10, 0x1e, 0x0c, 0x05, 0x0c,
-    0x06, 0x0c, 0x07, 0x0d, 0x05, 0x0d, 0x06, 0x0d,
-    0x07, 0x10, 0x1e, 0x11, 0x1e, 0x00, 0x24, 0x00,
-    0x24, 0x2a, 0x06, 0x00, 0x02, 0x1b, 0x00, 0x03,
-    0x02, 0x00, 0x03, 0x02, 0x00, 0x03, 0x1b, 0x00,
-    0x04, 0x1b, 0x00, 0x1b, 0x02, 0x00, 0x1b, 0x03,
-    0x00, 0x1b, 0x04, 0x02, 0x1b, 0x03, 0x02, 0x1b,
-    0x03, 0x03, 0x1b, 0x20, 0x03, 0x1b, 0x1f, 0x09,
-    0x03, 0x02, 0x09, 0x02, 0x03, 0x09, 0x02, 0x1f,
-    0x09, 0x1b, 0x03, 0x09, 0x1b, 0x03, 0x09, 0x1b,
-    0x02, 0x09, 0x1b, 0x1b, 0x09, 0x1b, 0x1b, 0x0b,
-    0x03, 0x03, 0x0b, 0x03, 0x03, 0x0b, 0x1b, 0x1b,
-    0x0a, 0x03, 0x1b, 0x0a, 0x03, 0x1b, 0x0a, 0x02,
-    0x20, 0x0a, 0x1b, 0x04, 0x0a, 0x1b, 0x04, 0x0a,
-    0x1b, 0x1b, 0x0a, 0x1b, 0x1b, 0x0c, 0x03, 0x1f,
-    0x0c, 0x04, 0x1b, 0x0c, 0x04, 0x1b, 0x0d, 0x1b,
-    0x03, 0x0d, 0x1b, 0x03, 0x0d, 0x1b, 0x1b, 0x0d,
-    0x1b, 0x20, 0x0f, 0x02, 0x1b, 0x0f, 0x1b, 0x1b,
-    0x0f, 0x1b, 0x1b, 0x0f, 0x1b, 0x1f, 0x10, 0x1b,
-    0x1b, 0x10, 0x1b, 0x20, 0x10, 0x1b, 0x1f, 0x17,
-    0x04, 0x1b, 0x17, 0x04, 0x1b, 0x18, 0x1b, 0x03,
-    0x18, 0x1b, 0x1b, 0x1a, 0x03, 0x1b, 0x1a, 0x03,
-    0x20, 0x1a, 0x03, 0x1f, 0x1a, 0x02, 0x02, 0x1a,
-    0x02, 0x02, 0x1a, 0x04, 0x1b, 0x1a, 0x04, 0x1b,
-    0x1a, 0x1b, 0x03, 0x1a, 0x1b, 0x03, 0x1b, 0x03,
-    0x02, 0x1b, 0x03, 0x1b, 0x1b, 0x03, 0x20, 0x1b,
-    0x02, 0x03, 0x1b, 0x02, 0x1b, 0x1b, 0x04, 0x02,
-    0x1b, 0x04, 0x1b, 0x28, 0x06, 0x1d, 0x04, 0x06,
-    0x1f, 0x1d, 0x04, 0x1f, 0x1d, 0x1d, 0x1e, 0x05,
-    0x1d, 0x1e, 0x05, 0x21, 0x1e, 0x04, 0x1d, 0x1e,
-    0x04, 0x1d, 0x1e, 0x04, 0x21, 0x1e, 0x1d, 0x22,
-    0x1e, 0x1d, 0x21, 0x22, 0x1d, 0x1d, 0x22, 0x1d,
-    0x1d, 0x00, 0x06, 0x22, 0x02, 0x04, 0x22, 0x02,
-    0x04, 0x21, 0x02, 0x06, 0x22, 0x02, 0x06, 0x21,
-    0x02, 0x1d, 0x22, 0x02, 0x1d, 0x21, 0x04, 0x1d,
-    0x22, 0x04, 0x05, 0x21, 0x04, 0x1d, 0x21, 0x0b,
-    0x06, 0x21, 0x0d, 0x05, 0x22, 0x0c, 0x05, 0x22,
-    0x0e, 0x05, 0x22, 0x1c, 0x04, 0x22, 0x1c, 0x1d,
-    0x22, 0x22, 0x05, 0x22, 0x22, 0x04, 0x22, 0x22,
-    0x1d, 0x22, 0x1d, 0x1d, 0x22, 0x1a, 0x1d, 0x22,
-    0x1e, 0x05, 0x22, 0x1a, 0x1d, 0x05, 0x1c, 0x05,
-    0x1d, 0x11, 0x1d, 0x22, 0x1b, 0x1d, 0x22, 0x1e,
-    0x04, 0x05, 0x1d, 0x06, 0x22, 0x1c, 0x04, 0x1d,
-    0x1b, 0x1d, 0x1d, 0x1c, 0x04, 0x1d, 0x1e, 0x04,
-    0x05, 0x04, 0x05, 0x22, 0x05, 0x04, 0x22, 0x1d,
-    0x04, 0x22, 0x19, 0x1d, 0x22, 0x00, 0x05, 0x22,
-    0x1b, 0x1d, 0x1d, 0x11, 0x04, 0x1d, 0x0d, 0x1d,
-    0x1d, 0x0b, 0x06, 0x22, 0x1e, 0x04, 0x22, 0x35,
-    0x06, 0x00, 0x0f, 0x9d, 0x0d, 0x0f, 0x9d, 0x27,
-    0x06, 0x00, 0x1d, 0x1d, 0x20, 0x00, 0x1c, 0x01,
-    0x0a, 0x1e, 0x06, 0x1e, 0x08, 0x0e, 0x1d, 0x12,
-    0x1e, 0x0a, 0x0c, 0x21, 0x1d, 0x12, 0x1d, 0x23,
-    0x20, 0x21, 0x0c, 0x1d, 0x1e, 0x35, 0x06, 0x00,
-    0x0f, 0x14, 0x27, 0x06, 0x0e, 0x1d, 0x22, 0xff,
-    0x00, 0x1d, 0x1d, 0x20, 0xff, 0x12, 0x1d, 0x23,
-    0x20, 0xff, 0x21, 0x0c, 0x1d, 0x1e, 0x27, 0x06,
-    0x05, 0x1d, 0xff, 0x05, 0x1d, 0x00, 0x1d, 0x20,
-    0x27, 0x06, 0x0a, 0xa5, 0x00, 0x1d, 0x2c, 0x00,
-    0x01, 0x30, 0x02, 0x30, 0x3a, 0x00, 0x3b, 0x00,
-    0x21, 0x00, 0x3f, 0x00, 0x16, 0x30, 0x17, 0x30,
-    0x26, 0x20, 0x13, 0x20, 0x12, 0x01, 0x00, 0x5f,
-    0x5f, 0x28, 0x29, 0x7b, 0x7d, 0x08, 0x30, 0x0c,
-    0x0d, 0x08, 0x09, 0x02, 0x03, 0x00, 0x01, 0x04,
-    0x05, 0x06, 0x07, 0x5b, 0x00, 0x5d, 0x00, 0x3e,
-    0x20, 0x3e, 0x20, 0x3e, 0x20, 0x3e, 0x20, 0x5f,
-    0x00, 0x5f, 0x00, 0x5f, 0x00, 0x2c, 0x00, 0x01,
-    0x30, 0x2e, 0x00, 0x00, 0x00, 0x3b, 0x00, 0x3a,
-    0x00, 0x3f, 0x00, 0x21, 0x00, 0x14, 0x20, 0x28,
-    0x00, 0x29, 0x00, 0x7b, 0x00, 0x7d, 0x00, 0x14,
-    0x30, 0x15, 0x30, 0x23, 0x26, 0x2a, 0x2b, 0x2d,
-    0x3c, 0x3e, 0x3d, 0x00, 0x5c, 0x24, 0x25, 0x40,
-    0x40, 0x06, 0xff, 0x0b, 0x00, 0x0b, 0xff, 0x0c,
-    0x20, 0x00, 0x4d, 0x06, 0x40, 0x06, 0xff, 0x0e,
-    0x00, 0x0e, 0xff, 0x0f, 0x00, 0x0f, 0xff, 0x10,
-    0x00, 0x10, 0xff, 0x11, 0x00, 0x11, 0xff, 0x12,
-    0x00, 0x12, 0x21, 0x06, 0x00, 0x01, 0x01, 0x02,
-    0x02, 0x03, 0x03, 0x04, 0x04, 0x05, 0x05, 0x05,
-    0x05, 0x06, 0x06, 0x07, 0x07, 0x07, 0x07, 0x08,
-    0x08, 0x09, 0x09, 0x09, 0x09, 0x0a, 0x0a, 0x0a,
-    0x0a, 0x0b, 0x0b, 0x0b, 0x0b, 0x0c, 0x0c, 0x0c,
-    0x0c, 0x0d, 0x0d, 0x0d, 0x0d, 0x0e, 0x0e, 0x0f,
-    0x0f, 0x10, 0x10, 0x11, 0x11, 0x12, 0x12, 0x12,
-    0x12, 0x13, 0x13, 0x13, 0x13, 0x14, 0x14, 0x14,
-    0x14, 0x15, 0x15, 0x15, 0x15, 0x16, 0x16, 0x16,
-    0x16, 0x17, 0x17, 0x17, 0x17, 0x18, 0x18, 0x18,
-    0x18, 0x19, 0x19, 0x19, 0x19, 0x20, 0x20, 0x20,
-    0x20, 0x21, 0x21, 0x21, 0x21, 0x22, 0x22, 0x22,
-    0x22, 0x23, 0x23, 0x23, 0x23, 0x24, 0x24, 0x24,
-    0x24, 0x25, 0x25, 0x25, 0x25, 0x26, 0x26, 0x26,
-    0x26, 0x27, 0x27, 0x28, 0x28, 0x29, 0x29, 0x29,
-    0x29, 0x22, 0x06, 0x22, 0x00, 0x22, 0x00, 0x22,
-    0x01, 0x22, 0x01, 0x22, 0x03, 0x22, 0x03, 0x22,
-    0x05, 0x22, 0x05, 0x21, 0x00, 0x85, 0x29, 0x01,
-    0x30, 0x01, 0x0b, 0x0c, 0x00, 0xfa, 0xf1, 0xa0,
-    0xa2, 0xa4, 0xa6, 0xa8, 0xe2, 0xe4, 0xe6, 0xc2,
-    0xfb, 0xa1, 0xa3, 0xa5, 0xa7, 0xa9, 0xaa, 0xac,
-    0xae, 0xb0, 0xb2, 0xb4, 0xb6, 0xb8, 0xba, 0xbc,
-    0xbe, 0xc0, 0xc3, 0xc5, 0xc7, 0xc9, 0xca, 0xcb,
-    0xcc, 0xcd, 0xce, 0xd1, 0xd4, 0xd7, 0xda, 0xdd,
-    0xde, 0xdf, 0xe0, 0xe1, 0xe3, 0xe5, 0xe7, 0xe8,
-    0xe9, 0xea, 0xeb, 0xec, 0xee, 0xf2, 0x98, 0x99,
-    0x31, 0x31, 0x4f, 0x31, 0x55, 0x31, 0x5b, 0x31,
-    0x61, 0x31, 0xa2, 0x00, 0xa3, 0x00, 0xac, 0x00,
-    0xaf, 0x00, 0xa6, 0x00, 0xa5, 0x00, 0xa9, 0x20,
-    0x00, 0x00, 0x02, 0x25, 0x90, 0x21, 0x91, 0x21,
-    0x92, 0x21, 0x93, 0x21, 0xa0, 0x25, 0xcb, 0x25,
-    0xd2, 0x05, 0x07, 0x03, 0x01, 0xda, 0x05, 0x07,
-    0x03, 0x01, 0xd0, 0x02, 0xd1, 0x02, 0xe6, 0x00,
-    0x99, 0x02, 0x53, 0x02, 0x00, 0x00, 0xa3, 0x02,
-    0x66, 0xab, 0xa5, 0x02, 0xa4, 0x02, 0x56, 0x02,
-    0x57, 0x02, 0x91, 0x1d, 0x58, 0x02, 0x5e, 0x02,
-    0xa9, 0x02, 0x64, 0x02, 0x62, 0x02, 0x60, 0x02,
-    0x9b, 0x02, 0x27, 0x01, 0x9c, 0x02, 0x67, 0x02,
-    0x84, 0x02, 0xaa, 0x02, 0xab, 0x02, 0x6c, 0x02,
-    0x04, 0xdf, 0x8e, 0xa7, 0x6e, 0x02, 0x05, 0xdf,
-    0x8e, 0x02, 0x06, 0xdf, 0xf8, 0x00, 0x76, 0x02,
-    0x77, 0x02, 0x71, 0x00, 0x7a, 0x02, 0x08, 0xdf,
-    0x7d, 0x02, 0x7e, 0x02, 0x80, 0x02, 0xa8, 0x02,
-    0xa6, 0x02, 0x67, 0xab, 0xa7, 0x02, 0x88, 0x02,
-    0x71, 0x2c, 0x00, 0x00, 0x8f, 0x02, 0xa1, 0x02,
-    0xa2, 0x02, 0x98, 0x02, 0xc0, 0x01, 0xc1, 0x01,
-    0xc2, 0x01, 0x0a, 0xdf, 0x1e, 0xdf, 0x41, 0x04,
-    0x40, 0x00, 0x00, 0x00, 0x00, 0x14, 0x99, 0x10,
-    0xba, 0x10, 0x00, 0x00, 0x00, 0x00, 0x9b, 0x10,
-    0xba, 0x10, 0x05, 0x05, 0xa5, 0x10, 0xba, 0x10,
-    0x05, 0x31, 0x11, 0x27, 0x11, 0x32, 0x11, 0x27,
-    0x11, 0x55, 0x47, 0x13, 0x3e, 0x13, 0x47, 0x13,
-    0x57, 0x13, 0x55, 0x82, 0x13, 0xc9, 0x13, 0x00,
-    0x00, 0x00, 0x00, 0x84, 0x13, 0xbb, 0x13, 0x05,
-    0x05, 0x8b, 0x13, 0xc2, 0x13, 0x05, 0x90, 0x13,
-    0xc9, 0x13, 0x05, 0xc2, 0x13, 0xc2, 0x13, 0x00,
-    0x00, 0x00, 0x00, 0xc2, 0x13, 0xb8, 0x13, 0xc2,
-    0x13, 0xc9, 0x13, 0x05, 0x55, 0xb9, 0x14, 0xba,
-    0x14, 0xb9, 0x14, 0xb0, 0x14, 0x00, 0x00, 0x00,
-    0x00, 0xb9, 0x14, 0xbd, 0x14, 0x55, 0x50, 0xb8,
-    0x15, 0xaf, 0x15, 0xb9, 0x15, 0xaf, 0x15, 0x55,
-    0x35, 0x19, 0x30, 0x19, 0x05, 0x1e, 0x61, 0x1e,
-    0x61, 0x1e, 0x61, 0x29, 0x61, 0x1e, 0x61, 0x1f,
-    0x61, 0x29, 0x61, 0x1f, 0x61, 0x1e, 0x61, 0x20,
-    0x61, 0x21, 0x61, 0x1f, 0x61, 0x22, 0x61, 0x1f,
-    0x61, 0x21, 0x61, 0x20, 0x61, 0x55, 0x55, 0x55,
-    0x55, 0x67, 0x6d, 0x67, 0x6d, 0x63, 0x6d, 0x67,
-    0x6d, 0x69, 0x6d, 0x67, 0x6d, 0x55, 0x05, 0x41,
-    0x00, 0x30, 0x00, 0x57, 0xd1, 0x65, 0xd1, 0x58,
-    0xd1, 0x65, 0xd1, 0x5f, 0xd1, 0x6e, 0xd1, 0x5f,
-    0xd1, 0x6f, 0xd1, 0x5f, 0xd1, 0x70, 0xd1, 0x5f,
-    0xd1, 0x71, 0xd1, 0x5f, 0xd1, 0x72, 0xd1, 0x55,
-    0x55, 0x55, 0x05, 0xb9, 0xd1, 0x65, 0xd1, 0xba,
-    0xd1, 0x65, 0xd1, 0xbb, 0xd1, 0x6e, 0xd1, 0xbc,
-    0xd1, 0x6e, 0xd1, 0xbb, 0xd1, 0x6f, 0xd1, 0xbc,
-    0xd1, 0x6f, 0xd1, 0x55, 0x55, 0x55, 0x41, 0x00,
-    0x61, 0x00, 0x41, 0x00, 0x61, 0x00, 0x69, 0x00,
-    0x41, 0x00, 0x61, 0x00, 0x41, 0x00, 0x43, 0x44,
-    0x00, 0x00, 0x47, 0x00, 0x00, 0x4a, 0x4b, 0x00,
-    0x00, 0x4e, 0x4f, 0x50, 0x51, 0x00, 0x53, 0x54,
-    0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x61, 0x62,
-    0x63, 0x64, 0x00, 0x66, 0x68, 0x00, 0x70, 0x00,
-    0x41, 0x00, 0x61, 0x00, 0x41, 0x42, 0x00, 0x44,
-    0x45, 0x46, 0x47, 0x4a, 0x00, 0x53, 0x00, 0x61,
-    0x00, 0x41, 0x42, 0x00, 0x44, 0x45, 0x46, 0x47,
-    0x00, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x00, 0x4f,
-    0x53, 0x00, 0x61, 0x00, 0x41, 0x00, 0x61, 0x00,
-    0x41, 0x00, 0x61, 0x00, 0x41, 0x00, 0x61, 0x00,
-    0x41, 0x00, 0x61, 0x00, 0x41, 0x00, 0x61, 0x00,
-    0x41, 0x00, 0x61, 0x00, 0x31, 0x01, 0x37, 0x02,
-    0x91, 0x03, 0xa3, 0x03, 0xb1, 0x03, 0xd1, 0x03,
-    0x24, 0x00, 0x1f, 0x04, 0x20, 0x05, 0x91, 0x03,
-    0xa3, 0x03, 0xb1, 0x03, 0xd1, 0x03, 0x24, 0x00,
-    0x1f, 0x04, 0x20, 0x05, 0x91, 0x03, 0xa3, 0x03,
-    0xb1, 0x03, 0xd1, 0x03, 0x24, 0x00, 0x1f, 0x04,
-    0x20, 0x05, 0x91, 0x03, 0xa3, 0x03, 0xb1, 0x03,
-    0xd1, 0x03, 0x24, 0x00, 0x1f, 0x04, 0x20, 0x05,
-    0x91, 0x03, 0xa3, 0x03, 0xb1, 0x03, 0xd1, 0x03,
-    0x24, 0x00, 0x1f, 0x04, 0x20, 0x05, 0x0b, 0x0c,
-    0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00,
-    0x30, 0x00, 0x30, 0x04, 0x3a, 0x04, 0x3e, 0x04,
-    0x4b, 0x04, 0x4d, 0x04, 0x4e, 0x04, 0x89, 0xa6,
-    0x30, 0x04, 0xa9, 0x26, 0x28, 0xb9, 0x7f, 0x9f,
-    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-    0x08, 0x0a, 0x0b, 0x0e, 0x0f, 0x11, 0x13, 0x14,
-    0x15, 0x16, 0x17, 0x18, 0x1a, 0x1b, 0x61, 0x26,
-    0x25, 0x2f, 0x7b, 0x51, 0xa6, 0xb1, 0x04, 0x27,
-    0x06, 0x00, 0x01, 0x05, 0x08, 0x2a, 0x06, 0x1e,
-    0x08, 0x03, 0x0d, 0x20, 0x19, 0x1a, 0x1b, 0x1c,
+    0x23, 0x20, 0x24, 0x21, 0x06, 0x21, 0x1f, 0x21,
+    0x23, 0x21, 0x24, 0x24, 0x06, 0x24, 0x07, 0x24,
+    0x08, 0x24, 0x1f, 0x24, 0x23, 0x24, 0x24, 0x0a,
+    0x4a, 0x0b, 0x4a, 0x23, 0x4a, 0x20, 0x00, 0x4c,
+    0x06, 0x51, 0x06, 0x51, 0x06, 0xff, 0x00, 0x1f,
+    0x26, 0x06, 0x00, 0x0b, 0x00, 0x0c, 0x00, 0x1f,
+    0x00, 0x20, 0x00, 0x23, 0x00, 0x24, 0x02, 0x0b,
+    0x02, 0x0c, 0x02, 0x1f, 0x02, 0x20, 0x02, 0x23,
+    0x02, 0x24, 0x04, 0x0b, 0x04, 0x0c, 0x04, 0x1f,
+    0x26, 0x06, 0x04, 0x20, 0x04, 0x23, 0x04, 0x24,
+    0x05, 0x0b, 0x05, 0x0c, 0x05, 0x1f, 0x05, 0x20,
+    0x05, 0x23, 0x05, 0x24, 0x1b, 0x23, 0x1b, 0x24,
+    0x1c, 0x23, 0x1c, 0x24, 0x1d, 0x01, 0x1d, 0x1e,
+    0x1d, 0x1f, 0x1d, 0x23, 0x1d, 0x24, 0x1e, 0x1f,
+    0x1e, 0x23, 0x1e, 0x24, 0x1f, 0x01, 0x1f, 0x1f,
+    0x20, 0x0b, 0x20, 0x0c, 0x20, 0x1f, 0x20, 0x20,
+    0x20, 0x23, 0x20, 0x24, 0x23, 0x4a, 0x24, 0x0b,
+    0x24, 0x0c, 0x24, 0x1f, 0x24, 0x20, 0x24, 0x23,
+    0x24, 0x24, 0x00, 0x06, 0x00, 0x07, 0x00, 0x08,
+    0x00, 0x1f, 0x00, 0x21, 0x02, 0x06, 0x02, 0x07,
+    0x02, 0x08, 0x02, 0x1f, 0x02, 0x21, 0x04, 0x06,
+    0x04, 0x07, 0x04, 0x08, 0x04, 0x1f, 0x04, 0x21,
+    0x05, 0x1f, 0x06, 0x07, 0x06, 0x1f, 0x07, 0x06,
+    0x07, 0x1f, 0x08, 0x06, 0x08, 0x1f, 0x0d, 0x06,
+    0x0d, 0x07, 0x0d, 0x08, 0x0d, 0x1f, 0x0f, 0x07,
+    0x0f, 0x08, 0x0f, 0x1f, 0x10, 0x06, 0x10, 0x07,
+    0x10, 0x08, 0x10, 0x1f, 0x11, 0x07, 0x12, 0x1f,
+    0x13, 0x06, 0x13, 0x1f, 0x14, 0x06, 0x14, 0x1f,
+    0x1b, 0x06, 0x1b, 0x07, 0x1b, 0x08, 0x1b, 0x1f,
+    0x1c, 0x07, 0x1c, 0x1f, 0x1d, 0x06, 0x1d, 0x07,
+    0x1d, 0x08, 0x1d, 0x1e, 0x1d, 0x1f, 0x1e, 0x06,
+    0x1e, 0x07, 0x1e, 0x08, 0x1e, 0x1f, 0x1e, 0x21,
+    0x1f, 0x06, 0x1f, 0x07, 0x1f, 0x08, 0x1f, 0x1f,
+    0x20, 0x06, 0x20, 0x07, 0x20, 0x08, 0x20, 0x1f,
+    0x20, 0x21, 0x21, 0x06, 0x21, 0x1f, 0x21, 0x4a,
+    0x24, 0x06, 0x24, 0x07, 0x24, 0x08, 0x24, 0x1f,
+    0x24, 0x21, 0x00, 0x1f, 0x00, 0x21, 0x02, 0x1f,
+    0x02, 0x21, 0x04, 0x1f, 0x04, 0x21, 0x05, 0x1f,
+    0x05, 0x21, 0x0d, 0x1f, 0x0d, 0x21, 0x0e, 0x1f,
+    0x0e, 0x21, 0x1d, 0x1e, 0x1d, 0x1f, 0x1e, 0x1f,
+    0x20, 0x1f, 0x20, 0x21, 0x24, 0x1f, 0x24, 0x21,
+    0x40, 0x06, 0x4e, 0x06, 0x51, 0x06, 0x27, 0x06,
+    0x10, 0x22, 0x10, 0x23, 0x12, 0x22, 0x12, 0x23,
+    0x13, 0x22, 0x13, 0x23, 0x0c, 0x22, 0x0c, 0x23,
+    0x0d, 0x22, 0x0d, 0x23, 0x06, 0x22, 0x06, 0x23,
+    0x05, 0x22, 0x05, 0x23, 0x07, 0x22, 0x07, 0x23,
+    0x0e, 0x22, 0x0e, 0x23, 0x0f, 0x22, 0x0f, 0x23,
+    0x0d, 0x05, 0x0d, 0x06, 0x0d, 0x07, 0x0d, 0x1e,
+    0x0d, 0x0a, 0x0c, 0x0a, 0x0e, 0x0a, 0x0f, 0x0a,
+    0x10, 0x22, 0x10, 0x23, 0x12, 0x22, 0x12, 0x23,
+    0x13, 0x22, 0x13, 0x23, 0x0c, 0x22, 0x0c, 0x23,
+    0x0d, 0x22, 0x0d, 0x23, 0x06, 0x22, 0x06, 0x23,
+    0x05, 0x22, 0x05, 0x23, 0x07, 0x22, 0x07, 0x23,
+    0x0e, 0x22, 0x0e, 0x23, 0x0f, 0x22, 0x0f, 0x23,
+    0x0d, 0x05, 0x0d, 0x06, 0x0d, 0x07, 0x0d, 0x1e,
+    0x0d, 0x0a, 0x0c, 0x0a, 0x0e, 0x0a, 0x0f, 0x0a,
+    0x0d, 0x05, 0x0d, 0x06, 0x0d, 0x07, 0x0d, 0x1e,
+    0x0c, 0x20, 0x0d, 0x20, 0x10, 0x1e, 0x0c, 0x05,
+    0x0c, 0x06, 0x0c, 0x07, 0x0d, 0x05, 0x0d, 0x06,
+    0x0d, 0x07, 0x10, 0x1e, 0x11, 0x1e, 0x00, 0x24,
+    0x00, 0x24, 0x2a, 0x06, 0x00, 0x02, 0x1b, 0x00,
+    0x03, 0x02, 0x00, 0x03, 0x02, 0x00, 0x03, 0x1b,
+    0x00, 0x04, 0x1b, 0x00, 0x1b, 0x02, 0x00, 0x1b,
+    0x03, 0x00, 0x1b, 0x04, 0x02, 0x1b, 0x03, 0x02,
+    0x1b, 0x03, 0x03, 0x1b, 0x20, 0x03, 0x1b, 0x1f,
+    0x09, 0x03, 0x02, 0x09, 0x02, 0x03, 0x09, 0x02,
+    0x1f, 0x09, 0x1b, 0x03, 0x09, 0x1b, 0x03, 0x09,
+    0x1b, 0x02, 0x09, 0x1b, 0x1b, 0x09, 0x1b, 0x1b,
+    0x0b, 0x03, 0x03, 0x0b, 0x03, 0x03, 0x0b, 0x1b,
+    0x1b, 0x0a, 0x03, 0x1b, 0x0a, 0x03, 0x1b, 0x0a,
+    0x02, 0x20, 0x0a, 0x1b, 0x04, 0x0a, 0x1b, 0x04,
+    0x0a, 0x1b, 0x1b, 0x0a, 0x1b, 0x1b, 0x0c, 0x03,
+    0x1f, 0x0c, 0x04, 0x1b, 0x0c, 0x04, 0x1b, 0x0d,
+    0x1b, 0x03, 0x0d, 0x1b, 0x03, 0x0d, 0x1b, 0x1b,
+    0x0d, 0x1b, 0x20, 0x0f, 0x02, 0x1b, 0x0f, 0x1b,
+    0x1b, 0x0f, 0x1b, 0x1b, 0x0f, 0x1b, 0x1f, 0x10,
+    0x1b, 0x1b, 0x10, 0x1b, 0x20, 0x10, 0x1b, 0x1f,
+    0x17, 0x04, 0x1b, 0x17, 0x04, 0x1b, 0x18, 0x1b,
+    0x03, 0x18, 0x1b, 0x1b, 0x1a, 0x03, 0x1b, 0x1a,
+    0x03, 0x20, 0x1a, 0x03, 0x1f, 0x1a, 0x02, 0x02,
+    0x1a, 0x02, 0x02, 0x1a, 0x04, 0x1b, 0x1a, 0x04,
+    0x1b, 0x1a, 0x1b, 0x03, 0x1a, 0x1b, 0x03, 0x1b,
+    0x03, 0x02, 0x1b, 0x03, 0x1b, 0x1b, 0x03, 0x20,
+    0x1b, 0x02, 0x03, 0x1b, 0x02, 0x1b, 0x1b, 0x04,
+    0x02, 0x1b, 0x04, 0x1b, 0x28, 0x06, 0x1d, 0x04,
+    0x06, 0x1f, 0x1d, 0x04, 0x1f, 0x1d, 0x1d, 0x1e,
+    0x05, 0x1d, 0x1e, 0x05, 0x21, 0x1e, 0x04, 0x1d,
+    0x1e, 0x04, 0x1d, 0x1e, 0x04, 0x21, 0x1e, 0x1d,
+    0x22, 0x1e, 0x1d, 0x21, 0x22, 0x1d, 0x1d, 0x22,
+    0x1d, 0x1d, 0x00, 0x06, 0x22, 0x02, 0x04, 0x22,
+    0x02, 0x04, 0x21, 0x02, 0x06, 0x22, 0x02, 0x06,
+    0x21, 0x02, 0x1d, 0x22, 0x02, 0x1d, 0x21, 0x04,
+    0x1d, 0x22, 0x04, 0x05, 0x21, 0x04, 0x1d, 0x21,
+    0x0b, 0x06, 0x21, 0x0d, 0x05, 0x22, 0x0c, 0x05,
+    0x22, 0x0e, 0x05, 0x22, 0x1c, 0x04, 0x22, 0x1c,
+    0x1d, 0x22, 0x22, 0x05, 0x22, 0x22, 0x04, 0x22,
+    0x22, 0x1d, 0x22, 0x1d, 0x1d, 0x22, 0x1a, 0x1d,
+    0x22, 0x1e, 0x05, 0x22, 0x1a, 0x1d, 0x05, 0x1c,
+    0x05, 0x1d, 0x11, 0x1d, 0x22, 0x1b, 0x1d, 0x22,
+    0x1e, 0x04, 0x05, 0x1d, 0x06, 0x22, 0x1c, 0x04,
+    0x1d, 0x1b, 0x1d, 0x1d, 0x1c, 0x04, 0x1d, 0x1e,
+    0x04, 0x05, 0x04, 0x05, 0x22, 0x05, 0x04, 0x22,
+    0x1d, 0x04, 0x22, 0x19, 0x1d, 0x22, 0x00, 0x05,
+    0x22, 0x1b, 0x1d, 0x1d, 0x11, 0x04, 0x1d, 0x0d,
+    0x1d, 0x1d, 0x0b, 0x06, 0x22, 0x1e, 0x04, 0x22,
+    0x35, 0x06, 0x00, 0x0f, 0x9d, 0x0d, 0x0f, 0x9d,
+    0x27, 0x06, 0x00, 0x1d, 0x1d, 0x20, 0x00, 0x1c,
+    0x01, 0x0a, 0x1e, 0x06, 0x1e, 0x08, 0x0e, 0x1d,
+    0x12, 0x1e, 0x0a, 0x0c, 0x21, 0x1d, 0x12, 0x1d,
+    0x23, 0x20, 0x21, 0x0c, 0x1d, 0x1e, 0x35, 0x06,
+    0x00, 0x0f, 0x14, 0x27, 0x06, 0x0e, 0x1d, 0x22,
+    0xff, 0x00, 0x1d, 0x1d, 0x20, 0xff, 0x12, 0x1d,
+    0x23, 0x20, 0xff, 0x21, 0x0c, 0x1d, 0x1e, 0x27,
+    0x06, 0x05, 0x1d, 0xff, 0x05, 0x1d, 0x00, 0x1d,
+    0x20, 0x27, 0x06, 0x0a, 0xa5, 0x00, 0x1d, 0x2c,
+    0x00, 0x01, 0x30, 0x02, 0x30, 0x3a, 0x00, 0x3b,
+    0x00, 0x21, 0x00, 0x3f, 0x00, 0x16, 0x30, 0x17,
+    0x30, 0x26, 0x20, 0x13, 0x20, 0x12, 0x01, 0x00,
+    0x5f, 0x5f, 0x28, 0x29, 0x7b, 0x7d, 0x08, 0x30,
+    0x0c, 0x0d, 0x08, 0x09, 0x02, 0x03, 0x00, 0x01,
+    0x04, 0x05, 0x06, 0x07, 0x5b, 0x00, 0x5d, 0x00,
+    0x3e, 0x20, 0x3e, 0x20, 0x3e, 0x20, 0x3e, 0x20,
+    0x5f, 0x00, 0x5f, 0x00, 0x5f, 0x00, 0x2c, 0x00,
+    0x01, 0x30, 0x2e, 0x00, 0x00, 0x00, 0x3b, 0x00,
+    0x3a, 0x00, 0x3f, 0x00, 0x21, 0x00, 0x14, 0x20,
+    0x28, 0x00, 0x29, 0x00, 0x7b, 0x00, 0x7d, 0x00,
+    0x14, 0x30, 0x15, 0x30, 0x23, 0x26, 0x2a, 0x2b,
+    0x2d, 0x3c, 0x3e, 0x3d, 0x00, 0x5c, 0x24, 0x25,
+    0x40, 0x40, 0x06, 0xff, 0x0b, 0x00, 0x0b, 0xff,
+    0x0c, 0x20, 0x00, 0x4d, 0x06, 0x40, 0x06, 0xff,
+    0x0e, 0x00, 0x0e, 0xff, 0x0f, 0x00, 0x0f, 0xff,
+    0x10, 0x00, 0x10, 0xff, 0x11, 0x00, 0x11, 0xff,
+    0x12, 0x00, 0x12, 0x21, 0x06, 0x00, 0x01, 0x01,
+    0x02, 0x02, 0x03, 0x03, 0x04, 0x04, 0x05, 0x05,
+    0x05, 0x05, 0x06, 0x06, 0x07, 0x07, 0x07, 0x07,
+    0x08, 0x08, 0x09, 0x09, 0x09, 0x09, 0x0a, 0x0a,
+    0x0a, 0x0a, 0x0b, 0x0b, 0x0b, 0x0b, 0x0c, 0x0c,
+    0x0c, 0x0c, 0x0d, 0x0d, 0x0d, 0x0d, 0x0e, 0x0e,
+    0x0f, 0x0f, 0x10, 0x10, 0x11, 0x11, 0x12, 0x12,
+    0x12, 0x12, 0x13, 0x13, 0x13, 0x13, 0x14, 0x14,
+    0x14, 0x14, 0x15, 0x15, 0x15, 0x15, 0x16, 0x16,
+    0x16, 0x16, 0x17, 0x17, 0x17, 0x17, 0x18, 0x18,
+    0x18, 0x18, 0x19, 0x19, 0x19, 0x19, 0x20, 0x20,
+    0x20, 0x20, 0x21, 0x21, 0x21, 0x21, 0x22, 0x22,
+    0x22, 0x22, 0x23, 0x23, 0x23, 0x23, 0x24, 0x24,
+    0x24, 0x24, 0x25, 0x25, 0x25, 0x25, 0x26, 0x26,
+    0x26, 0x26, 0x27, 0x27, 0x28, 0x28, 0x29, 0x29,
+    0x29, 0x29, 0x22, 0x06, 0x22, 0x00, 0x22, 0x00,
+    0x22, 0x01, 0x22, 0x01, 0x22, 0x03, 0x22, 0x03,
+    0x22, 0x05, 0x22, 0x05, 0x21, 0x00, 0x85, 0x29,
+    0x01, 0x30, 0x01, 0x0b, 0x0c, 0x00, 0xfa, 0xf1,
+    0xa0, 0xa2, 0xa4, 0xa6, 0xa8, 0xe2, 0xe4, 0xe6,
+    0xc2, 0xfb, 0xa1, 0xa3, 0xa5, 0xa7, 0xa9, 0xaa,
+    0xac, 0xae, 0xb0, 0xb2, 0xb4, 0xb6, 0xb8, 0xba,
+    0xbc, 0xbe, 0xc0, 0xc3, 0xc5, 0xc7, 0xc9, 0xca,
+    0xcb, 0xcc, 0xcd, 0xce, 0xd1, 0xd4, 0xd7, 0xda,
+    0xdd, 0xde, 0xdf, 0xe0, 0xe1, 0xe3, 0xe5, 0xe7,
+    0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xee, 0xf2, 0x98,
+    0x99, 0x31, 0x31, 0x4f, 0x31, 0x55, 0x31, 0x5b,
+    0x31, 0x61, 0x31, 0xa2, 0x00, 0xa3, 0x00, 0xac,
+    0x00, 0xaf, 0x00, 0xa6, 0x00, 0xa5, 0x00, 0xa9,
+    0x20, 0x00, 0x00, 0x02, 0x25, 0x90, 0x21, 0x91,
+    0x21, 0x92, 0x21, 0x93, 0x21, 0xa0, 0x25, 0xcb,
+    0x25, 0xd2, 0x05, 0x07, 0x03, 0x01, 0xda, 0x05,
+    0x07, 0x03, 0x01, 0xd0, 0x02, 0xd1, 0x02, 0xe6,
+    0x00, 0x99, 0x02, 0x53, 0x02, 0x00, 0x00, 0xa3,
+    0x02, 0x66, 0xab, 0xa5, 0x02, 0xa4, 0x02, 0x56,
+    0x02, 0x57, 0x02, 0x91, 0x1d, 0x58, 0x02, 0x5e,
+    0x02, 0xa9, 0x02, 0x64, 0x02, 0x62, 0x02, 0x60,
+    0x02, 0x9b, 0x02, 0x27, 0x01, 0x9c, 0x02, 0x67,
+    0x02, 0x84, 0x02, 0xaa, 0x02, 0xab, 0x02, 0x6c,
+    0x02, 0x04, 0xdf, 0x8e, 0xa7, 0x6e, 0x02, 0x05,
+    0xdf, 0x8e, 0x02, 0x06, 0xdf, 0xf8, 0x00, 0x76,
+    0x02, 0x77, 0x02, 0x71, 0x00, 0x7a, 0x02, 0x08,
+    0xdf, 0x7d, 0x02, 0x7e, 0x02, 0x80, 0x02, 0xa8,
+    0x02, 0xa6, 0x02, 0x67, 0xab, 0xa7, 0x02, 0x88,
+    0x02, 0x71, 0x2c, 0x00, 0x00, 0x8f, 0x02, 0xa1,
+    0x02, 0xa2, 0x02, 0x98, 0x02, 0xc0, 0x01, 0xc1,
+    0x01, 0xc2, 0x01, 0x0a, 0xdf, 0x1e, 0xdf, 0x41,
+    0x04, 0x40, 0x00, 0x00, 0x00, 0x00, 0x14, 0x99,
+    0x10, 0xba, 0x10, 0x00, 0x00, 0x00, 0x00, 0x9b,
+    0x10, 0xba, 0x10, 0x05, 0x05, 0xa5, 0x10, 0xba,
+    0x10, 0x05, 0x31, 0x11, 0x27, 0x11, 0x32, 0x11,
+    0x27, 0x11, 0x55, 0x47, 0x13, 0x3e, 0x13, 0x47,
+    0x13, 0x57, 0x13, 0x55, 0x82, 0x13, 0xc9, 0x13,
+    0x00, 0x00, 0x00, 0x00, 0x84, 0x13, 0xbb, 0x13,
+    0x05, 0x05, 0x8b, 0x13, 0xc2, 0x13, 0x05, 0x90,
+    0x13, 0xc9, 0x13, 0x05, 0xc2, 0x13, 0xc2, 0x13,
+    0x00, 0x00, 0x00, 0x00, 0xc2, 0x13, 0xb8, 0x13,
+    0xc2, 0x13, 0xc9, 0x13, 0x05, 0x55, 0xb9, 0x14,
+    0xba, 0x14, 0xb9, 0x14, 0xb0, 0x14, 0x00, 0x00,
+    0x00, 0x00, 0xb9, 0x14, 0xbd, 0x14, 0x55, 0x50,
+    0xb8, 0x15, 0xaf, 0x15, 0xb9, 0x15, 0xaf, 0x15,
+    0x55, 0x35, 0x19, 0x30, 0x19, 0x05, 0x1e, 0x61,
+    0x1e, 0x61, 0x1e, 0x61, 0x29, 0x61, 0x1e, 0x61,
+    0x1f, 0x61, 0x29, 0x61, 0x1f, 0x61, 0x1e, 0x61,
+    0x20, 0x61, 0x21, 0x61, 0x1f, 0x61, 0x22, 0x61,
+    0x1f, 0x61, 0x21, 0x61, 0x20, 0x61, 0x55, 0x55,
+    0x55, 0x55, 0x67, 0x6d, 0x67, 0x6d, 0x63, 0x6d,
+    0x67, 0x6d, 0x69, 0x6d, 0x67, 0x6d, 0x55, 0x05,
+    0x41, 0x00, 0x30, 0x00, 0x57, 0xd1, 0x65, 0xd1,
+    0x58, 0xd1, 0x65, 0xd1, 0x5f, 0xd1, 0x6e, 0xd1,
+    0x5f, 0xd1, 0x6f, 0xd1, 0x5f, 0xd1, 0x70, 0xd1,
+    0x5f, 0xd1, 0x71, 0xd1, 0x5f, 0xd1, 0x72, 0xd1,
+    0x55, 0x55, 0x55, 0x05, 0xb9, 0xd1, 0x65, 0xd1,
+    0xba, 0xd1, 0x65, 0xd1, 0xbb, 0xd1, 0x6e, 0xd1,
+    0xbc, 0xd1, 0x6e, 0xd1, 0xbb, 0xd1, 0x6f, 0xd1,
+    0xbc, 0xd1, 0x6f, 0xd1, 0x55, 0x55, 0x55, 0x41,
+    0x00, 0x61, 0x00, 0x41, 0x00, 0x61, 0x00, 0x69,
+    0x00, 0x41, 0x00, 0x61, 0x00, 0x41, 0x00, 0x43,
+    0x44, 0x00, 0x00, 0x47, 0x00, 0x00, 0x4a, 0x4b,
+    0x00, 0x00, 0x4e, 0x4f, 0x50, 0x51, 0x00, 0x53,
+    0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x61,
+    0x62, 0x63, 0x64, 0x00, 0x66, 0x68, 0x00, 0x70,
+    0x00, 0x41, 0x00, 0x61, 0x00, 0x41, 0x42, 0x00,
+    0x44, 0x45, 0x46, 0x47, 0x4a, 0x00, 0x53, 0x00,
+    0x61, 0x00, 0x41, 0x42, 0x00, 0x44, 0x45, 0x46,
+    0x47, 0x00, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x00,
+    0x4f, 0x53, 0x00, 0x61, 0x00, 0x41, 0x00, 0x61,
+    0x00, 0x41, 0x00, 0x61, 0x00, 0x41, 0x00, 0x61,
+    0x00, 0x41, 0x00, 0x61, 0x00, 0x41, 0x00, 0x61,
+    0x00, 0x41, 0x00, 0x61, 0x00, 0x31, 0x01, 0x37,
+    0x02, 0x91, 0x03, 0xa3, 0x03, 0xb1, 0x03, 0xd1,
+    0x03, 0x24, 0x00, 0x1f, 0x04, 0x20, 0x05, 0x91,
+    0x03, 0xa3, 0x03, 0xb1, 0x03, 0xd1, 0x03, 0x24,
+    0x00, 0x1f, 0x04, 0x20, 0x05, 0x91, 0x03, 0xa3,
+    0x03, 0xb1, 0x03, 0xd1, 0x03, 0x24, 0x00, 0x1f,
+    0x04, 0x20, 0x05, 0x91, 0x03, 0xa3, 0x03, 0xb1,
+    0x03, 0xd1, 0x03, 0x24, 0x00, 0x1f, 0x04, 0x20,
+    0x05, 0x91, 0x03, 0xa3, 0x03, 0xb1, 0x03, 0xd1,
+    0x03, 0x24, 0x00, 0x1f, 0x04, 0x20, 0x05, 0x0b,
+    0x0c, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30,
+    0x00, 0x30, 0x00, 0x30, 0x04, 0x3a, 0x04, 0x3e,
+    0x04, 0x4b, 0x04, 0x4d, 0x04, 0x4e, 0x04, 0x89,
+    0xa6, 0x30, 0x04, 0xa9, 0x26, 0x28, 0xb9, 0x7f,
+    0x9f, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+    0x07, 0x08, 0x0a, 0x0b, 0x0e, 0x0f, 0x11, 0x13,
+    0x14, 0x15, 0x16, 0x17, 0x18, 0x1a, 0x1b, 0x61,
+    0x26, 0x25, 0x2f, 0x7b, 0x51, 0xa6, 0xb1, 0x04,
+    0x27, 0x06, 0x00, 0x01, 0x05, 0x08, 0x2a, 0x06,
+    0x1e, 0x08, 0x03, 0x0d, 0x20, 0x19, 0x1a, 0x1b,
+    0x1c, 0x09, 0x0f, 0x17, 0x0b, 0x18, 0x07, 0x0a,
+    0x00, 0x01, 0x04, 0x06, 0x0c, 0x0e, 0x10, 0x44,
+    0x90, 0x77, 0x45, 0x28, 0x06, 0x2c, 0x06, 0x00,
+    0x00, 0x47, 0x06, 0x33, 0x06, 0x17, 0x10, 0x11,
+    0x12, 0x13, 0x00, 0x06, 0x0e, 0x02, 0x0f, 0x34,
+    0x06, 0x2a, 0x06, 0x2b, 0x06, 0x2e, 0x06, 0x00,
+    0x00, 0x36, 0x06, 0x00, 0x00, 0x3a, 0x06, 0x2d,
+    0x06, 0x00, 0x00, 0x4a, 0x06, 0x00, 0x00, 0x44,
+    0x06, 0x00, 0x00, 0x46, 0x06, 0x33, 0x06, 0x39,
+    0x06, 0x00, 0x00, 0x35, 0x06, 0x42, 0x06, 0x00,
+    0x00, 0x34, 0x06, 0x00, 0x00, 0x00, 0x00, 0x2e,
+    0x06, 0x00, 0x00, 0x36, 0x06, 0x00, 0x00, 0x3a,
+    0x06, 0x00, 0x00, 0xba, 0x06, 0x00, 0x00, 0x6f,
+    0x06, 0x00, 0x00, 0x28, 0x06, 0x2c, 0x06, 0x00,
+    0x00, 0x47, 0x06, 0x00, 0x00, 0x00, 0x00, 0x2d,
+    0x06, 0x37, 0x06, 0x4a, 0x06, 0x43, 0x06, 0x00,
+    0x00, 0x45, 0x06, 0x46, 0x06, 0x33, 0x06, 0x39,
+    0x06, 0x41, 0x06, 0x35, 0x06, 0x42, 0x06, 0x00,
+    0x00, 0x34, 0x06, 0x2a, 0x06, 0x2b, 0x06, 0x2e,
+    0x06, 0x00, 0x00, 0x36, 0x06, 0x38, 0x06, 0x3a,
+    0x06, 0x6e, 0x06, 0x00, 0x00, 0xa1, 0x06, 0x27,
+    0x06, 0x00, 0x01, 0x05, 0x08, 0x20, 0x21, 0x0b,
+    0x06, 0x10, 0x23, 0x2a, 0x06, 0x1a, 0x1b, 0x1c,
     0x09, 0x0f, 0x17, 0x0b, 0x18, 0x07, 0x0a, 0x00,
-    0x01, 0x04, 0x06, 0x0c, 0x0e, 0x10, 0x44, 0x90,
-    0x77, 0x45, 0x28, 0x06, 0x2c, 0x06, 0x00, 0x00,
-    0x47, 0x06, 0x33, 0x06, 0x17, 0x10, 0x11, 0x12,
-    0x13, 0x00, 0x06, 0x0e, 0x02, 0x0f, 0x34, 0x06,
-    0x2a, 0x06, 0x2b, 0x06, 0x2e, 0x06, 0x00, 0x00,
-    0x36, 0x06, 0x00, 0x00, 0x3a, 0x06, 0x2d, 0x06,
-    0x00, 0x00, 0x4a, 0x06, 0x00, 0x00, 0x44, 0x06,
-    0x00, 0x00, 0x46, 0x06, 0x33, 0x06, 0x39, 0x06,
-    0x00, 0x00, 0x35, 0x06, 0x42, 0x06, 0x00, 0x00,
-    0x34, 0x06, 0x00, 0x00, 0x00, 0x00, 0x2e, 0x06,
-    0x00, 0x00, 0x36, 0x06, 0x00, 0x00, 0x3a, 0x06,
-    0x00, 0x00, 0xba, 0x06, 0x00, 0x00, 0x6f, 0x06,
-    0x00, 0x00, 0x28, 0x06, 0x2c, 0x06, 0x00, 0x00,
-    0x47, 0x06, 0x00, 0x00, 0x00, 0x00, 0x2d, 0x06,
-    0x37, 0x06, 0x4a, 0x06, 0x43, 0x06, 0x00, 0x00,
-    0x45, 0x06, 0x46, 0x06, 0x33, 0x06, 0x39, 0x06,
-    0x41, 0x06, 0x35, 0x06, 0x42, 0x06, 0x00, 0x00,
-    0x34, 0x06, 0x2a, 0x06, 0x2b, 0x06, 0x2e, 0x06,
-    0x00, 0x00, 0x36, 0x06, 0x38, 0x06, 0x3a, 0x06,
-    0x6e, 0x06, 0x00, 0x00, 0xa1, 0x06, 0x27, 0x06,
-    0x00, 0x01, 0x05, 0x08, 0x20, 0x21, 0x0b, 0x06,
-    0x10, 0x23, 0x2a, 0x06, 0x1a, 0x1b, 0x1c, 0x09,
-    0x0f, 0x17, 0x0b, 0x18, 0x07, 0x0a, 0x00, 0x01,
-    0x04, 0x06, 0x0c, 0x0e, 0x10, 0x28, 0x06, 0x2c,
-    0x06, 0x2f, 0x06, 0x00, 0x00, 0x48, 0x06, 0x32,
-    0x06, 0x2d, 0x06, 0x37, 0x06, 0x4a, 0x06, 0x2a,
-    0x06, 0x1a, 0x1b, 0x1c, 0x09, 0x0f, 0x17, 0x0b,
-    0x18, 0x07, 0x0a, 0x00, 0x01, 0x04, 0x06, 0x0c,
-    0x0e, 0x10, 0x30, 0x2e, 0x30, 0x00, 0x2c, 0x00,
-    0x28, 0x00, 0x41, 0x00, 0x29, 0x00, 0x14, 0x30,
-    0x53, 0x00, 0x15, 0x30, 0x43, 0x52, 0x43, 0x44,
-    0x57, 0x5a, 0x41, 0x00, 0x48, 0x56, 0x4d, 0x56,
-    0x53, 0x44, 0x53, 0x53, 0x50, 0x50, 0x56, 0x57,
-    0x43, 0x4d, 0x43, 0x4d, 0x44, 0x4d, 0x52, 0x44,
-    0x4a, 0x4b, 0x30, 0x30, 0x00, 0x68, 0x68, 0x4b,
-    0x62, 0x57, 0x5b, 0xcc, 0x53, 0xc7, 0x30, 0x8c,
-    0x4e, 0x1a, 0x59, 0xe3, 0x89, 0x29, 0x59, 0xa4,
-    0x4e, 0x20, 0x66, 0x21, 0x71, 0x99, 0x65, 0x4d,
-    0x52, 0x8c, 0x5f, 0x8d, 0x51, 0xb0, 0x65, 0x1d,
-    0x52, 0x42, 0x7d, 0x1f, 0x75, 0xa9, 0x8c, 0xf0,
-    0x58, 0x39, 0x54, 0x14, 0x6f, 0x95, 0x62, 0x55,
-    0x63, 0x00, 0x4e, 0x09, 0x4e, 0x4a, 0x90, 0xe6,
-    0x5d, 0x2d, 0x4e, 0xf3, 0x53, 0x07, 0x63, 0x70,
-    0x8d, 0x53, 0x62, 0x81, 0x79, 0x7a, 0x7a, 0x08,
-    0x54, 0x80, 0x6e, 0x09, 0x67, 0x08, 0x67, 0x33,
-    0x75, 0x72, 0x52, 0xb6, 0x55, 0x4d, 0x91, 0x14,
-    0x30, 0x15, 0x30, 0x2c, 0x67, 0x09, 0x4e, 0x8c,
-    0x4e, 0x89, 0x5b, 0xb9, 0x70, 0x53, 0x62, 0xd7,
-    0x76, 0xdd, 0x52, 0x57, 0x65, 0x97, 0x5f, 0xef,
-    0x53, 0x30, 0x00, 0x38, 0x4e, 0x05, 0x00, 0x09,
-    0x22, 0x01, 0x60, 0x4f, 0xae, 0x4f, 0xbb, 0x4f,
-    0x02, 0x50, 0x7a, 0x50, 0x99, 0x50, 0xe7, 0x50,
-    0xcf, 0x50, 0x9e, 0x34, 0x3a, 0x06, 0x4d, 0x51,
-    0x54, 0x51, 0x64, 0x51, 0x77, 0x51, 0x1c, 0x05,
-    0xb9, 0x34, 0x67, 0x51, 0x8d, 0x51, 0x4b, 0x05,
-    0x97, 0x51, 0xa4, 0x51, 0xcc, 0x4e, 0xac, 0x51,
-    0xb5, 0x51, 0xdf, 0x91, 0xf5, 0x51, 0x03, 0x52,
-    0xdf, 0x34, 0x3b, 0x52, 0x46, 0x52, 0x72, 0x52,
-    0x77, 0x52, 0x15, 0x35, 0x02, 0x00, 0x20, 0x80,
-    0x80, 0x00, 0x08, 0x00, 0x00, 0xc7, 0x52, 0x00,
-    0x02, 0x1d, 0x33, 0x3e, 0x3f, 0x50, 0x82, 0x8a,
-    0x93, 0xac, 0xb6, 0xb8, 0xb8, 0xb8, 0x2c, 0x0a,
-    0x70, 0x70, 0xca, 0x53, 0xdf, 0x53, 0x63, 0x0b,
-    0xeb, 0x53, 0xf1, 0x53, 0x06, 0x54, 0x9e, 0x54,
-    0x38, 0x54, 0x48, 0x54, 0x68, 0x54, 0xa2, 0x54,
-    0xf6, 0x54, 0x10, 0x55, 0x53, 0x55, 0x63, 0x55,
-    0x84, 0x55, 0x84, 0x55, 0x99, 0x55, 0xab, 0x55,
-    0xb3, 0x55, 0xc2, 0x55, 0x16, 0x57, 0x06, 0x56,
-    0x17, 0x57, 0x51, 0x56, 0x74, 0x56, 0x07, 0x52,
-    0xee, 0x58, 0xce, 0x57, 0xf4, 0x57, 0x0d, 0x58,
-    0x8b, 0x57, 0x32, 0x58, 0x31, 0x58, 0xac, 0x58,
-    0xe4, 0x14, 0xf2, 0x58, 0xf7, 0x58, 0x06, 0x59,
-    0x1a, 0x59, 0x22, 0x59, 0x62, 0x59, 0xa8, 0x16,
-    0xea, 0x16, 0xec, 0x59, 0x1b, 0x5a, 0x27, 0x5a,
-    0xd8, 0x59, 0x66, 0x5a, 0xee, 0x36, 0xfc, 0x36,
-    0x08, 0x5b, 0x3e, 0x5b, 0x3e, 0x5b, 0xc8, 0x19,
-    0xc3, 0x5b, 0xd8, 0x5b, 0xe7, 0x5b, 0xf3, 0x5b,
-    0x18, 0x1b, 0xff, 0x5b, 0x06, 0x5c, 0x53, 0x5f,
-    0x22, 0x5c, 0x81, 0x37, 0x60, 0x5c, 0x6e, 0x5c,
-    0xc0, 0x5c, 0x8d, 0x5c, 0xe4, 0x1d, 0x43, 0x5d,
-    0xe6, 0x1d, 0x6e, 0x5d, 0x6b, 0x5d, 0x7c, 0x5d,
-    0xe1, 0x5d, 0xe2, 0x5d, 0x2f, 0x38, 0xfd, 0x5d,
-    0x28, 0x5e, 0x3d, 0x5e, 0x69, 0x5e, 0x62, 0x38,
-    0x83, 0x21, 0x7c, 0x38, 0xb0, 0x5e, 0xb3, 0x5e,
-    0xb6, 0x5e, 0xca, 0x5e, 0x92, 0xa3, 0xfe, 0x5e,
-    0x31, 0x23, 0x31, 0x23, 0x01, 0x82, 0x22, 0x5f,
-    0x22, 0x5f, 0xc7, 0x38, 0xb8, 0x32, 0xda, 0x61,
-    0x62, 0x5f, 0x6b, 0x5f, 0xe3, 0x38, 0x9a, 0x5f,
-    0xcd, 0x5f, 0xd7, 0x5f, 0xf9, 0x5f, 0x81, 0x60,
-    0x3a, 0x39, 0x1c, 0x39, 0x94, 0x60, 0xd4, 0x26,
-    0xc7, 0x60, 0x02, 0x02, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x08, 0x00, 0x0a, 0x00, 0x00,
-    0x02, 0x08, 0x00, 0x80, 0x08, 0x00, 0x00, 0x08,
-    0x80, 0x28, 0x80, 0x02, 0x00, 0x00, 0x02, 0x48,
-    0x61, 0x00, 0x04, 0x06, 0x04, 0x32, 0x46, 0x6a,
-    0x5c, 0x67, 0x96, 0xaa, 0xae, 0xc8, 0xd3, 0x5d,
-    0x62, 0x00, 0x54, 0x77, 0xf3, 0x0c, 0x2b, 0x3d,
-    0x63, 0xfc, 0x62, 0x68, 0x63, 0x83, 0x63, 0xe4,
-    0x63, 0xf1, 0x2b, 0x22, 0x64, 0xc5, 0x63, 0xa9,
-    0x63, 0x2e, 0x3a, 0x69, 0x64, 0x7e, 0x64, 0x9d,
-    0x64, 0x77, 0x64, 0x6c, 0x3a, 0x4f, 0x65, 0x6c,
-    0x65, 0x0a, 0x30, 0xe3, 0x65, 0xf8, 0x66, 0x49,
-    0x66, 0x19, 0x3b, 0x91, 0x66, 0x08, 0x3b, 0xe4,
-    0x3a, 0x92, 0x51, 0x95, 0x51, 0x00, 0x67, 0x9c,
-    0x66, 0xad, 0x80, 0xd9, 0x43, 0x17, 0x67, 0x1b,
-    0x67, 0x21, 0x67, 0x5e, 0x67, 0x53, 0x67, 0xc3,
-    0x33, 0x49, 0x3b, 0xfa, 0x67, 0x85, 0x67, 0x52,
-    0x68, 0x85, 0x68, 0x6d, 0x34, 0x8e, 0x68, 0x1f,
-    0x68, 0x14, 0x69, 0x9d, 0x3b, 0x42, 0x69, 0xa3,
-    0x69, 0xea, 0x69, 0xa8, 0x6a, 0xa3, 0x36, 0xdb,
-    0x6a, 0x18, 0x3c, 0x21, 0x6b, 0xa7, 0x38, 0x54,
-    0x6b, 0x4e, 0x3c, 0x72, 0x6b, 0x9f, 0x6b, 0xba,
-    0x6b, 0xbb, 0x6b, 0x8d, 0x3a, 0x0b, 0x1d, 0xfa,
-    0x3a, 0x4e, 0x6c, 0xbc, 0x3c, 0xbf, 0x6c, 0xcd,
-    0x6c, 0x67, 0x6c, 0x16, 0x6d, 0x3e, 0x6d, 0x77,
-    0x6d, 0x41, 0x6d, 0x69, 0x6d, 0x78, 0x6d, 0x85,
-    0x6d, 0x1e, 0x3d, 0x34, 0x6d, 0x2f, 0x6e, 0x6e,
-    0x6e, 0x33, 0x3d, 0xcb, 0x6e, 0xc7, 0x6e, 0xd1,
-    0x3e, 0xf9, 0x6d, 0x6e, 0x6f, 0x5e, 0x3f, 0x8e,
-    0x3f, 0xc6, 0x6f, 0x39, 0x70, 0x1e, 0x70, 0x1b,
-    0x70, 0x96, 0x3d, 0x4a, 0x70, 0x7d, 0x70, 0x77,
-    0x70, 0xad, 0x70, 0x25, 0x05, 0x45, 0x71, 0x63,
-    0x42, 0x9c, 0x71, 0xab, 0x43, 0x28, 0x72, 0x35,
-    0x72, 0x50, 0x72, 0x08, 0x46, 0x80, 0x72, 0x95,
-    0x72, 0x35, 0x47, 0x02, 0x20, 0x00, 0x00, 0x20,
-    0x00, 0x00, 0x00, 0x00, 0x08, 0x80, 0x00, 0x00,
-    0x02, 0x02, 0x80, 0x8a, 0x00, 0x00, 0x20, 0x00,
-    0x08, 0x0a, 0x00, 0x80, 0x88, 0x80, 0x20, 0x14,
-    0x48, 0x7a, 0x73, 0x8b, 0x73, 0xac, 0x3e, 0xa5,
-    0x73, 0xb8, 0x3e, 0xb8, 0x3e, 0x47, 0x74, 0x5c,
-    0x74, 0x71, 0x74, 0x85, 0x74, 0xca, 0x74, 0x1b,
-    0x3f, 0x24, 0x75, 0x36, 0x4c, 0x3e, 0x75, 0x92,
-    0x4c, 0x70, 0x75, 0x9f, 0x21, 0x10, 0x76, 0xa1,
-    0x4f, 0xb8, 0x4f, 0x44, 0x50, 0xfc, 0x3f, 0x08,
-    0x40, 0xf4, 0x76, 0xf3, 0x50, 0xf2, 0x50, 0x19,
-    0x51, 0x33, 0x51, 0x1e, 0x77, 0x1f, 0x77, 0x1f,
-    0x77, 0x4a, 0x77, 0x39, 0x40, 0x8b, 0x77, 0x46,
-    0x40, 0x96, 0x40, 0x1d, 0x54, 0x4e, 0x78, 0x8c,
-    0x78, 0xcc, 0x78, 0xe3, 0x40, 0x26, 0x56, 0x56,
-    0x79, 0x9a, 0x56, 0xc5, 0x56, 0x8f, 0x79, 0xeb,
-    0x79, 0x2f, 0x41, 0x40, 0x7a, 0x4a, 0x7a, 0x4f,
-    0x7a, 0x7c, 0x59, 0xa7, 0x5a, 0xa7, 0x5a, 0xee,
-    0x7a, 0x02, 0x42, 0xab, 0x5b, 0xc6, 0x7b, 0xc9,
-    0x7b, 0x27, 0x42, 0x80, 0x5c, 0xd2, 0x7c, 0xa0,
-    0x42, 0xe8, 0x7c, 0xe3, 0x7c, 0x00, 0x7d, 0x86,
-    0x5f, 0x63, 0x7d, 0x01, 0x43, 0xc7, 0x7d, 0x02,
-    0x7e, 0x45, 0x7e, 0x34, 0x43, 0x28, 0x62, 0x47,
-    0x62, 0x59, 0x43, 0xd9, 0x62, 0x7a, 0x7f, 0x3e,
-    0x63, 0x95, 0x7f, 0xfa, 0x7f, 0x05, 0x80, 0xda,
-    0x64, 0x23, 0x65, 0x60, 0x80, 0xa8, 0x65, 0x70,
-    0x80, 0x5f, 0x33, 0xd5, 0x43, 0xb2, 0x80, 0x03,
-    0x81, 0x0b, 0x44, 0x3e, 0x81, 0xb5, 0x5a, 0xa7,
-    0x67, 0xb5, 0x67, 0x93, 0x33, 0x9c, 0x33, 0x01,
-    0x82, 0x04, 0x82, 0x9e, 0x8f, 0x6b, 0x44, 0x91,
-    0x82, 0x8b, 0x82, 0x9d, 0x82, 0xb3, 0x52, 0xb1,
-    0x82, 0xb3, 0x82, 0xbd, 0x82, 0xe6, 0x82, 0x3c,
-    0x6b, 0xe5, 0x82, 0x1d, 0x83, 0x63, 0x83, 0xad,
-    0x83, 0x23, 0x83, 0xbd, 0x83, 0xe7, 0x83, 0x57,
-    0x84, 0x53, 0x83, 0xca, 0x83, 0xcc, 0x83, 0xdc,
-    0x83, 0x36, 0x6c, 0x6b, 0x6d, 0x02, 0x00, 0x00,
-    0x20, 0x22, 0x2a, 0xa0, 0x0a, 0x00, 0x20, 0x80,
-    0x28, 0x00, 0xa8, 0x20, 0x20, 0x00, 0x02, 0x80,
-    0x22, 0x02, 0x8a, 0x08, 0x00, 0xaa, 0x00, 0x00,
-    0x00, 0x02, 0x00, 0x00, 0x28, 0xd5, 0x6c, 0x2b,
-    0x45, 0xf1, 0x84, 0xf3, 0x84, 0x16, 0x85, 0xca,
-    0x73, 0x64, 0x85, 0x2c, 0x6f, 0x5d, 0x45, 0x61,
-    0x45, 0xb1, 0x6f, 0xd2, 0x70, 0x6b, 0x45, 0x50,
-    0x86, 0x5c, 0x86, 0x67, 0x86, 0x69, 0x86, 0xa9,
-    0x86, 0x88, 0x86, 0x0e, 0x87, 0xe2, 0x86, 0x79,
-    0x87, 0x28, 0x87, 0x6b, 0x87, 0x86, 0x87, 0xd7,
-    0x45, 0xe1, 0x87, 0x01, 0x88, 0xf9, 0x45, 0x60,
-    0x88, 0x63, 0x88, 0x67, 0x76, 0xd7, 0x88, 0xde,
-    0x88, 0x35, 0x46, 0xfa, 0x88, 0xbb, 0x34, 0xae,
-    0x78, 0x66, 0x79, 0xbe, 0x46, 0xc7, 0x46, 0xa0,
-    0x8a, 0xed, 0x8a, 0x8a, 0x8b, 0x55, 0x8c, 0xa8,
-    0x7c, 0xab, 0x8c, 0xc1, 0x8c, 0x1b, 0x8d, 0x77,
-    0x8d, 0x2f, 0x7f, 0x04, 0x08, 0xcb, 0x8d, 0xbc,
-    0x8d, 0xf0, 0x8d, 0xde, 0x08, 0xd4, 0x8e, 0x38,
-    0x8f, 0xd2, 0x85, 0xed, 0x85, 0x94, 0x90, 0xf1,
-    0x90, 0x11, 0x91, 0x2e, 0x87, 0x1b, 0x91, 0x38,
-    0x92, 0xd7, 0x92, 0xd8, 0x92, 0x7c, 0x92, 0xf9,
-    0x93, 0x15, 0x94, 0xfa, 0x8b, 0x8b, 0x95, 0x95,
-    0x49, 0xb7, 0x95, 0x77, 0x8d, 0xe6, 0x49, 0xc3,
-    0x96, 0xb2, 0x5d, 0x23, 0x97, 0x45, 0x91, 0x1a,
-    0x92, 0x6e, 0x4a, 0x76, 0x4a, 0xe0, 0x97, 0x0a,
-    0x94, 0xb2, 0x4a, 0x96, 0x94, 0x0b, 0x98, 0x0b,
-    0x98, 0x29, 0x98, 0xb6, 0x95, 0xe2, 0x98, 0x33,
-    0x4b, 0x29, 0x99, 0xa7, 0x99, 0xc2, 0x99, 0xfe,
-    0x99, 0xce, 0x4b, 0x30, 0x9b, 0x12, 0x9b, 0x40,
-    0x9c, 0xfd, 0x9c, 0xce, 0x4c, 0xed, 0x4c, 0x67,
-    0x9d, 0xce, 0xa0, 0xf8, 0x4c, 0x05, 0xa1, 0x0e,
-    0xa2, 0x91, 0xa2, 0xbb, 0x9e, 0x56, 0x4d, 0xf9,
-    0x9e, 0xfe, 0x9e, 0x05, 0x9f, 0x0f, 0x9f, 0x16,
-    0x9f, 0x3b, 0x9f, 0x00, 0xa6, 0x02, 0x88, 0xa0,
-    0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x28, 0x00,
-    0x08, 0xa0, 0x80, 0xa0, 0x80, 0x00, 0x80, 0x80,
-    0x00, 0x0a, 0x88, 0x80, 0x00, 0x80, 0x00, 0x20,
-    0x2a, 0x00, 0x80,
+    0x01, 0x04, 0x06, 0x0c, 0x0e, 0x10, 0x28, 0x06,
+    0x2c, 0x06, 0x2f, 0x06, 0x00, 0x00, 0x48, 0x06,
+    0x32, 0x06, 0x2d, 0x06, 0x37, 0x06, 0x4a, 0x06,
+    0x2a, 0x06, 0x1a, 0x1b, 0x1c, 0x09, 0x0f, 0x17,
+    0x0b, 0x18, 0x07, 0x0a, 0x00, 0x01, 0x04, 0x06,
+    0x0c, 0x0e, 0x10, 0x30, 0x2e, 0x30, 0x00, 0x2c,
+    0x00, 0x28, 0x00, 0x41, 0x00, 0x29, 0x00, 0x14,
+    0x30, 0x53, 0x00, 0x15, 0x30, 0x43, 0x52, 0x43,
+    0x44, 0x57, 0x5a, 0x41, 0x00, 0x48, 0x56, 0x4d,
+    0x56, 0x53, 0x44, 0x53, 0x53, 0x50, 0x50, 0x56,
+    0x57, 0x43, 0x4d, 0x43, 0x4d, 0x44, 0x4d, 0x52,
+    0x44, 0x4a, 0x4b, 0x30, 0x30, 0x00, 0x68, 0x68,
+    0x4b, 0x62, 0x57, 0x5b, 0xcc, 0x53, 0xc7, 0x30,
+    0x8c, 0x4e, 0x1a, 0x59, 0xe3, 0x89, 0x29, 0x59,
+    0xa4, 0x4e, 0x20, 0x66, 0x21, 0x71, 0x99, 0x65,
+    0x4d, 0x52, 0x8c, 0x5f, 0x8d, 0x51, 0xb0, 0x65,
+    0x1d, 0x52, 0x42, 0x7d, 0x1f, 0x75, 0xa9, 0x8c,
+    0xf0, 0x58, 0x39, 0x54, 0x14, 0x6f, 0x95, 0x62,
+    0x55, 0x63, 0x00, 0x4e, 0x09, 0x4e, 0x4a, 0x90,
+    0xe6, 0x5d, 0x2d, 0x4e, 0xf3, 0x53, 0x07, 0x63,
+    0x70, 0x8d, 0x53, 0x62, 0x81, 0x79, 0x7a, 0x7a,
+    0x08, 0x54, 0x80, 0x6e, 0x09, 0x67, 0x08, 0x67,
+    0x33, 0x75, 0x72, 0x52, 0xb6, 0x55, 0x4d, 0x91,
+    0x14, 0x30, 0x15, 0x30, 0x2c, 0x67, 0x09, 0x4e,
+    0x8c, 0x4e, 0x89, 0x5b, 0xb9, 0x70, 0x53, 0x62,
+    0xd7, 0x76, 0xdd, 0x52, 0x57, 0x65, 0x97, 0x5f,
+    0xef, 0x53, 0x30, 0x00, 0x38, 0x4e, 0x05, 0x00,
+    0x09, 0x22, 0x01, 0x60, 0x4f, 0xae, 0x4f, 0xbb,
+    0x4f, 0x02, 0x50, 0x7a, 0x50, 0x99, 0x50, 0xe7,
+    0x50, 0xcf, 0x50, 0x9e, 0x34, 0x3a, 0x06, 0x4d,
+    0x51, 0x54, 0x51, 0x64, 0x51, 0x77, 0x51, 0x1c,
+    0x05, 0xb9, 0x34, 0x67, 0x51, 0x8d, 0x51, 0x4b,
+    0x05, 0x97, 0x51, 0xa4, 0x51, 0xcc, 0x4e, 0xac,
+    0x51, 0xb5, 0x51, 0xdf, 0x91, 0xf5, 0x51, 0x03,
+    0x52, 0xdf, 0x34, 0x3b, 0x52, 0x46, 0x52, 0x72,
+    0x52, 0x77, 0x52, 0x15, 0x35, 0x02, 0x00, 0x20,
+    0x80, 0x80, 0x00, 0x08, 0x00, 0x00, 0xc7, 0x52,
+    0x00, 0x02, 0x1d, 0x33, 0x3e, 0x3f, 0x50, 0x82,
+    0x8a, 0x93, 0xac, 0xb6, 0xb8, 0xb8, 0xb8, 0x2c,
+    0x0a, 0x70, 0x70, 0xca, 0x53, 0xdf, 0x53, 0x63,
+    0x0b, 0xeb, 0x53, 0xf1, 0x53, 0x06, 0x54, 0x9e,
+    0x54, 0x38, 0x54, 0x48, 0x54, 0x68, 0x54, 0xa2,
+    0x54, 0xf6, 0x54, 0x10, 0x55, 0x53, 0x55, 0x63,
+    0x55, 0x84, 0x55, 0x84, 0x55, 0x99, 0x55, 0xab,
+    0x55, 0xb3, 0x55, 0xc2, 0x55, 0x16, 0x57, 0x06,
+    0x56, 0x17, 0x57, 0x51, 0x56, 0x74, 0x56, 0x07,
+    0x52, 0xee, 0x58, 0xce, 0x57, 0xf4, 0x57, 0x0d,
+    0x58, 0x8b, 0x57, 0x32, 0x58, 0x31, 0x58, 0xac,
+    0x58, 0xe4, 0x14, 0xf2, 0x58, 0xf7, 0x58, 0x06,
+    0x59, 0x1a, 0x59, 0x22, 0x59, 0x62, 0x59, 0xa8,
+    0x16, 0xea, 0x16, 0xec, 0x59, 0x1b, 0x5a, 0x27,
+    0x5a, 0xd8, 0x59, 0x66, 0x5a, 0xee, 0x36, 0xfc,
+    0x36, 0x08, 0x5b, 0x3e, 0x5b, 0x3e, 0x5b, 0xc8,
+    0x19, 0xc3, 0x5b, 0xd8, 0x5b, 0xe7, 0x5b, 0xf3,
+    0x5b, 0x18, 0x1b, 0xff, 0x5b, 0x06, 0x5c, 0x53,
+    0x5f, 0x22, 0x5c, 0x81, 0x37, 0x60, 0x5c, 0x6e,
+    0x5c, 0xc0, 0x5c, 0x8d, 0x5c, 0xe4, 0x1d, 0x43,
+    0x5d, 0xe6, 0x1d, 0x6e, 0x5d, 0x6b, 0x5d, 0x7c,
+    0x5d, 0xe1, 0x5d, 0xe2, 0x5d, 0x2f, 0x38, 0xfd,
+    0x5d, 0x28, 0x5e, 0x3d, 0x5e, 0x69, 0x5e, 0x62,
+    0x38, 0x83, 0x21, 0x7c, 0x38, 0xb0, 0x5e, 0xb3,
+    0x5e, 0xb6, 0x5e, 0xca, 0x5e, 0x92, 0xa3, 0xfe,
+    0x5e, 0x31, 0x23, 0x31, 0x23, 0x01, 0x82, 0x22,
+    0x5f, 0x22, 0x5f, 0xc7, 0x38, 0xb8, 0x32, 0xda,
+    0x61, 0x62, 0x5f, 0x6b, 0x5f, 0xe3, 0x38, 0x9a,
+    0x5f, 0xcd, 0x5f, 0xd7, 0x5f, 0xf9, 0x5f, 0x81,
+    0x60, 0x3a, 0x39, 0x1c, 0x39, 0x94, 0x60, 0xd4,
+    0x26, 0xc7, 0x60, 0x02, 0x02, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x0a, 0x00,
+    0x00, 0x02, 0x08, 0x00, 0x80, 0x08, 0x00, 0x00,
+    0x08, 0x80, 0x28, 0x80, 0x02, 0x00, 0x00, 0x02,
+    0x48, 0x61, 0x00, 0x04, 0x06, 0x04, 0x32, 0x46,
+    0x6a, 0x5c, 0x67, 0x96, 0xaa, 0xae, 0xc8, 0xd3,
+    0x5d, 0x62, 0x00, 0x54, 0x77, 0xf3, 0x0c, 0x2b,
+    0x3d, 0x63, 0xfc, 0x62, 0x68, 0x63, 0x83, 0x63,
+    0xe4, 0x63, 0xf1, 0x2b, 0x22, 0x64, 0xc5, 0x63,
+    0xa9, 0x63, 0x2e, 0x3a, 0x69, 0x64, 0x7e, 0x64,
+    0x9d, 0x64, 0x77, 0x64, 0x6c, 0x3a, 0x4f, 0x65,
+    0x6c, 0x65, 0x0a, 0x30, 0xe3, 0x65, 0xf8, 0x66,
+    0x49, 0x66, 0x19, 0x3b, 0x91, 0x66, 0x08, 0x3b,
+    0xe4, 0x3a, 0x92, 0x51, 0x95, 0x51, 0x00, 0x67,
+    0x9c, 0x66, 0xad, 0x80, 0xd9, 0x43, 0x17, 0x67,
+    0x1b, 0x67, 0x21, 0x67, 0x5e, 0x67, 0x53, 0x67,
+    0xc3, 0x33, 0x49, 0x3b, 0xfa, 0x67, 0x85, 0x67,
+    0x52, 0x68, 0x85, 0x68, 0x6d, 0x34, 0x8e, 0x68,
+    0x1f, 0x68, 0x14, 0x69, 0x9d, 0x3b, 0x42, 0x69,
+    0xa3, 0x69, 0xea, 0x69, 0xa8, 0x6a, 0xa3, 0x36,
+    0xdb, 0x6a, 0x18, 0x3c, 0x21, 0x6b, 0xa7, 0x38,
+    0x54, 0x6b, 0x4e, 0x3c, 0x72, 0x6b, 0x9f, 0x6b,
+    0xba, 0x6b, 0xbb, 0x6b, 0x8d, 0x3a, 0x0b, 0x1d,
+    0xfa, 0x3a, 0x4e, 0x6c, 0xbc, 0x3c, 0xbf, 0x6c,
+    0xcd, 0x6c, 0x67, 0x6c, 0x16, 0x6d, 0x3e, 0x6d,
+    0x77, 0x6d, 0x41, 0x6d, 0x69, 0x6d, 0x78, 0x6d,
+    0x85, 0x6d, 0x1e, 0x3d, 0x34, 0x6d, 0x2f, 0x6e,
+    0x6e, 0x6e, 0x33, 0x3d, 0xcb, 0x6e, 0xc7, 0x6e,
+    0xd1, 0x3e, 0xf9, 0x6d, 0x6e, 0x6f, 0x5e, 0x3f,
+    0x8e, 0x3f, 0xc6, 0x6f, 0x39, 0x70, 0x1e, 0x70,
+    0x1b, 0x70, 0x96, 0x3d, 0x4a, 0x70, 0x7d, 0x70,
+    0x77, 0x70, 0xad, 0x70, 0x25, 0x05, 0x45, 0x71,
+    0x63, 0x42, 0x9c, 0x71, 0xab, 0x43, 0x28, 0x72,
+    0x35, 0x72, 0x50, 0x72, 0x08, 0x46, 0x80, 0x72,
+    0x95, 0x72, 0x35, 0x47, 0x02, 0x20, 0x00, 0x00,
+    0x20, 0x00, 0x00, 0x00, 0x00, 0x08, 0x80, 0x00,
+    0x00, 0x02, 0x02, 0x80, 0x8a, 0x00, 0x00, 0x20,
+    0x00, 0x08, 0x0a, 0x00, 0x80, 0x88, 0x80, 0x20,
+    0x14, 0x48, 0x7a, 0x73, 0x8b, 0x73, 0xac, 0x3e,
+    0xa5, 0x73, 0xb8, 0x3e, 0xb8, 0x3e, 0x47, 0x74,
+    0x5c, 0x74, 0x71, 0x74, 0x85, 0x74, 0xca, 0x74,
+    0x1b, 0x3f, 0x24, 0x75, 0x36, 0x4c, 0x3e, 0x75,
+    0x92, 0x4c, 0x70, 0x75, 0x9f, 0x21, 0x10, 0x76,
+    0xa1, 0x4f, 0xb8, 0x4f, 0x44, 0x50, 0xfc, 0x3f,
+    0x08, 0x40, 0xf4, 0x76, 0xf3, 0x50, 0xf2, 0x50,
+    0x19, 0x51, 0x33, 0x51, 0x1e, 0x77, 0x1f, 0x77,
+    0x1f, 0x77, 0x4a, 0x77, 0x39, 0x40, 0x8b, 0x77,
+    0x46, 0x40, 0x96, 0x40, 0x1d, 0x54, 0x4e, 0x78,
+    0x8c, 0x78, 0xcc, 0x78, 0xe3, 0x40, 0x26, 0x56,
+    0x56, 0x79, 0x9a, 0x56, 0xc5, 0x56, 0x8f, 0x79,
+    0xeb, 0x79, 0x2f, 0x41, 0x40, 0x7a, 0x4a, 0x7a,
+    0x4f, 0x7a, 0x7c, 0x59, 0xa7, 0x5a, 0xa7, 0x5a,
+    0xee, 0x7a, 0x02, 0x42, 0xab, 0x5b, 0xc6, 0x7b,
+    0xc9, 0x7b, 0x27, 0x42, 0x80, 0x5c, 0xd2, 0x7c,
+    0xa0, 0x42, 0xe8, 0x7c, 0xe3, 0x7c, 0x00, 0x7d,
+    0x86, 0x5f, 0x63, 0x7d, 0x01, 0x43, 0xc7, 0x7d,
+    0x02, 0x7e, 0x45, 0x7e, 0x34, 0x43, 0x28, 0x62,
+    0x47, 0x62, 0x59, 0x43, 0xd9, 0x62, 0x7a, 0x7f,
+    0x3e, 0x63, 0x95, 0x7f, 0xfa, 0x7f, 0x05, 0x80,
+    0xda, 0x64, 0x23, 0x65, 0x60, 0x80, 0xa8, 0x65,
+    0x70, 0x80, 0x5f, 0x33, 0xd5, 0x43, 0xb2, 0x80,
+    0x03, 0x81, 0x0b, 0x44, 0x3e, 0x81, 0xb5, 0x5a,
+    0xa7, 0x67, 0xb5, 0x67, 0x93, 0x33, 0x9c, 0x33,
+    0x01, 0x82, 0x04, 0x82, 0x9e, 0x8f, 0x6b, 0x44,
+    0x91, 0x82, 0x8b, 0x82, 0x9d, 0x82, 0xb3, 0x52,
+    0xb1, 0x82, 0xb3, 0x82, 0xbd, 0x82, 0xe6, 0x82,
+    0x3c, 0x6b, 0xe5, 0x82, 0x1d, 0x83, 0x63, 0x83,
+    0xad, 0x83, 0x23, 0x83, 0xbd, 0x83, 0xe7, 0x83,
+    0x57, 0x84, 0x53, 0x83, 0xca, 0x83, 0xcc, 0x83,
+    0xdc, 0x83, 0x36, 0x6c, 0x6b, 0x6d, 0x02, 0x00,
+    0x00, 0x20, 0x22, 0x2a, 0xa0, 0x0a, 0x00, 0x20,
+    0x80, 0x28, 0x00, 0xa8, 0x20, 0x20, 0x00, 0x02,
+    0x80, 0x22, 0x02, 0x8a, 0x08, 0x00, 0xaa, 0x00,
+    0x00, 0x00, 0x02, 0x00, 0x00, 0x28, 0xd5, 0x6c,
+    0x2b, 0x45, 0xf1, 0x84, 0xf3, 0x84, 0x16, 0x85,
+    0xca, 0x73, 0x64, 0x85, 0x2c, 0x6f, 0x5d, 0x45,
+    0x61, 0x45, 0xb1, 0x6f, 0xd2, 0x70, 0x6b, 0x45,
+    0x50, 0x86, 0x5c, 0x86, 0x67, 0x86, 0x69, 0x86,
+    0xa9, 0x86, 0x88, 0x86, 0x0e, 0x87, 0xe2, 0x86,
+    0x79, 0x87, 0x28, 0x87, 0x6b, 0x87, 0x86, 0x87,
+    0xd7, 0x45, 0xe1, 0x87, 0x01, 0x88, 0xf9, 0x45,
+    0x60, 0x88, 0x63, 0x88, 0x67, 0x76, 0xd7, 0x88,
+    0xde, 0x88, 0x35, 0x46, 0xfa, 0x88, 0xbb, 0x34,
+    0xae, 0x78, 0x66, 0x79, 0xbe, 0x46, 0xc7, 0x46,
+    0xa0, 0x8a, 0xed, 0x8a, 0x8a, 0x8b, 0x55, 0x8c,
+    0xa8, 0x7c, 0xab, 0x8c, 0xc1, 0x8c, 0x1b, 0x8d,
+    0x77, 0x8d, 0x2f, 0x7f, 0x04, 0x08, 0xcb, 0x8d,
+    0xbc, 0x8d, 0xf0, 0x8d, 0xde, 0x08, 0xd4, 0x8e,
+    0x38, 0x8f, 0xd2, 0x85, 0xed, 0x85, 0x94, 0x90,
+    0xf1, 0x90, 0x11, 0x91, 0x2e, 0x87, 0x1b, 0x91,
+    0x38, 0x92, 0xd7, 0x92, 0xd8, 0x92, 0x7c, 0x92,
+    0xf9, 0x93, 0x15, 0x94, 0xfa, 0x8b, 0x8b, 0x95,
+    0x95, 0x49, 0xb7, 0x95, 0x77, 0x8d, 0xe6, 0x49,
+    0xc3, 0x96, 0xb2, 0x5d, 0x23, 0x97, 0x45, 0x91,
+    0x1a, 0x92, 0x6e, 0x4a, 0x76, 0x4a, 0xe0, 0x97,
+    0x0a, 0x94, 0xb2, 0x4a, 0x96, 0x94, 0x0b, 0x98,
+    0x0b, 0x98, 0x29, 0x98, 0xb6, 0x95, 0xe2, 0x98,
+    0x33, 0x4b, 0x29, 0x99, 0xa7, 0x99, 0xc2, 0x99,
+    0xfe, 0x99, 0xce, 0x4b, 0x30, 0x9b, 0x12, 0x9b,
+    0x40, 0x9c, 0xfd, 0x9c, 0xce, 0x4c, 0xed, 0x4c,
+    0x67, 0x9d, 0xce, 0xa0, 0xf8, 0x4c, 0x05, 0xa1,
+    0x0e, 0xa2, 0x91, 0xa2, 0xbb, 0x9e, 0x56, 0x4d,
+    0xf9, 0x9e, 0xfe, 0x9e, 0x05, 0x9f, 0x0f, 0x9f,
+    0x16, 0x9f, 0x3b, 0x9f, 0x00, 0xa6, 0x02, 0x88,
+    0xa0, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x28,
+    0x00, 0x08, 0xa0, 0x80, 0xa0, 0x80, 0x00, 0x80,
+    0x80, 0x00, 0x0a, 0x88, 0x80, 0x00, 0x80, 0x00,
+    0x20, 0x2a, 0x00, 0x80,
 };
 
 static const uint16_t unicode_comp_table[965] = {
@@ -3490,7 +4860,7 @@ static const char unicode_gc_name_table[] =
     "C,Other"                  "\0"
 ;
 
-static const uint8_t unicode_gc_table[4070] = {
+static const uint8_t unicode_gc_table[4122] = {
     0xfa, 0x18, 0x17, 0x56, 0x0d, 0x56, 0x12, 0x13,
     0x16, 0x0c, 0x16, 0x11, 0x36, 0xe9, 0x02, 0x36,
     0x4c, 0x36, 0xe1, 0x12, 0x12, 0x16, 0x13, 0x0e,
@@ -3508,8 +4878,8 @@ static const uint8_t unicode_gc_table[4070] = {
     0x03, 0x02, 0x01, 0x03, 0x02, 0xff, 0x08, 0x02,
     0xff, 0x0a, 0x02, 0x01, 0x03, 0x02, 0x5f, 0x21,
     0x02, 0xff, 0x32, 0xa2, 0x21, 0x02, 0x21, 0x22,
-    0x5f, 0x41, 0x02, 0xff, 0x00, 0xe2, 0x3c, 0x05,
-    0xe2, 0x13, 0xe4, 0x0a, 0x6e, 0xe4, 0x04, 0xee,
+    0x5f, 0x41, 0x02, 0xff, 0x00, 0xe2, 0x3c, 0x25,
+    0xe2, 0x12, 0xe4, 0x0a, 0x6e, 0xe4, 0x04, 0xee,
     0x06, 0x84, 0xce, 0x04, 0x0e, 0x04, 0xee, 0x09,
     0xe6, 0x68, 0x7f, 0x04, 0x0e, 0x3f, 0x20, 0x04,
     0x42, 0x16, 0x01, 0x60, 0x2e, 0x01, 0x16, 0x41,
@@ -3534,166 +4904,166 @@ static const uint8_t unicode_gc_table[4070] = {
     0x2d, 0xe5, 0x0e, 0x66, 0x04, 0xe6, 0x01, 0x04,
     0x46, 0x04, 0x86, 0x20, 0xf6, 0x07, 0x00, 0xe5,
     0x11, 0x46, 0x20, 0x16, 0x00, 0xe5, 0x03, 0x80,
-    0xe5, 0x10, 0x0e, 0xa5, 0x00, 0x3b, 0x80, 0xe6,
-    0x01, 0xe5, 0x21, 0x04, 0xe6, 0x10, 0x1b, 0xe6,
-    0x18, 0x07, 0xe5, 0x2e, 0x06, 0x07, 0x06, 0x05,
-    0x47, 0xe6, 0x00, 0x67, 0x06, 0x27, 0x05, 0xc6,
-    0xe5, 0x02, 0x26, 0x36, 0xe9, 0x02, 0x16, 0x04,
-    0xe5, 0x07, 0x06, 0x27, 0x00, 0xe5, 0x00, 0x20,
-    0x25, 0x20, 0xe5, 0x0e, 0x00, 0xc5, 0x00, 0x05,
-    0x40, 0x65, 0x20, 0x06, 0x05, 0x47, 0x66, 0x20,
-    0x27, 0x20, 0x27, 0x06, 0x05, 0xe0, 0x00, 0x07,
-    0x60, 0x25, 0x00, 0x45, 0x26, 0x20, 0xe9, 0x02,
-    0x25, 0x2d, 0xab, 0x0f, 0x0d, 0x05, 0x16, 0x06,
-    0x20, 0x26, 0x07, 0x00, 0xa5, 0x60, 0x25, 0x20,
-    0xe5, 0x0e, 0x00, 0xc5, 0x00, 0x25, 0x00, 0x25,
-    0x00, 0x25, 0x20, 0x06, 0x00, 0x47, 0x26, 0x60,
-    0x26, 0x20, 0x46, 0x40, 0x06, 0xc0, 0x65, 0x00,
-    0x05, 0xc0, 0xe9, 0x02, 0x26, 0x45, 0x06, 0x16,
-    0xe0, 0x02, 0x26, 0x07, 0x00, 0xe5, 0x01, 0x00,
-    0x45, 0x00, 0xe5, 0x0e, 0x00, 0xc5, 0x00, 0x25,
-    0x00, 0x85, 0x20, 0x06, 0x05, 0x47, 0x86, 0x00,
-    0x26, 0x07, 0x00, 0x27, 0x06, 0x20, 0x05, 0xe0,
-    0x07, 0x25, 0x26, 0x20, 0xe9, 0x02, 0x16, 0x0d,
-    0xc0, 0x05, 0xa6, 0x00, 0x06, 0x27, 0x00, 0xe5,
-    0x00, 0x20, 0x25, 0x20, 0xe5, 0x0e, 0x00, 0xc5,
-    0x00, 0x25, 0x00, 0x85, 0x20, 0x06, 0x05, 0x07,
-    0x06, 0x07, 0x66, 0x20, 0x27, 0x20, 0x27, 0x06,
-    0xc0, 0x26, 0x07, 0x60, 0x25, 0x00, 0x45, 0x26,
-    0x20, 0xe9, 0x02, 0x0f, 0x05, 0xab, 0xe0, 0x02,
-    0x06, 0x05, 0x00, 0xa5, 0x40, 0x45, 0x00, 0x65,
-    0x40, 0x25, 0x00, 0x05, 0x00, 0x25, 0x40, 0x25,
-    0x40, 0x45, 0x40, 0xe5, 0x04, 0x60, 0x27, 0x06,
-    0x27, 0x40, 0x47, 0x00, 0x47, 0x06, 0x20, 0x05,
-    0xa0, 0x07, 0xe0, 0x06, 0xe9, 0x02, 0x4b, 0xaf,
-    0x0d, 0x0f, 0x80, 0x06, 0x47, 0x06, 0xe5, 0x00,
-    0x00, 0x45, 0x00, 0xe5, 0x0f, 0x00, 0xe5, 0x08,
-    0x20, 0x06, 0x05, 0x46, 0x67, 0x00, 0x46, 0x00,
-    0x66, 0xc0, 0x26, 0x00, 0x45, 0x20, 0x05, 0x20,
-    0x25, 0x26, 0x20, 0xe9, 0x02, 0xc0, 0x16, 0xcb,
-    0x0f, 0x05, 0x06, 0x27, 0x16, 0xe5, 0x00, 0x00,
-    0x45, 0x00, 0xe5, 0x0f, 0x00, 0xe5, 0x02, 0x00,
-    0x85, 0x20, 0x06, 0x05, 0x07, 0x06, 0x87, 0x00,
-    0x06, 0x27, 0x00, 0x27, 0x26, 0xc0, 0x27, 0xa0,
-    0x25, 0x00, 0x25, 0x26, 0x20, 0xe9, 0x02, 0x00,
-    0x25, 0x07, 0xe0, 0x04, 0x26, 0x27, 0xe5, 0x01,
-    0x00, 0x45, 0x00, 0xe5, 0x21, 0x26, 0x05, 0x47,
-    0x66, 0x00, 0x47, 0x00, 0x47, 0x06, 0x05, 0x0f,
-    0x60, 0x45, 0x07, 0xcb, 0x45, 0x26, 0x20, 0xe9,
-    0x02, 0xeb, 0x01, 0x0f, 0xa5, 0x00, 0x06, 0x27,
-    0x00, 0xe5, 0x0a, 0x40, 0xe5, 0x10, 0x00, 0xe5,
-    0x01, 0x00, 0x05, 0x20, 0xc5, 0x40, 0x06, 0x60,
-    0x47, 0x46, 0x00, 0x06, 0x00, 0xe7, 0x00, 0xa0,
-    0xe9, 0x02, 0x20, 0x27, 0x16, 0xe0, 0x04, 0xe5,
-    0x28, 0x06, 0x25, 0xc6, 0x60, 0x0d, 0xa5, 0x04,
-    0xe6, 0x00, 0x16, 0xe9, 0x02, 0x36, 0xe0, 0x1d,
-    0x25, 0x00, 0x05, 0x00, 0x85, 0x00, 0xe5, 0x10,
-    0x00, 0x05, 0x00, 0xe5, 0x02, 0x06, 0x25, 0xe6,
-    0x01, 0x05, 0x20, 0x85, 0x00, 0x04, 0x00, 0xc6,
-    0x00, 0xe9, 0x02, 0x20, 0x65, 0xe0, 0x18, 0x05,
-    0x4f, 0xf6, 0x07, 0x0f, 0x16, 0x4f, 0x26, 0xaf,
-    0xe9, 0x02, 0xeb, 0x02, 0x0f, 0x06, 0x0f, 0x06,
-    0x0f, 0x06, 0x12, 0x13, 0x12, 0x13, 0x27, 0xe5,
-    0x00, 0x00, 0xe5, 0x1c, 0x60, 0xe6, 0x06, 0x07,
-    0x86, 0x16, 0x26, 0x85, 0xe6, 0x03, 0x00, 0xe6,
-    0x1c, 0x00, 0xef, 0x00, 0x06, 0xaf, 0x00, 0x2f,
-    0x96, 0x6f, 0x36, 0xe0, 0x1d, 0xe5, 0x23, 0x27,
-    0x66, 0x07, 0xa6, 0x07, 0x26, 0x27, 0x26, 0x05,
-    0xe9, 0x02, 0xb6, 0xa5, 0x27, 0x26, 0x65, 0x46,
-    0x05, 0x47, 0x25, 0xc7, 0x45, 0x66, 0xe5, 0x05,
-    0x06, 0x27, 0x26, 0xa7, 0x06, 0x05, 0x07, 0xe9,
-    0x02, 0x47, 0x06, 0x2f, 0xe1, 0x1e, 0x00, 0x01,
-    0x80, 0x01, 0x20, 0xe2, 0x23, 0x16, 0x04, 0x42,
-    0xe5, 0x80, 0xc1, 0x00, 0x65, 0x20, 0xc5, 0x00,
-    0x05, 0x00, 0x65, 0x20, 0xe5, 0x21, 0x00, 0x65,
-    0x20, 0xe5, 0x19, 0x00, 0x65, 0x20, 0xc5, 0x00,
-    0x05, 0x00, 0x65, 0x20, 0xe5, 0x07, 0x00, 0xe5,
-    0x31, 0x00, 0x65, 0x20, 0xe5, 0x3b, 0x20, 0x46,
-    0xf6, 0x01, 0xeb, 0x0c, 0x40, 0xe5, 0x08, 0xef,
-    0x02, 0xa0, 0xe1, 0x4e, 0x20, 0xa2, 0x20, 0x11,
-    0xe5, 0x81, 0xe4, 0x0f, 0x16, 0xe5, 0x09, 0x17,
-    0xe5, 0x12, 0x12, 0x13, 0x40, 0xe5, 0x43, 0x56,
-    0x4a, 0xe5, 0x00, 0xc0, 0xe5, 0x0a, 0x46, 0x07,
-    0xe0, 0x01, 0xe5, 0x0b, 0x26, 0x07, 0x36, 0xe0,
-    0x01, 0xe5, 0x0a, 0x26, 0xe0, 0x04, 0xe5, 0x05,
-    0x00, 0x45, 0x00, 0x26, 0xe0, 0x04, 0xe5, 0x2c,
-    0x26, 0x07, 0xc6, 0xe7, 0x00, 0x06, 0x27, 0xe6,
-    0x03, 0x56, 0x04, 0x56, 0x0d, 0x05, 0x06, 0x20,
-    0xe9, 0x02, 0xa0, 0xeb, 0x02, 0xa0, 0xb6, 0x11,
-    0x76, 0x46, 0x1b, 0x06, 0xe9, 0x02, 0xa0, 0xe5,
-    0x1b, 0x04, 0xe5, 0x2d, 0xc0, 0x85, 0x26, 0xe5,
-    0x1a, 0x06, 0x05, 0x80, 0xe5, 0x3e, 0xe0, 0x02,
-    0xe5, 0x17, 0x00, 0x46, 0x67, 0x26, 0x47, 0x60,
-    0x27, 0x06, 0xa7, 0x46, 0x60, 0x0f, 0x40, 0x36,
-    0xe9, 0x02, 0xe5, 0x16, 0x20, 0x85, 0xe0, 0x03,
-    0xe5, 0x24, 0x60, 0xe5, 0x12, 0xa0, 0xe9, 0x02,
-    0x0b, 0x40, 0xef, 0x1a, 0xe5, 0x0f, 0x26, 0x27,
-    0x06, 0x20, 0x36, 0xe5, 0x2d, 0x07, 0x06, 0x07,
-    0xc6, 0x00, 0x06, 0x07, 0x06, 0x27, 0xe6, 0x00,
-    0xa7, 0xe6, 0x02, 0x20, 0x06, 0xe9, 0x02, 0xa0,
-    0xe9, 0x02, 0xa0, 0xd6, 0x04, 0xb6, 0x20, 0xe6,
-    0x06, 0x08, 0xe6, 0x08, 0xe0, 0x29, 0x66, 0x07,
-    0xe5, 0x27, 0x06, 0x07, 0x86, 0x07, 0x06, 0x87,
-    0x06, 0x27, 0xe5, 0x00, 0x00, 0x36, 0xe9, 0x02,
-    0xd6, 0xef, 0x02, 0xe6, 0x01, 0xef, 0x01, 0x56,
-    0x26, 0x07, 0xe5, 0x16, 0x07, 0x66, 0x27, 0x26,
-    0x07, 0x46, 0x25, 0xe9, 0x02, 0xe5, 0x24, 0x06,
-    0x07, 0x26, 0x47, 0x06, 0x07, 0x46, 0x27, 0xe0,
-    0x00, 0x76, 0xe5, 0x1c, 0xe7, 0x00, 0xe6, 0x00,
-    0x27, 0x26, 0x40, 0x96, 0xe9, 0x02, 0x40, 0x45,
-    0xe9, 0x02, 0xe5, 0x16, 0xa4, 0x36, 0xe2, 0x01,
-    0x3f, 0x80, 0xe1, 0x23, 0x20, 0x41, 0xf6, 0x00,
-    0xe0, 0x00, 0x46, 0x16, 0xe6, 0x05, 0x07, 0xc6,
-    0x65, 0x06, 0xa5, 0x06, 0x25, 0x07, 0x26, 0x05,
-    0x80, 0xe2, 0x24, 0xe4, 0x37, 0xe2, 0x05, 0x04,
-    0xe2, 0x1a, 0xe4, 0x1d, 0xe6, 0x38, 0xff, 0x80,
-    0x0e, 0xe2, 0x00, 0xff, 0x5a, 0xe2, 0x00, 0xe1,
-    0x00, 0xa2, 0x20, 0xa1, 0x20, 0xe2, 0x00, 0xe1,
-    0x00, 0xe2, 0x00, 0xe1, 0x00, 0xa2, 0x20, 0xa1,
-    0x20, 0xe2, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
-    0x01, 0x00, 0x3f, 0xc2, 0xe1, 0x00, 0xe2, 0x06,
-    0x20, 0xe2, 0x00, 0xe3, 0x00, 0xe2, 0x00, 0xe3,
-    0x00, 0xe2, 0x00, 0xe3, 0x00, 0x82, 0x00, 0x22,
-    0x61, 0x03, 0x0e, 0x02, 0x4e, 0x42, 0x00, 0x22,
-    0x61, 0x03, 0x4e, 0x62, 0x20, 0x22, 0x61, 0x00,
-    0x4e, 0xe2, 0x00, 0x81, 0x4e, 0x20, 0x42, 0x00,
-    0x22, 0x61, 0x03, 0x2e, 0x00, 0xf7, 0x03, 0x9b,
-    0xb1, 0x36, 0x14, 0x15, 0x12, 0x34, 0x15, 0x12,
-    0x14, 0xf6, 0x00, 0x18, 0x19, 0x9b, 0x17, 0xf6,
-    0x01, 0x14, 0x15, 0x76, 0x30, 0x56, 0x0c, 0x12,
-    0x13, 0xf6, 0x03, 0x0c, 0x16, 0x10, 0xf6, 0x02,
-    0x17, 0x9b, 0x00, 0xfb, 0x02, 0x0b, 0x04, 0x20,
-    0xab, 0x4c, 0x12, 0x13, 0x04, 0xeb, 0x02, 0x4c,
-    0x12, 0x13, 0x00, 0xe4, 0x05, 0x40, 0xed, 0x19,
-    0xe0, 0x07, 0xe6, 0x05, 0x68, 0x06, 0x48, 0xe6,
-    0x04, 0xe0, 0x07, 0x2f, 0x01, 0x6f, 0x01, 0x2f,
-    0x02, 0x41, 0x22, 0x41, 0x02, 0x0f, 0x01, 0x2f,
-    0x0c, 0x81, 0xaf, 0x01, 0x0f, 0x01, 0x0f, 0x01,
-    0x0f, 0x61, 0x0f, 0x02, 0x61, 0x02, 0x65, 0x02,
-    0x2f, 0x22, 0x21, 0x8c, 0x3f, 0x42, 0x0f, 0x0c,
-    0x2f, 0x02, 0x0f, 0xeb, 0x08, 0xea, 0x1b, 0x3f,
-    0x6a, 0x0b, 0x2f, 0x60, 0x8c, 0x8f, 0x2c, 0x6f,
-    0x0c, 0x2f, 0x0c, 0x2f, 0x0c, 0xcf, 0x0c, 0xef,
-    0x17, 0x2c, 0x2f, 0x0c, 0x0f, 0x0c, 0xef, 0x17,
-    0xec, 0x80, 0x84, 0xef, 0x00, 0x12, 0x13, 0x12,
-    0x13, 0xef, 0x0c, 0x2c, 0xcf, 0x12, 0x13, 0xef,
-    0x49, 0x0c, 0xef, 0x16, 0xec, 0x11, 0xef, 0x20,
-    0xac, 0xef, 0x40, 0xe0, 0x0e, 0xef, 0x03, 0xe0,
-    0x0d, 0xeb, 0x34, 0xef, 0x46, 0xeb, 0x0e, 0xef,
-    0x80, 0x2f, 0x0c, 0xef, 0x01, 0x0c, 0xef, 0x2e,
-    0xec, 0x00, 0xef, 0x67, 0x0c, 0xef, 0x80, 0x70,
+    0xe5, 0x10, 0x0e, 0xc5, 0x3b, 0x80, 0xe6, 0x01,
+    0xe5, 0x21, 0x04, 0xe6, 0x10, 0x1b, 0xe6, 0x18,
+    0x07, 0xe5, 0x2e, 0x06, 0x07, 0x06, 0x05, 0x47,
+    0xe6, 0x00, 0x67, 0x06, 0x27, 0x05, 0xc6, 0xe5,
+    0x02, 0x26, 0x36, 0xe9, 0x02, 0x16, 0x04, 0xe5,
+    0x07, 0x06, 0x27, 0x00, 0xe5, 0x00, 0x20, 0x25,
+    0x20, 0xe5, 0x0e, 0x00, 0xc5, 0x00, 0x05, 0x40,
+    0x65, 0x20, 0x06, 0x05, 0x47, 0x66, 0x20, 0x27,
+    0x20, 0x27, 0x06, 0x05, 0xe0, 0x00, 0x07, 0x60,
+    0x25, 0x00, 0x45, 0x26, 0x20, 0xe9, 0x02, 0x25,
+    0x2d, 0xab, 0x0f, 0x0d, 0x05, 0x16, 0x06, 0x20,
+    0x26, 0x07, 0x00, 0xa5, 0x60, 0x25, 0x20, 0xe5,
+    0x0e, 0x00, 0xc5, 0x00, 0x25, 0x00, 0x25, 0x00,
+    0x25, 0x20, 0x06, 0x00, 0x47, 0x26, 0x60, 0x26,
+    0x20, 0x46, 0x40, 0x06, 0xc0, 0x65, 0x00, 0x05,
+    0xc0, 0xe9, 0x02, 0x26, 0x45, 0x06, 0x16, 0xe0,
+    0x02, 0x26, 0x07, 0x00, 0xe5, 0x01, 0x00, 0x45,
+    0x00, 0xe5, 0x0e, 0x00, 0xc5, 0x00, 0x25, 0x00,
+    0x85, 0x20, 0x06, 0x05, 0x47, 0x86, 0x00, 0x26,
+    0x07, 0x00, 0x27, 0x06, 0x20, 0x05, 0xe0, 0x07,
+    0x25, 0x26, 0x20, 0xe9, 0x02, 0x16, 0x0d, 0xc0,
+    0x05, 0xa6, 0x00, 0x06, 0x27, 0x00, 0xe5, 0x00,
+    0x20, 0x25, 0x20, 0xe5, 0x0e, 0x00, 0xc5, 0x00,
+    0x25, 0x00, 0x85, 0x20, 0x06, 0x05, 0x07, 0x06,
+    0x07, 0x66, 0x20, 0x27, 0x20, 0x27, 0x06, 0xc0,
+    0x26, 0x07, 0x60, 0x25, 0x00, 0x45, 0x26, 0x20,
+    0xe9, 0x02, 0x0f, 0x05, 0xab, 0xe0, 0x02, 0x06,
+    0x05, 0x00, 0xa5, 0x40, 0x45, 0x00, 0x65, 0x40,
+    0x25, 0x00, 0x05, 0x00, 0x25, 0x40, 0x25, 0x40,
+    0x45, 0x40, 0xe5, 0x04, 0x60, 0x27, 0x06, 0x27,
+    0x40, 0x47, 0x00, 0x47, 0x06, 0x20, 0x05, 0xa0,
+    0x07, 0xe0, 0x06, 0xe9, 0x02, 0x4b, 0xaf, 0x0d,
+    0x0f, 0x80, 0x06, 0x47, 0x06, 0xe5, 0x00, 0x00,
+    0x45, 0x00, 0xe5, 0x0f, 0x00, 0xe5, 0x08, 0x20,
+    0x06, 0x05, 0x46, 0x67, 0x00, 0x46, 0x00, 0x66,
+    0xc0, 0x26, 0x00, 0x45, 0x00, 0x25, 0x20, 0x25,
+    0x26, 0x20, 0xe9, 0x02, 0xc0, 0x16, 0xcb, 0x0f,
+    0x05, 0x06, 0x27, 0x16, 0xe5, 0x00, 0x00, 0x45,
+    0x00, 0xe5, 0x0f, 0x00, 0xe5, 0x02, 0x00, 0x85,
+    0x20, 0x06, 0x05, 0x07, 0x06, 0x87, 0x00, 0x06,
+    0x27, 0x00, 0x27, 0x26, 0xc0, 0x27, 0x80, 0x45,
+    0x00, 0x25, 0x26, 0x20, 0xe9, 0x02, 0x00, 0x25,
+    0x07, 0xe0, 0x04, 0x26, 0x27, 0xe5, 0x01, 0x00,
+    0x45, 0x00, 0xe5, 0x21, 0x26, 0x05, 0x47, 0x66,
+    0x00, 0x47, 0x00, 0x47, 0x06, 0x05, 0x0f, 0x60,
+    0x45, 0x07, 0xcb, 0x45, 0x26, 0x20, 0xe9, 0x02,
+    0xeb, 0x01, 0x0f, 0xa5, 0x00, 0x06, 0x27, 0x00,
+    0xe5, 0x0a, 0x40, 0xe5, 0x10, 0x00, 0xe5, 0x01,
+    0x00, 0x05, 0x20, 0xc5, 0x40, 0x06, 0x60, 0x47,
+    0x46, 0x00, 0x06, 0x00, 0xe7, 0x00, 0xa0, 0xe9,
+    0x02, 0x20, 0x27, 0x16, 0xe0, 0x04, 0xe5, 0x28,
+    0x06, 0x25, 0xc6, 0x60, 0x0d, 0xa5, 0x04, 0xe6,
+    0x00, 0x16, 0xe9, 0x02, 0x36, 0xe0, 0x1d, 0x25,
+    0x00, 0x05, 0x00, 0x85, 0x00, 0xe5, 0x10, 0x00,
+    0x05, 0x00, 0xe5, 0x02, 0x06, 0x25, 0xe6, 0x01,
+    0x05, 0x20, 0x85, 0x00, 0x04, 0x00, 0xc6, 0x00,
+    0xe9, 0x02, 0x20, 0x65, 0xe0, 0x18, 0x05, 0x4f,
+    0xf6, 0x07, 0x0f, 0x16, 0x4f, 0x26, 0xaf, 0xe9,
+    0x02, 0xeb, 0x02, 0x0f, 0x06, 0x0f, 0x06, 0x0f,
+    0x06, 0x12, 0x13, 0x12, 0x13, 0x27, 0xe5, 0x00,
+    0x00, 0xe5, 0x1c, 0x60, 0xe6, 0x06, 0x07, 0x86,
+    0x16, 0x26, 0x85, 0xe6, 0x03, 0x00, 0xe6, 0x1c,
+    0x00, 0xef, 0x00, 0x06, 0xaf, 0x00, 0x2f, 0x96,
+    0x6f, 0x36, 0xe0, 0x1d, 0xe5, 0x23, 0x27, 0x66,
+    0x07, 0xa6, 0x07, 0x26, 0x27, 0x26, 0x05, 0xe9,
+    0x02, 0xb6, 0xa5, 0x27, 0x26, 0x65, 0x46, 0x05,
+    0x47, 0x25, 0xc7, 0x45, 0x66, 0xe5, 0x05, 0x06,
+    0x27, 0x26, 0xa7, 0x06, 0x05, 0x07, 0xe9, 0x02,
+    0x47, 0x06, 0x2f, 0xe1, 0x1e, 0x00, 0x01, 0x80,
+    0x01, 0x20, 0xe2, 0x23, 0x16, 0x04, 0x42, 0xe5,
+    0x80, 0xc1, 0x00, 0x65, 0x20, 0xc5, 0x00, 0x05,
+    0x00, 0x65, 0x20, 0xe5, 0x21, 0x00, 0x65, 0x20,
+    0xe5, 0x19, 0x00, 0x65, 0x20, 0xc5, 0x00, 0x05,
+    0x00, 0x65, 0x20, 0xe5, 0x07, 0x00, 0xe5, 0x31,
+    0x00, 0x65, 0x20, 0xe5, 0x3b, 0x20, 0x46, 0xf6,
+    0x01, 0xeb, 0x0c, 0x40, 0xe5, 0x08, 0xef, 0x02,
+    0xa0, 0xe1, 0x4e, 0x20, 0xa2, 0x20, 0x11, 0xe5,
+    0x81, 0xe4, 0x0f, 0x16, 0xe5, 0x09, 0x17, 0xe5,
+    0x12, 0x12, 0x13, 0x40, 0xe5, 0x43, 0x56, 0x4a,
+    0xe5, 0x00, 0xc0, 0xe5, 0x0a, 0x46, 0x07, 0xe0,
+    0x01, 0xe5, 0x0b, 0x26, 0x07, 0x36, 0xe0, 0x01,
+    0xe5, 0x0a, 0x26, 0xe0, 0x04, 0xe5, 0x05, 0x00,
+    0x45, 0x00, 0x26, 0xe0, 0x04, 0xe5, 0x2c, 0x26,
+    0x07, 0xc6, 0xe7, 0x00, 0x06, 0x27, 0xe6, 0x03,
+    0x56, 0x04, 0x56, 0x0d, 0x05, 0x06, 0x20, 0xe9,
+    0x02, 0xa0, 0xeb, 0x02, 0xa0, 0xb6, 0x11, 0x76,
+    0x46, 0x1b, 0x06, 0xe9, 0x02, 0xa0, 0xe5, 0x1b,
+    0x04, 0xe5, 0x2d, 0xc0, 0x85, 0x26, 0xe5, 0x1a,
+    0x06, 0x05, 0x80, 0xe5, 0x3e, 0xe0, 0x02, 0xe5,
+    0x17, 0x00, 0x46, 0x67, 0x26, 0x47, 0x60, 0x27,
+    0x06, 0xa7, 0x46, 0x60, 0x0f, 0x40, 0x36, 0xe9,
+    0x02, 0xe5, 0x16, 0x20, 0x85, 0xe0, 0x03, 0xe5,
+    0x24, 0x60, 0xe5, 0x12, 0xa0, 0xe9, 0x02, 0x0b,
+    0x40, 0xef, 0x1a, 0xe5, 0x0f, 0x26, 0x27, 0x06,
+    0x20, 0x36, 0xe5, 0x2d, 0x07, 0x06, 0x07, 0xc6,
+    0x00, 0x06, 0x07, 0x06, 0x27, 0xe6, 0x00, 0xa7,
+    0xe6, 0x02, 0x20, 0x06, 0xe9, 0x02, 0xa0, 0xe9,
+    0x02, 0xa0, 0xd6, 0x04, 0xb6, 0x20, 0xe6, 0x06,
+    0x08, 0xe6, 0x17, 0x20, 0xe6, 0x04, 0xe0, 0x0c,
+    0x66, 0x07, 0xe5, 0x27, 0x06, 0x07, 0x86, 0x07,
+    0x06, 0x87, 0x06, 0x27, 0xe5, 0x00, 0x00, 0x36,
+    0xe9, 0x02, 0xd6, 0xef, 0x02, 0xe6, 0x01, 0xef,
+    0x01, 0x56, 0x26, 0x07, 0xe5, 0x16, 0x07, 0x66,
+    0x27, 0x26, 0x07, 0x46, 0x25, 0xe9, 0x02, 0xe5,
+    0x24, 0x06, 0x07, 0x26, 0x47, 0x06, 0x07, 0x46,
+    0x27, 0xe0, 0x00, 0x76, 0xe5, 0x1c, 0xe7, 0x00,
+    0xe6, 0x00, 0x27, 0x26, 0x40, 0x96, 0xe9, 0x02,
+    0x40, 0x45, 0xe9, 0x02, 0xe5, 0x16, 0xa4, 0x36,
+    0xe2, 0x01, 0x3f, 0x80, 0xe1, 0x23, 0x20, 0x41,
+    0xf6, 0x00, 0xe0, 0x00, 0x46, 0x16, 0xe6, 0x05,
+    0x07, 0xc6, 0x65, 0x06, 0xa5, 0x06, 0x25, 0x07,
+    0x26, 0x05, 0x80, 0xe2, 0x24, 0xe4, 0x37, 0xe2,
+    0x05, 0x04, 0xe2, 0x1a, 0xe4, 0x1d, 0xe6, 0x38,
+    0xff, 0x80, 0x0e, 0xe2, 0x00, 0xff, 0x5a, 0xe2,
+    0x00, 0xe1, 0x00, 0xa2, 0x20, 0xa1, 0x20, 0xe2,
+    0x00, 0xe1, 0x00, 0xe2, 0x00, 0xe1, 0x00, 0xa2,
+    0x20, 0xa1, 0x20, 0xe2, 0x00, 0x00, 0x01, 0x00,
+    0x01, 0x00, 0x01, 0x00, 0x3f, 0xc2, 0xe1, 0x00,
+    0xe2, 0x06, 0x20, 0xe2, 0x00, 0xe3, 0x00, 0xe2,
+    0x00, 0xe3, 0x00, 0xe2, 0x00, 0xe3, 0x00, 0x82,
+    0x00, 0x22, 0x61, 0x03, 0x0e, 0x02, 0x4e, 0x42,
+    0x00, 0x22, 0x61, 0x03, 0x4e, 0x62, 0x20, 0x22,
+    0x61, 0x00, 0x4e, 0xe2, 0x00, 0x81, 0x4e, 0x20,
+    0x42, 0x00, 0x22, 0x61, 0x03, 0x2e, 0x00, 0xf7,
+    0x03, 0x9b, 0xb1, 0x36, 0x14, 0x15, 0x12, 0x34,
+    0x15, 0x12, 0x14, 0xf6, 0x00, 0x18, 0x19, 0x9b,
+    0x17, 0xf6, 0x01, 0x14, 0x15, 0x76, 0x30, 0x56,
+    0x0c, 0x12, 0x13, 0xf6, 0x03, 0x0c, 0x16, 0x10,
+    0xf6, 0x02, 0x17, 0x9b, 0x00, 0xfb, 0x02, 0x0b,
+    0x04, 0x20, 0xab, 0x4c, 0x12, 0x13, 0x04, 0xeb,
+    0x02, 0x4c, 0x12, 0x13, 0x00, 0xe4, 0x05, 0x40,
+    0xed, 0x1a, 0xe0, 0x06, 0xe6, 0x05, 0x68, 0x06,
+    0x48, 0xe6, 0x04, 0xe0, 0x07, 0x2f, 0x01, 0x6f,
+    0x01, 0x2f, 0x02, 0x41, 0x22, 0x41, 0x02, 0x0f,
+    0x01, 0x2f, 0x0c, 0x81, 0xaf, 0x01, 0x0f, 0x01,
+    0x0f, 0x01, 0x0f, 0x61, 0x0f, 0x02, 0x61, 0x02,
+    0x65, 0x02, 0x2f, 0x22, 0x21, 0x8c, 0x3f, 0x42,
+    0x0f, 0x0c, 0x2f, 0x02, 0x0f, 0xeb, 0x08, 0xea,
+    0x1b, 0x3f, 0x6a, 0x0b, 0x2f, 0x60, 0x8c, 0x8f,
+    0x2c, 0x6f, 0x0c, 0x2f, 0x0c, 0x2f, 0x0c, 0xcf,
+    0x0c, 0xef, 0x17, 0x2c, 0x2f, 0x0c, 0x0f, 0x0c,
+    0xef, 0x17, 0xec, 0x80, 0x84, 0xef, 0x00, 0x12,
+    0x13, 0x12, 0x13, 0xef, 0x0c, 0x2c, 0xcf, 0x12,
+    0x13, 0xef, 0x49, 0x0c, 0xef, 0x16, 0xec, 0x11,
+    0xef, 0x20, 0xac, 0xef, 0x40, 0xe0, 0x0e, 0xef,
+    0x03, 0xe0, 0x0d, 0xeb, 0x34, 0xef, 0x46, 0xeb,
+    0x0e, 0xef, 0x80, 0x2f, 0x0c, 0xef, 0x01, 0x0c,
+    0xef, 0x2e, 0xec, 0x00, 0xef, 0x67, 0x0c, 0xef,
+    0x80, 0x70, 0x12, 0x13, 0x12, 0x13, 0x12, 0x13,
     0x12, 0x13, 0x12, 0x13, 0x12, 0x13, 0x12, 0x13,
-    0x12, 0x13, 0x12, 0x13, 0x12, 0x13, 0xeb, 0x16,
-    0xef, 0x24, 0x8c, 0x12, 0x13, 0xec, 0x17, 0x12,
-    0x13, 0x12, 0x13, 0x12, 0x13, 0x12, 0x13, 0x12,
-    0x13, 0xec, 0x08, 0xef, 0x80, 0x78, 0xec, 0x7b,
+    0xeb, 0x16, 0xef, 0x24, 0x8c, 0x12, 0x13, 0xec,
+    0x17, 0x12, 0x13, 0x12, 0x13, 0x12, 0x13, 0x12,
+    0x13, 0x12, 0x13, 0xec, 0x08, 0xef, 0x80, 0x78,
+    0xec, 0x7b, 0x12, 0x13, 0x12, 0x13, 0x12, 0x13,
     0x12, 0x13, 0x12, 0x13, 0x12, 0x13, 0x12, 0x13,
     0x12, 0x13, 0x12, 0x13, 0x12, 0x13, 0x12, 0x13,
-    0x12, 0x13, 0x12, 0x13, 0x12, 0x13, 0xec, 0x37,
-    0x12, 0x13, 0x12, 0x13, 0xec, 0x18, 0x12, 0x13,
-    0xec, 0x80, 0x7a, 0xef, 0x28, 0xec, 0x0d, 0x2f,
-    0xac, 0xef, 0x1f, 0x20, 0xef, 0x18, 0x00, 0xef,
-    0x61, 0xe1, 0x28, 0xe2, 0x28, 0x5f, 0x21, 0x22,
+    0xec, 0x37, 0x12, 0x13, 0x12, 0x13, 0xec, 0x18,
+    0x12, 0x13, 0xec, 0x80, 0x7a, 0xef, 0x28, 0xec,
+    0x0d, 0x2f, 0xac, 0xef, 0x1f, 0x20, 0xef, 0x80,
+    0x02, 0xe1, 0x28, 0xe2, 0x28, 0x5f, 0x21, 0x22,
     0xdf, 0x41, 0x02, 0x3f, 0x02, 0x3f, 0x82, 0x24,
     0x41, 0x02, 0xff, 0x5a, 0x02, 0xaf, 0x7f, 0x46,
     0x3f, 0x80, 0x76, 0x0b, 0x36, 0xe2, 0x1e, 0x00,
@@ -3733,273 +5103,280 @@ static const uint8_t unicode_gc_table[4070] = {
     0xff, 0x36, 0x04, 0xe2, 0x00, 0x9f, 0xff, 0x02,
     0x04, 0x2e, 0x7f, 0x05, 0x7f, 0x22, 0xff, 0x0d,
     0x61, 0x02, 0x81, 0x02, 0xff, 0x07, 0x41, 0x02,
-    0x5f, 0x3f, 0x20, 0x3f, 0x00, 0x02, 0x00, 0x02,
-    0xdf, 0xe0, 0x0d, 0x44, 0x3f, 0x05, 0x24, 0x02,
-    0xc5, 0x06, 0x45, 0x06, 0x65, 0x06, 0xe5, 0x0f,
-    0x27, 0x26, 0x07, 0x6f, 0x06, 0x40, 0xab, 0x2f,
-    0x0d, 0x0f, 0xa0, 0xe5, 0x2c, 0x76, 0xe0, 0x00,
-    0x27, 0xe5, 0x2a, 0xe7, 0x08, 0x26, 0xe0, 0x00,
-    0x36, 0xe9, 0x02, 0xa0, 0xe6, 0x0a, 0xa5, 0x56,
-    0x05, 0x16, 0x25, 0x06, 0xe9, 0x02, 0xe5, 0x14,
-    0xe6, 0x00, 0x36, 0xe5, 0x0f, 0xe6, 0x03, 0x27,
-    0xe0, 0x03, 0x16, 0xe5, 0x15, 0x40, 0x46, 0x07,
-    0xe5, 0x27, 0x06, 0x27, 0x66, 0x27, 0x26, 0x47,
-    0xf6, 0x05, 0x00, 0x04, 0xe9, 0x02, 0x60, 0x36,
-    0x85, 0x06, 0x04, 0xe5, 0x01, 0xe9, 0x02, 0x85,
-    0x00, 0xe5, 0x21, 0xa6, 0x27, 0x26, 0x27, 0x26,
-    0xe0, 0x01, 0x45, 0x06, 0xe5, 0x00, 0x06, 0x07,
-    0x20, 0xe9, 0x02, 0x20, 0x76, 0xe5, 0x08, 0x04,
-    0xa5, 0x4f, 0x05, 0x07, 0x06, 0x07, 0xe5, 0x2a,
-    0x06, 0x05, 0x46, 0x25, 0x26, 0x85, 0x26, 0x05,
-    0x06, 0x05, 0xe0, 0x10, 0x25, 0x04, 0x36, 0xe5,
-    0x03, 0x07, 0x26, 0x27, 0x36, 0x05, 0x24, 0x07,
-    0x06, 0xe0, 0x02, 0xa5, 0x20, 0xa5, 0x20, 0xa5,
-    0xe0, 0x01, 0xc5, 0x00, 0xc5, 0x00, 0xe2, 0x23,
-    0x0e, 0x64, 0xe2, 0x01, 0x04, 0x2e, 0x60, 0xe2,
-    0x48, 0xe5, 0x1b, 0x27, 0x06, 0x27, 0x06, 0x27,
-    0x16, 0x07, 0x06, 0x20, 0xe9, 0x02, 0xa0, 0xe5,
-    0xab, 0x1c, 0xe0, 0x04, 0xe5, 0x0f, 0x60, 0xe5,
-    0x29, 0x60, 0xfc, 0x87, 0x78, 0xfd, 0x98, 0x78,
-    0xe5, 0x80, 0xe6, 0x20, 0xe5, 0x62, 0xe0, 0x1e,
-    0xc2, 0xe0, 0x04, 0x82, 0x80, 0x05, 0x06, 0xe5,
-    0x02, 0x0c, 0xe5, 0x05, 0x00, 0x85, 0x00, 0x05,
-    0x00, 0x25, 0x00, 0x25, 0x00, 0xe5, 0x64, 0xee,
-    0x09, 0xe0, 0x08, 0xe5, 0x80, 0xe3, 0x13, 0x12,
-    0xef, 0x08, 0xe5, 0x38, 0x20, 0xe5, 0x2e, 0xc0,
-    0x0f, 0xe0, 0x18, 0xe5, 0x04, 0x0d, 0x4f, 0xe6,
-    0x08, 0xd6, 0x12, 0x13, 0x16, 0xa0, 0xe6, 0x08,
-    0x16, 0x31, 0x30, 0x12, 0x13, 0x12, 0x13, 0x12,
+    0x5f, 0xff, 0x09, 0xe0, 0x0c, 0x64, 0x3f, 0x05,
+    0x24, 0x02, 0xc5, 0x06, 0x45, 0x06, 0x65, 0x06,
+    0xe5, 0x0f, 0x27, 0x26, 0x07, 0x6f, 0x06, 0x40,
+    0xab, 0x2f, 0x0d, 0x0f, 0xa0, 0xe5, 0x2c, 0x76,
+    0xe0, 0x00, 0x27, 0xe5, 0x2a, 0xe7, 0x08, 0x26,
+    0xe0, 0x00, 0x36, 0xe9, 0x02, 0xa0, 0xe6, 0x0a,
+    0xa5, 0x56, 0x05, 0x16, 0x25, 0x06, 0xe9, 0x02,
+    0xe5, 0x14, 0xe6, 0x00, 0x36, 0xe5, 0x0f, 0xe6,
+    0x03, 0x27, 0xe0, 0x03, 0x16, 0xe5, 0x15, 0x40,
+    0x46, 0x07, 0xe5, 0x27, 0x06, 0x27, 0x66, 0x27,
+    0x26, 0x47, 0xf6, 0x05, 0x00, 0x04, 0xe9, 0x02,
+    0x60, 0x36, 0x85, 0x06, 0x04, 0xe5, 0x01, 0xe9,
+    0x02, 0x85, 0x00, 0xe5, 0x21, 0xa6, 0x27, 0x26,
+    0x27, 0x26, 0xe0, 0x01, 0x45, 0x06, 0xe5, 0x00,
+    0x06, 0x07, 0x20, 0xe9, 0x02, 0x20, 0x76, 0xe5,
+    0x08, 0x04, 0xa5, 0x4f, 0x05, 0x07, 0x06, 0x07,
+    0xe5, 0x2a, 0x06, 0x05, 0x46, 0x25, 0x26, 0x85,
+    0x26, 0x05, 0x06, 0x05, 0xe0, 0x10, 0x25, 0x04,
+    0x36, 0xe5, 0x03, 0x07, 0x26, 0x27, 0x36, 0x05,
+    0x24, 0x07, 0x06, 0xe0, 0x02, 0xa5, 0x20, 0xa5,
+    0x20, 0xa5, 0xe0, 0x01, 0xc5, 0x00, 0xc5, 0x00,
+    0xe2, 0x23, 0x0e, 0x64, 0xe2, 0x01, 0x04, 0x2e,
+    0x60, 0xe2, 0x48, 0xe5, 0x1b, 0x27, 0x06, 0x27,
+    0x06, 0x27, 0x16, 0x07, 0x06, 0x20, 0xe9, 0x02,
+    0xa0, 0xe5, 0xab, 0x1c, 0xe0, 0x04, 0xe5, 0x0f,
+    0x60, 0xe5, 0x29, 0x60, 0xfc, 0x87, 0x78, 0xfd,
+    0x98, 0x78, 0xe5, 0x80, 0xe6, 0x20, 0xe5, 0x62,
+    0xe0, 0x1e, 0xc2, 0xe0, 0x04, 0x82, 0x80, 0x05,
+    0x06, 0xe5, 0x02, 0x0c, 0xe5, 0x05, 0x00, 0x85,
+    0x00, 0x05, 0x00, 0x25, 0x00, 0x25, 0x00, 0xe5,
+    0x64, 0xee, 0x09, 0xef, 0x08, 0xe5, 0x80, 0xe3,
+    0x13, 0x12, 0xef, 0x08, 0xe5, 0x38, 0x2f, 0xe5,
+    0x2e, 0xef, 0x00, 0xe0, 0x18, 0xe5, 0x04, 0x0d,
+    0x4f, 0xe6, 0x08, 0xd6, 0x12, 0x13, 0x16, 0xa0,
+    0xe6, 0x08, 0x16, 0x31, 0x30, 0x12, 0x13, 0x12,
     0x13, 0x12, 0x13, 0x12, 0x13, 0x12, 0x13, 0x12,
-    0x13, 0x12, 0x13, 0x36, 0x12, 0x13, 0x76, 0x50,
-    0x56, 0x00, 0x76, 0x11, 0x12, 0x13, 0x12, 0x13,
-    0x12, 0x13, 0x56, 0x0c, 0x11, 0x4c, 0x00, 0x16,
-    0x0d, 0x36, 0x60, 0x85, 0x00, 0xe5, 0x7f, 0x20,
-    0x1b, 0x00, 0x56, 0x0d, 0x56, 0x12, 0x13, 0x16,
-    0x0c, 0x16, 0x11, 0x36, 0xe9, 0x02, 0x36, 0x4c,
-    0x36, 0xe1, 0x12, 0x12, 0x16, 0x13, 0x0e, 0x10,
-    0x0e, 0xe2, 0x12, 0x12, 0x0c, 0x13, 0x0c, 0x12,
-    0x13, 0x16, 0x12, 0x13, 0x36, 0xe5, 0x02, 0x04,
-    0xe5, 0x25, 0x24, 0xe5, 0x17, 0x40, 0xa5, 0x20,
-    0xa5, 0x20, 0xa5, 0x20, 0x45, 0x40, 0x2d, 0x0c,
-    0x0e, 0x0f, 0x2d, 0x00, 0x0f, 0x6c, 0x2f, 0xe0,
-    0x02, 0x5b, 0x2f, 0x20, 0xe5, 0x04, 0x00, 0xe5,
-    0x12, 0x00, 0xe5, 0x0b, 0x00, 0x25, 0x00, 0xe5,
-    0x07, 0x20, 0xe5, 0x06, 0xe0, 0x1a, 0xe5, 0x73,
-    0x80, 0x56, 0x60, 0xeb, 0x25, 0x40, 0xef, 0x01,
-    0xea, 0x2d, 0x6b, 0xef, 0x09, 0x2b, 0x4f, 0x00,
-    0xef, 0x05, 0x40, 0x0f, 0xe0, 0x27, 0xef, 0x25,
-    0x06, 0xe0, 0x7a, 0xe5, 0x15, 0x40, 0xe5, 0x29,
-    0xe0, 0x07, 0x06, 0xeb, 0x13, 0x60, 0xe5, 0x18,
-    0x6b, 0xe0, 0x01, 0xe5, 0x0c, 0x0a, 0xe5, 0x00,
-    0x0a, 0x80, 0xe5, 0x1e, 0x86, 0x80, 0xe5, 0x16,
-    0x00, 0x16, 0xe5, 0x1c, 0x60, 0xe5, 0x00, 0x16,
-    0x8a, 0xe0, 0x22, 0xe1, 0x20, 0xe2, 0x20, 0xe5,
-    0x46, 0x20, 0xe9, 0x02, 0xa0, 0xe1, 0x1c, 0x60,
-    0xe2, 0x1c, 0x60, 0xe5, 0x20, 0xe0, 0x00, 0xe5,
-    0x2c, 0xe0, 0x03, 0x16, 0xe1, 0x03, 0x00, 0xe1,
-    0x07, 0x00, 0xc1, 0x00, 0x21, 0x00, 0xe2, 0x03,
-    0x00, 0xe2, 0x07, 0x00, 0xc2, 0x00, 0x22, 0x40,
-    0xe5, 0x2c, 0xe0, 0x04, 0xe5, 0x80, 0xaf, 0xe0,
-    0x01, 0xe5, 0x0e, 0xe0, 0x02, 0xe5, 0x00, 0xe0,
-    0x10, 0xa4, 0x00, 0xe4, 0x22, 0x00, 0xe4, 0x01,
-    0xe0, 0x3d, 0xa5, 0x20, 0x05, 0x00, 0xe5, 0x24,
-    0x00, 0x25, 0x40, 0x05, 0x20, 0xe5, 0x0f, 0x00,
-    0x16, 0xeb, 0x00, 0xe5, 0x0f, 0x2f, 0xcb, 0xe5,
-    0x17, 0xe0, 0x00, 0xeb, 0x01, 0xe0, 0x28, 0xe5,
-    0x0b, 0x00, 0x25, 0x80, 0x8b, 0xe5, 0x0e, 0xab,
-    0x40, 0x16, 0xe5, 0x12, 0x80, 0x16, 0xe0, 0x38,
-    0xe5, 0x30, 0x60, 0x2b, 0x25, 0xeb, 0x08, 0x20,
-    0xeb, 0x26, 0x05, 0x46, 0x00, 0x26, 0x80, 0x66,
-    0x65, 0x00, 0x45, 0x00, 0xe5, 0x15, 0x20, 0x46,
-    0x60, 0x06, 0xeb, 0x01, 0xc0, 0xf6, 0x01, 0xc0,
-    0xe5, 0x15, 0x2b, 0x16, 0xe5, 0x15, 0x4b, 0xe0,
-    0x18, 0xe5, 0x00, 0x0f, 0xe5, 0x14, 0x26, 0x60,
-    0x8b, 0xd6, 0xe0, 0x01, 0xe5, 0x2e, 0x40, 0xd6,
-    0xe5, 0x0e, 0x20, 0xeb, 0x00, 0xe5, 0x0b, 0x80,
-    0xeb, 0x00, 0xe5, 0x0a, 0xc0, 0x76, 0xe0, 0x04,
-    0xcb, 0xe0, 0x48, 0xe5, 0x41, 0xe0, 0x2f, 0xe1,
-    0x2b, 0xe0, 0x05, 0xe2, 0x2b, 0xc0, 0xab, 0xe5,
-    0x1c, 0x66, 0xe0, 0x00, 0xe9, 0x02, 0xa0, 0xe9,
-    0x02, 0x65, 0x04, 0x05, 0xe1, 0x0e, 0x40, 0x86,
-    0x11, 0x04, 0xe2, 0x0e, 0xe0, 0x00, 0x2c, 0xe0,
-    0x80, 0x48, 0xeb, 0x17, 0x00, 0xe5, 0x22, 0x00,
-    0x26, 0x11, 0x20, 0x25, 0xe0, 0x08, 0x45, 0xe0,
-    0x2f, 0x66, 0xe5, 0x15, 0xeb, 0x02, 0x05, 0xe0,
-    0x00, 0xe5, 0x0e, 0xe6, 0x03, 0x6b, 0x96, 0xe0,
-    0x0e, 0xe5, 0x0a, 0x66, 0x76, 0xe0, 0x1e, 0xe5,
-    0x0d, 0xcb, 0xe0, 0x0c, 0xe5, 0x0f, 0xe0, 0x01,
-    0x07, 0x06, 0x07, 0xe5, 0x2d, 0xe6, 0x07, 0xd6,
-    0x60, 0xeb, 0x0c, 0xe9, 0x02, 0x06, 0x25, 0x26,
-    0x05, 0xe0, 0x01, 0x46, 0x07, 0xe5, 0x25, 0x47,
-    0x66, 0x27, 0x26, 0x36, 0x1b, 0x76, 0x06, 0xe0,
-    0x02, 0x1b, 0x20, 0xe5, 0x11, 0xc0, 0xe9, 0x02,
-    0xa0, 0x46, 0xe5, 0x1c, 0x86, 0x07, 0xe6, 0x00,
-    0x00, 0xe9, 0x02, 0x76, 0x05, 0x27, 0x05, 0xe0,
-    0x00, 0xe5, 0x1b, 0x06, 0x36, 0x05, 0xe0, 0x01,
-    0x26, 0x07, 0xe5, 0x28, 0x47, 0xe6, 0x01, 0x27,
-    0x65, 0x76, 0x66, 0x16, 0x07, 0x06, 0xe9, 0x02,
-    0x05, 0x16, 0x05, 0x56, 0x00, 0xeb, 0x0c, 0xe0,
-    0x03, 0xe5, 0x0a, 0x00, 0xe5, 0x11, 0x47, 0x46,
-    0x27, 0x06, 0x07, 0x26, 0xb6, 0x06, 0x25, 0x06,
-    0xe0, 0x36, 0xc5, 0x00, 0x05, 0x00, 0x65, 0x00,
-    0xe5, 0x07, 0x00, 0xe5, 0x02, 0x16, 0xa0, 0xe5,
-    0x27, 0x06, 0x47, 0xe6, 0x00, 0x80, 0xe9, 0x02,
-    0xa0, 0x26, 0x27, 0x00, 0xe5, 0x00, 0x20, 0x25,
-    0x20, 0xe5, 0x0e, 0x00, 0xc5, 0x00, 0x25, 0x00,
-    0x85, 0x00, 0x26, 0x05, 0x27, 0x06, 0x67, 0x20,
-    0x27, 0x20, 0x47, 0x20, 0x05, 0xa0, 0x07, 0x80,
-    0x85, 0x27, 0x20, 0xc6, 0x40, 0x86, 0xe0, 0x03,
-    0xe5, 0x02, 0x00, 0x05, 0x20, 0x05, 0x00, 0xe5,
-    0x1e, 0x00, 0x05, 0x47, 0xa6, 0x00, 0x07, 0x20,
-    0x07, 0x00, 0x67, 0x00, 0x27, 0x06, 0x07, 0x06,
-    0x05, 0x06, 0x05, 0x36, 0x00, 0x36, 0xe0, 0x00,
-    0x26, 0xe0, 0x15, 0xe5, 0x2d, 0x47, 0xe6, 0x00,
-    0x27, 0x46, 0x07, 0x06, 0x65, 0x96, 0xe9, 0x02,
-    0x36, 0x00, 0x16, 0x06, 0x45, 0xe0, 0x16, 0xe5,
-    0x28, 0x47, 0xa6, 0x07, 0x06, 0x67, 0x26, 0x07,
-    0x26, 0x25, 0x16, 0x05, 0xe0, 0x00, 0xe9, 0x02,
-    0xe0, 0x80, 0x1e, 0xe5, 0x27, 0x47, 0x66, 0x20,
-    0x67, 0x26, 0x07, 0x26, 0xf6, 0x0f, 0x65, 0x26,
-    0xe0, 0x1a, 0xe5, 0x28, 0x47, 0xe6, 0x00, 0x27,
-    0x06, 0x07, 0x26, 0x56, 0x05, 0xe0, 0x03, 0xe9,
-    0x02, 0xa0, 0xf6, 0x05, 0xe0, 0x0b, 0xe5, 0x23,
-    0x06, 0x07, 0x06, 0x27, 0xa6, 0x07, 0x06, 0x05,
-    0x16, 0xa0, 0xe9, 0x02, 0xa0, 0xe9, 0x0c, 0xe0,
-    0x14, 0xe5, 0x13, 0x20, 0x06, 0x07, 0x06, 0x27,
-    0x66, 0x07, 0x86, 0x60, 0xe9, 0x02, 0x2b, 0x56,
-    0x0f, 0xc5, 0xe0, 0x80, 0x31, 0xe5, 0x24, 0x47,
-    0xe6, 0x01, 0x07, 0x26, 0x16, 0xe0, 0x5c, 0xe1,
-    0x18, 0xe2, 0x18, 0xe9, 0x02, 0xeb, 0x01, 0xe0,
-    0x04, 0xe5, 0x00, 0x20, 0x05, 0x20, 0xe5, 0x00,
-    0x00, 0x25, 0x00, 0xe5, 0x10, 0xa7, 0x00, 0x27,
-    0x20, 0x26, 0x07, 0x06, 0x05, 0x07, 0x05, 0x07,
-    0x06, 0x56, 0xe0, 0x01, 0xe9, 0x02, 0xe0, 0x3e,
-    0xe5, 0x00, 0x20, 0xe5, 0x1f, 0x47, 0x66, 0x20,
-    0x26, 0x67, 0x06, 0x05, 0x16, 0x05, 0x07, 0xe0,
-    0x13, 0x05, 0xe6, 0x02, 0xe5, 0x20, 0xa6, 0x07,
-    0x05, 0x66, 0xf6, 0x00, 0x06, 0xe0, 0x00, 0x05,
-    0xa6, 0x27, 0x46, 0xe5, 0x26, 0xe6, 0x05, 0x07,
-    0x26, 0x56, 0x05, 0x96, 0xe0, 0x05, 0xe5, 0x41,
-    0xc0, 0xf6, 0x02, 0xe0, 0x80, 0x2e, 0xe5, 0x19,
-    0x16, 0xe0, 0x06, 0xe9, 0x02, 0xa0, 0xe5, 0x01,
-    0x00, 0xe5, 0x1d, 0x07, 0xc6, 0x00, 0xa6, 0x07,
-    0x06, 0x05, 0x96, 0xe0, 0x02, 0xe9, 0x02, 0xeb,
-    0x0b, 0x40, 0x36, 0xe5, 0x16, 0x20, 0xe6, 0x0e,
-    0x00, 0x07, 0xc6, 0x07, 0x26, 0x07, 0x26, 0xe0,
-    0x41, 0xc5, 0x00, 0x25, 0x00, 0xe5, 0x1e, 0xa6,
-    0x40, 0x06, 0x00, 0x26, 0x00, 0xc6, 0x05, 0x06,
-    0xe0, 0x00, 0xe9, 0x02, 0xa0, 0xa5, 0x00, 0x25,
-    0x00, 0xe5, 0x18, 0x87, 0x00, 0x26, 0x00, 0x27,
-    0x06, 0x07, 0x06, 0x05, 0xc0, 0xe9, 0x02, 0xe0,
-    0x80, 0xae, 0xe5, 0x0b, 0x26, 0x27, 0x36, 0xc0,
-    0x26, 0x05, 0x07, 0xe5, 0x05, 0x00, 0xe5, 0x1a,
-    0x27, 0x86, 0x40, 0x27, 0x06, 0x07, 0x06, 0xf6,
-    0x05, 0xe9, 0x02, 0x06, 0xe0, 0x4d, 0x05, 0xe0,
-    0x07, 0xeb, 0x0d, 0xef, 0x00, 0x6d, 0xef, 0x09,
-    0xe0, 0x05, 0x16, 0xe5, 0x83, 0x12, 0xe0, 0x5e,
-    0xea, 0x67, 0x00, 0x96, 0xe0, 0x03, 0xe5, 0x80,
-    0x3c, 0xe0, 0x89, 0xc4, 0xe5, 0x59, 0x36, 0xe0,
-    0x05, 0xe5, 0x83, 0xa8, 0xfb, 0x08, 0x06, 0xa5,
-    0xe6, 0x07, 0xe0, 0x02, 0xe5, 0x8f, 0x13, 0x80,
-    0xe5, 0x81, 0xbf, 0xe0, 0x9a, 0x31, 0xe5, 0x16,
-    0xe6, 0x04, 0x47, 0x46, 0xe9, 0x02, 0xe0, 0x86,
-    0x3e, 0xe5, 0x81, 0xb1, 0xc0, 0xe5, 0x17, 0x00,
-    0xe9, 0x02, 0x60, 0x36, 0xe5, 0x47, 0x00, 0xe9,
-    0x02, 0xa0, 0xe5, 0x16, 0x20, 0x86, 0x16, 0xe0,
-    0x02, 0xe5, 0x28, 0xc6, 0x96, 0x6f, 0x64, 0x16,
-    0x0f, 0xe0, 0x02, 0xe9, 0x02, 0x00, 0xcb, 0x00,
-    0xe5, 0x0d, 0x80, 0xe5, 0x0b, 0xe0, 0x81, 0x28,
-    0x44, 0xe5, 0x20, 0x24, 0x56, 0xe9, 0x02, 0xe0,
-    0x80, 0x3e, 0xe1, 0x18, 0xe2, 0x18, 0xeb, 0x0f,
-    0x76, 0xe0, 0x5d, 0xe5, 0x43, 0x60, 0x06, 0x05,
+    0x13, 0x12, 0x13, 0x12, 0x13, 0x36, 0x12, 0x13,
+    0x76, 0x50, 0x56, 0x00, 0x76, 0x11, 0x12, 0x13,
+    0x12, 0x13, 0x12, 0x13, 0x56, 0x0c, 0x11, 0x4c,
+    0x00, 0x16, 0x0d, 0x36, 0x60, 0x85, 0x00, 0xe5,
+    0x7f, 0x20, 0x1b, 0x00, 0x56, 0x0d, 0x56, 0x12,
+    0x13, 0x16, 0x0c, 0x16, 0x11, 0x36, 0xe9, 0x02,
+    0x36, 0x4c, 0x36, 0xe1, 0x12, 0x12, 0x16, 0x13,
+    0x0e, 0x10, 0x0e, 0xe2, 0x12, 0x12, 0x0c, 0x13,
+    0x0c, 0x12, 0x13, 0x16, 0x12, 0x13, 0x36, 0xe5,
+    0x02, 0x04, 0xe5, 0x25, 0x24, 0xe5, 0x17, 0x40,
+    0xa5, 0x20, 0xa5, 0x20, 0xa5, 0x20, 0x45, 0x40,
+    0x2d, 0x0c, 0x0e, 0x0f, 0x2d, 0x00, 0x0f, 0x6c,
+    0x2f, 0xe0, 0x02, 0x5b, 0x2f, 0x20, 0xe5, 0x04,
+    0x00, 0xe5, 0x12, 0x00, 0xe5, 0x0b, 0x00, 0x25,
+    0x00, 0xe5, 0x07, 0x20, 0xe5, 0x06, 0xe0, 0x1a,
+    0xe5, 0x73, 0x80, 0x56, 0x60, 0xeb, 0x25, 0x40,
+    0xef, 0x01, 0xea, 0x2d, 0x6b, 0xef, 0x09, 0x2b,
+    0x4f, 0x00, 0xef, 0x05, 0x40, 0x0f, 0xe0, 0x27,
+    0xef, 0x25, 0x06, 0xe0, 0x7a, 0xe5, 0x15, 0x40,
+    0xe5, 0x29, 0xe0, 0x07, 0x06, 0xeb, 0x13, 0x60,
+    0xe5, 0x18, 0x6b, 0xe0, 0x01, 0xe5, 0x0c, 0x0a,
+    0xe5, 0x00, 0x0a, 0x80, 0xe5, 0x1e, 0x86, 0x80,
+    0xe5, 0x16, 0x00, 0x16, 0xe5, 0x1c, 0x60, 0xe5,
+    0x00, 0x16, 0x8a, 0xe0, 0x22, 0xe1, 0x20, 0xe2,
+    0x20, 0xe5, 0x46, 0x20, 0xe9, 0x02, 0xa0, 0xe1,
+    0x1c, 0x60, 0xe2, 0x1c, 0x60, 0xe5, 0x20, 0xe0,
+    0x00, 0xe5, 0x2c, 0xe0, 0x03, 0x16, 0xe1, 0x03,
+    0x00, 0xe1, 0x07, 0x00, 0xc1, 0x00, 0x21, 0x00,
+    0xe2, 0x03, 0x00, 0xe2, 0x07, 0x00, 0xc2, 0x00,
+    0x22, 0x40, 0xe5, 0x2c, 0xe0, 0x04, 0xe5, 0x80,
+    0xaf, 0xe0, 0x01, 0xe5, 0x0e, 0xe0, 0x02, 0xe5,
+    0x00, 0xe0, 0x10, 0xa4, 0x00, 0xe4, 0x22, 0x00,
+    0xe4, 0x01, 0xe0, 0x3d, 0xa5, 0x20, 0x05, 0x00,
+    0xe5, 0x24, 0x00, 0x25, 0x40, 0x05, 0x20, 0xe5,
+    0x0f, 0x00, 0x16, 0xeb, 0x00, 0xe5, 0x0f, 0x2f,
+    0xcb, 0xe5, 0x17, 0xe0, 0x00, 0xeb, 0x01, 0xe0,
+    0x28, 0xe5, 0x0b, 0x00, 0x25, 0x80, 0x8b, 0xe5,
+    0x0e, 0xab, 0x40, 0x16, 0xe5, 0x12, 0x80, 0x16,
+    0xe5, 0x12, 0xe0, 0x1e, 0xe5, 0x30, 0x60, 0x2b,
+    0x25, 0xeb, 0x08, 0x20, 0xeb, 0x26, 0x05, 0x46,
+    0x00, 0x26, 0x80, 0x66, 0x65, 0x00, 0x45, 0x00,
+    0xe5, 0x15, 0x20, 0x46, 0x60, 0x06, 0xeb, 0x01,
+    0xc0, 0xf6, 0x01, 0xc0, 0xe5, 0x15, 0x2b, 0x16,
+    0xe5, 0x15, 0x4b, 0xe0, 0x18, 0xe5, 0x00, 0x0f,
+    0xe5, 0x14, 0x26, 0x60, 0x8b, 0xd6, 0xe0, 0x01,
+    0xe5, 0x2e, 0x40, 0xd6, 0xe5, 0x0e, 0x20, 0xeb,
+    0x00, 0xe5, 0x0b, 0x80, 0xeb, 0x00, 0xe5, 0x0a,
+    0xc0, 0x76, 0xe0, 0x04, 0xcb, 0xe0, 0x48, 0xe5,
+    0x41, 0xe0, 0x2f, 0xe1, 0x2b, 0xe0, 0x05, 0xe2,
+    0x2b, 0xc0, 0xab, 0xe5, 0x1c, 0x66, 0xe0, 0x00,
+    0xe9, 0x02, 0xa0, 0xe9, 0x02, 0x65, 0x04, 0x05,
+    0xe1, 0x0e, 0x40, 0x86, 0x11, 0x04, 0xe2, 0x0e,
+    0xe0, 0x00, 0x2c, 0xe0, 0x80, 0x48, 0xeb, 0x17,
+    0x00, 0xe5, 0x22, 0x00, 0x26, 0x11, 0x20, 0x25,
+    0xe0, 0x08, 0x45, 0x04, 0x25, 0xe0, 0x00, 0x16,
+    0xef, 0x00, 0xe0, 0x19, 0xa6, 0xe5, 0x15, 0xeb,
+    0x02, 0x05, 0xe0, 0x00, 0xe5, 0x0e, 0xe6, 0x03,
+    0x6b, 0x96, 0xe0, 0x0e, 0xe5, 0x0a, 0x66, 0x76,
+    0xe0, 0x1e, 0xe5, 0x0d, 0xcb, 0xe0, 0x0c, 0xe5,
+    0x0f, 0xe0, 0x01, 0x07, 0x06, 0x07, 0xe5, 0x2d,
+    0xe6, 0x07, 0xd6, 0x60, 0xeb, 0x0c, 0xe9, 0x02,
+    0x06, 0x25, 0x26, 0x05, 0xe0, 0x01, 0x46, 0x07,
+    0xe5, 0x25, 0x47, 0x66, 0x27, 0x26, 0x36, 0x1b,
+    0x76, 0x06, 0xe0, 0x02, 0x1b, 0x20, 0xe5, 0x11,
+    0xc0, 0xe9, 0x02, 0xa0, 0x46, 0xe5, 0x1c, 0x86,
+    0x07, 0xe6, 0x00, 0x00, 0xe9, 0x02, 0x76, 0x05,
+    0x27, 0x05, 0xe0, 0x00, 0xe5, 0x1b, 0x06, 0x36,
+    0x05, 0xe0, 0x01, 0x26, 0x07, 0xe5, 0x28, 0x47,
+    0xe6, 0x01, 0x27, 0x65, 0x76, 0x66, 0x16, 0x07,
+    0x06, 0xe9, 0x02, 0x05, 0x16, 0x05, 0x56, 0x00,
+    0xeb, 0x0c, 0xe0, 0x03, 0xe5, 0x0a, 0x00, 0xe5,
+    0x11, 0x47, 0x46, 0x27, 0x06, 0x07, 0x26, 0xb6,
+    0x06, 0x25, 0x06, 0xe0, 0x36, 0xc5, 0x00, 0x05,
+    0x00, 0x65, 0x00, 0xe5, 0x07, 0x00, 0xe5, 0x02,
+    0x16, 0xa0, 0xe5, 0x27, 0x06, 0x47, 0xe6, 0x00,
+    0x80, 0xe9, 0x02, 0xa0, 0x26, 0x27, 0x00, 0xe5,
+    0x00, 0x20, 0x25, 0x20, 0xe5, 0x0e, 0x00, 0xc5,
+    0x00, 0x25, 0x00, 0x85, 0x00, 0x26, 0x05, 0x27,
+    0x06, 0x67, 0x20, 0x27, 0x20, 0x47, 0x20, 0x05,
+    0xa0, 0x07, 0x80, 0x85, 0x27, 0x20, 0xc6, 0x40,
+    0x86, 0xe0, 0x03, 0xe5, 0x02, 0x00, 0x05, 0x20,
+    0x05, 0x00, 0xe5, 0x1e, 0x00, 0x05, 0x47, 0xa6,
+    0x00, 0x07, 0x20, 0x07, 0x00, 0x67, 0x00, 0x27,
+    0x06, 0x07, 0x06, 0x05, 0x06, 0x05, 0x36, 0x00,
+    0x36, 0xe0, 0x00, 0x26, 0xe0, 0x15, 0xe5, 0x2d,
+    0x47, 0xe6, 0x00, 0x27, 0x46, 0x07, 0x06, 0x65,
+    0x96, 0xe9, 0x02, 0x36, 0x00, 0x16, 0x06, 0x45,
+    0xe0, 0x16, 0xe5, 0x28, 0x47, 0xa6, 0x07, 0x06,
+    0x67, 0x26, 0x07, 0x26, 0x25, 0x16, 0x05, 0xe0,
+    0x00, 0xe9, 0x02, 0xe0, 0x80, 0x1e, 0xe5, 0x27,
+    0x47, 0x66, 0x20, 0x67, 0x26, 0x07, 0x26, 0xf6,
+    0x0f, 0x65, 0x26, 0xe0, 0x1a, 0xe5, 0x28, 0x47,
+    0xe6, 0x00, 0x27, 0x06, 0x07, 0x26, 0x56, 0x05,
+    0xe0, 0x03, 0xe9, 0x02, 0xa0, 0xf6, 0x05, 0xe0,
+    0x0b, 0xe5, 0x23, 0x06, 0x07, 0x06, 0x27, 0xa6,
+    0x07, 0x06, 0x05, 0x16, 0xa0, 0xe9, 0x02, 0xa0,
+    0xe9, 0x0c, 0xe0, 0x14, 0xe5, 0x13, 0x20, 0x06,
+    0x07, 0x06, 0x27, 0x66, 0x07, 0x86, 0x60, 0xe9,
+    0x02, 0x2b, 0x56, 0x0f, 0xc5, 0xe0, 0x80, 0x31,
+    0xe5, 0x24, 0x47, 0xe6, 0x01, 0x07, 0x26, 0x16,
+    0xe0, 0x5c, 0xe1, 0x18, 0xe2, 0x18, 0xe9, 0x02,
+    0xeb, 0x01, 0xe0, 0x04, 0xe5, 0x00, 0x20, 0x05,
+    0x20, 0xe5, 0x00, 0x00, 0x25, 0x00, 0xe5, 0x10,
+    0xa7, 0x00, 0x27, 0x20, 0x26, 0x07, 0x06, 0x05,
+    0x07, 0x05, 0x07, 0x06, 0x56, 0xe0, 0x01, 0xe9,
+    0x02, 0xe0, 0x3e, 0xe5, 0x00, 0x20, 0xe5, 0x1f,
+    0x47, 0x66, 0x20, 0x26, 0x67, 0x06, 0x05, 0x16,
+    0x05, 0x07, 0xe0, 0x13, 0x05, 0xe6, 0x02, 0xe5,
+    0x20, 0xa6, 0x07, 0x05, 0x66, 0xf6, 0x00, 0x06,
+    0xe0, 0x00, 0x05, 0xa6, 0x27, 0x46, 0xe5, 0x26,
+    0xe6, 0x05, 0x07, 0x26, 0x56, 0x05, 0x96, 0xe0,
+    0x05, 0xe5, 0x41, 0xc0, 0xf6, 0x02, 0xe0, 0x4e,
+    0x06, 0x07, 0x46, 0x07, 0x06, 0x07, 0xe0, 0x50,
+    0xe5, 0x19, 0x16, 0xe0, 0x06, 0xe9, 0x02, 0xa0,
+    0xe5, 0x01, 0x00, 0xe5, 0x1d, 0x07, 0xc6, 0x00,
+    0xa6, 0x07, 0x06, 0x05, 0x96, 0xe0, 0x02, 0xe9,
+    0x02, 0xeb, 0x0b, 0x40, 0x36, 0xe5, 0x16, 0x20,
+    0xe6, 0x0e, 0x00, 0x07, 0xc6, 0x07, 0x26, 0x07,
+    0x26, 0xe0, 0x41, 0xc5, 0x00, 0x25, 0x00, 0xe5,
+    0x1e, 0xa6, 0x40, 0x06, 0x00, 0x26, 0x00, 0xc6,
+    0x05, 0x06, 0xe0, 0x00, 0xe9, 0x02, 0xa0, 0xa5,
+    0x00, 0x25, 0x00, 0xe5, 0x18, 0x87, 0x00, 0x26,
+    0x00, 0x27, 0x06, 0x07, 0x06, 0x05, 0xc0, 0xe9,
+    0x02, 0xa0, 0xe5, 0x21, 0x04, 0x25, 0x60, 0xe9,
+    0x02, 0xe0, 0x80, 0x6e, 0xe5, 0x0b, 0x26, 0x27,
+    0x36, 0xc0, 0x26, 0x05, 0x07, 0xe5, 0x05, 0x00,
+    0xe5, 0x1a, 0x27, 0x86, 0x40, 0x27, 0x06, 0x07,
+    0x06, 0xf6, 0x05, 0xe9, 0x02, 0x06, 0xe0, 0x4d,
+    0x05, 0xe0, 0x07, 0xeb, 0x0d, 0xef, 0x00, 0x6d,
+    0xef, 0x09, 0xe0, 0x05, 0x16, 0xe5, 0x83, 0x12,
+    0xe0, 0x5e, 0xea, 0x67, 0x00, 0x96, 0xe0, 0x03,
+    0xe5, 0x80, 0x3c, 0xe0, 0x89, 0xc4, 0xe5, 0x59,
+    0x36, 0xe0, 0x05, 0xe5, 0x83, 0xa8, 0xfb, 0x08,
+    0x06, 0xa5, 0xe6, 0x07, 0xe0, 0x02, 0xe5, 0x8f,
+    0x13, 0x80, 0xe5, 0x81, 0xbf, 0xe0, 0x9a, 0x31,
+    0xe5, 0x16, 0xe6, 0x04, 0x47, 0x46, 0xe9, 0x02,
+    0xe0, 0x86, 0x3e, 0xe5, 0x81, 0xb1, 0xc0, 0xe5,
+    0x17, 0x00, 0xe9, 0x02, 0x60, 0x36, 0xe5, 0x47,
+    0x00, 0xe9, 0x02, 0xa0, 0xe5, 0x16, 0x20, 0x86,
+    0x16, 0xe0, 0x02, 0xe5, 0x28, 0xc6, 0x96, 0x6f,
+    0x64, 0x16, 0x0f, 0xe0, 0x02, 0xe9, 0x02, 0x00,
+    0xcb, 0x00, 0xe5, 0x0d, 0x80, 0xe5, 0x0b, 0xe0,
+    0x81, 0x28, 0x44, 0xe5, 0x20, 0x24, 0x56, 0xe9,
+    0x02, 0xe0, 0x80, 0x3e, 0xe1, 0x18, 0xe2, 0x18,
+    0xeb, 0x0f, 0x76, 0x80, 0xe1, 0x11, 0x20, 0xe2,
+    0x11, 0xe0, 0x24, 0xe5, 0x43, 0x60, 0x06, 0x05,
     0xe7, 0x2f, 0xc0, 0x66, 0xe4, 0x05, 0xe0, 0x38,
-    0x24, 0x16, 0x04, 0x06, 0xe0, 0x03, 0x27, 0xe0,
-    0x06, 0xe5, 0x97, 0x70, 0xe0, 0x00, 0xe5, 0x84,
-    0x4e, 0xe0, 0x21, 0xe5, 0x02, 0xe0, 0xa2, 0x5f,
-    0x64, 0x00, 0xc4, 0x00, 0x24, 0x00, 0xe5, 0x80,
-    0x9b, 0xe0, 0x07, 0x05, 0xe0, 0x15, 0x45, 0x20,
-    0x05, 0xe0, 0x06, 0x65, 0xe0, 0x00, 0xe5, 0x81,
-    0x04, 0xe0, 0x88, 0x7c, 0xe5, 0x63, 0x80, 0xe5,
-    0x05, 0x40, 0xe5, 0x01, 0xc0, 0xe5, 0x02, 0x20,
-    0x0f, 0x26, 0x16, 0x7b, 0xe0, 0x8e, 0xd4, 0xef,
-    0x80, 0x68, 0xe9, 0x02, 0xa0, 0xef, 0x81, 0x2c,
-    0xe0, 0x44, 0xe6, 0x26, 0x20, 0xe6, 0x0f, 0xe0,
-    0x01, 0xef, 0x6c, 0xe0, 0x34, 0xef, 0x80, 0x6e,
-    0xe0, 0x02, 0xef, 0x1f, 0x20, 0xef, 0x34, 0x27,
-    0x46, 0x4f, 0xa7, 0xfb, 0x00, 0xe6, 0x00, 0x2f,
-    0xc6, 0xef, 0x16, 0x66, 0xef, 0x35, 0xe0, 0x0d,
-    0xef, 0x3a, 0x46, 0x0f, 0xe0, 0x72, 0xeb, 0x0c,
-    0xe0, 0x04, 0xeb, 0x0c, 0xe0, 0x04, 0xef, 0x4f,
-    0xe0, 0x01, 0xeb, 0x11, 0xe0, 0x7f, 0xe1, 0x12,
-    0xe2, 0x12, 0xe1, 0x12, 0xc2, 0x00, 0xe2, 0x0a,
-    0xe1, 0x12, 0xe2, 0x12, 0x01, 0x00, 0x21, 0x20,
-    0x01, 0x20, 0x21, 0x20, 0x61, 0x00, 0xe1, 0x00,
-    0x62, 0x00, 0x02, 0x00, 0xc2, 0x00, 0xe2, 0x03,
-    0xe1, 0x12, 0xe2, 0x12, 0x21, 0x00, 0x61, 0x20,
-    0xe1, 0x00, 0x00, 0xc1, 0x00, 0xe2, 0x12, 0x21,
-    0x00, 0x61, 0x00, 0x81, 0x00, 0x01, 0x40, 0xc1,
-    0x00, 0xe2, 0x12, 0xe1, 0x12, 0xe2, 0x12, 0xe1,
-    0x12, 0xe2, 0x12, 0xe1, 0x12, 0xe2, 0x12, 0xe1,
-    0x12, 0xe2, 0x12, 0xe1, 0x12, 0xe2, 0x12, 0xe1,
-    0x12, 0xe2, 0x14, 0x20, 0xe1, 0x11, 0x0c, 0xe2,
+    0x24, 0x16, 0x04, 0x06, 0xe0, 0x03, 0x27, 0x24,
+    0x4a, 0xe0, 0x01, 0xe5, 0x9c, 0x4e, 0xe0, 0x21,
+    0xe5, 0x18, 0xe0, 0x59, 0xe5, 0x6b, 0xe0, 0xa1,
+    0x75, 0x64, 0x00, 0xc4, 0x00, 0x24, 0x00, 0xe5,
+    0x80, 0x9b, 0xe0, 0x07, 0x05, 0xe0, 0x15, 0x45,
+    0x20, 0x05, 0xe0, 0x06, 0x65, 0xe0, 0x00, 0xe5,
+    0x81, 0x04, 0xe0, 0x88, 0x7c, 0xe5, 0x63, 0x80,
+    0xe5, 0x05, 0x40, 0xe5, 0x01, 0xc0, 0xe5, 0x02,
+    0x20, 0x0f, 0x26, 0x16, 0x7b, 0xe0, 0x8e, 0xd4,
+    0xef, 0x80, 0x68, 0xe9, 0x02, 0x4f, 0x40, 0xef,
+    0x81, 0x2c, 0xa0, 0xef, 0x0f, 0xe0, 0x07, 0xef,
+    0x08, 0x0c, 0xe0, 0x07, 0xe6, 0x26, 0x20, 0xe6,
+    0x0f, 0xe0, 0x01, 0xef, 0x6c, 0xe0, 0x34, 0xef,
+    0x80, 0x6e, 0xe0, 0x02, 0xef, 0x1f, 0x20, 0xef,
+    0x34, 0x27, 0x46, 0x4f, 0xa7, 0xfb, 0x00, 0xe6,
+    0x00, 0x2f, 0xc6, 0xef, 0x16, 0x66, 0xef, 0x35,
+    0xe0, 0x0d, 0xef, 0x3a, 0x46, 0x0f, 0xe0, 0x72,
+    0xeb, 0x0c, 0xe0, 0x04, 0xeb, 0x0c, 0xe0, 0x04,
+    0xef, 0x4f, 0xe0, 0x01, 0xeb, 0x11, 0xe0, 0x7f,
+    0xe1, 0x12, 0xe2, 0x12, 0xe1, 0x12, 0xc2, 0x00,
+    0xe2, 0x0a, 0xe1, 0x12, 0xe2, 0x12, 0x01, 0x00,
+    0x21, 0x20, 0x01, 0x20, 0x21, 0x20, 0x61, 0x00,
+    0xe1, 0x00, 0x62, 0x00, 0x02, 0x00, 0xc2, 0x00,
+    0xe2, 0x03, 0xe1, 0x12, 0xe2, 0x12, 0x21, 0x00,
+    0x61, 0x20, 0xe1, 0x00, 0x00, 0xc1, 0x00, 0xe2,
+    0x12, 0x21, 0x00, 0x61, 0x00, 0x81, 0x00, 0x01,
+    0x40, 0xc1, 0x00, 0xe2, 0x12, 0xe1, 0x12, 0xe2,
+    0x12, 0xe1, 0x12, 0xe2, 0x12, 0xe1, 0x12, 0xe2,
+    0x12, 0xe1, 0x12, 0xe2, 0x12, 0xe1, 0x12, 0xe2,
+    0x12, 0xe1, 0x12, 0xe2, 0x14, 0x20, 0xe1, 0x11,
+    0x0c, 0xe2, 0x11, 0x0c, 0xa2, 0xe1, 0x11, 0x0c,
+    0xe2, 0x11, 0x0c, 0xa2, 0xe1, 0x11, 0x0c, 0xe2,
     0x11, 0x0c, 0xa2, 0xe1, 0x11, 0x0c, 0xe2, 0x11,
     0x0c, 0xa2, 0xe1, 0x11, 0x0c, 0xe2, 0x11, 0x0c,
-    0xa2, 0xe1, 0x11, 0x0c, 0xe2, 0x11, 0x0c, 0xa2,
-    0xe1, 0x11, 0x0c, 0xe2, 0x11, 0x0c, 0xa2, 0x3f,
-    0x20, 0xe9, 0x2a, 0xef, 0x81, 0x78, 0xe6, 0x2f,
-    0x6f, 0xe6, 0x2a, 0xef, 0x00, 0x06, 0xef, 0x06,
-    0x06, 0x2f, 0x96, 0xe0, 0x07, 0x86, 0x00, 0xe6,
-    0x07, 0xe0, 0x83, 0xc8, 0xe2, 0x02, 0x05, 0xe2,
-    0x0c, 0xa0, 0xa2, 0xe0, 0x80, 0x4d, 0xc6, 0x00,
-    0xe6, 0x09, 0x20, 0xc6, 0x00, 0x26, 0x00, 0x86,
-    0x80, 0xe4, 0x36, 0xe0, 0x19, 0x06, 0xe0, 0x68,
-    0xe5, 0x25, 0x40, 0xc6, 0xc4, 0x20, 0xe9, 0x02,
-    0x60, 0x05, 0x0f, 0xe0, 0x80, 0xb8, 0xe5, 0x16,
-    0x06, 0xe0, 0x09, 0xe5, 0x24, 0x66, 0xe9, 0x02,
-    0x80, 0x0d, 0xe0, 0x81, 0x48, 0xe5, 0x13, 0x04,
-    0x66, 0xe9, 0x02, 0xe0, 0x80, 0x4e, 0xe5, 0x16,
-    0x26, 0x05, 0xe9, 0x02, 0x60, 0x16, 0xe0, 0x81,
-    0x58, 0xc5, 0x00, 0x65, 0x00, 0x25, 0x00, 0xe5,
-    0x07, 0x00, 0xe5, 0x80, 0x3d, 0x20, 0xeb, 0x01,
-    0xc6, 0xe0, 0x21, 0xe1, 0x1a, 0xe2, 0x1a, 0xc6,
-    0x04, 0x60, 0xe9, 0x02, 0x60, 0x36, 0xe0, 0x82,
-    0x89, 0xeb, 0x33, 0x0f, 0x4b, 0x0d, 0x6b, 0xe0,
-    0x44, 0xeb, 0x25, 0x0f, 0xeb, 0x07, 0xe0, 0x80,
-    0x3a, 0x65, 0x00, 0xe5, 0x13, 0x00, 0x25, 0x00,
-    0x05, 0x20, 0x05, 0x00, 0xe5, 0x02, 0x00, 0x65,
-    0x00, 0x05, 0x00, 0x05, 0xa0, 0x05, 0x60, 0x05,
-    0x00, 0x05, 0x00, 0x05, 0x00, 0x45, 0x00, 0x25,
-    0x00, 0x05, 0x20, 0x05, 0x00, 0x05, 0x00, 0x05,
-    0x00, 0x05, 0x00, 0x05, 0x00, 0x25, 0x00, 0x05,
-    0x20, 0x65, 0x00, 0xc5, 0x00, 0x65, 0x00, 0x65,
-    0x00, 0x05, 0x00, 0xe5, 0x02, 0x00, 0xe5, 0x09,
-    0x80, 0x45, 0x00, 0x85, 0x00, 0xe5, 0x09, 0xe0,
-    0x2c, 0x2c, 0xe0, 0x80, 0x86, 0xef, 0x24, 0x60,
-    0xef, 0x5c, 0xe0, 0x04, 0xef, 0x07, 0x20, 0xef,
-    0x07, 0x00, 0xef, 0x07, 0x00, 0xef, 0x1d, 0xe0,
-    0x02, 0xeb, 0x05, 0xef, 0x80, 0x19, 0xe0, 0x30,
-    0xef, 0x15, 0xe0, 0x05, 0xef, 0x24, 0x60, 0xef,
-    0x01, 0xc0, 0x2f, 0xe0, 0x06, 0xaf, 0xe0, 0x80,
-    0x12, 0xef, 0x80, 0x73, 0x8e, 0xef, 0x82, 0x50,
-    0x60, 0xef, 0x09, 0x40, 0xef, 0x05, 0x40, 0xef,
-    0x6f, 0x60, 0xef, 0x57, 0xa0, 0xef, 0x04, 0x60,
-    0x0f, 0xe0, 0x07, 0xef, 0x04, 0x60, 0xef, 0x30,
-    0xe0, 0x00, 0xef, 0x02, 0xa0, 0xef, 0x20, 0xe0,
-    0x00, 0xef, 0x16, 0x20, 0xef, 0x04, 0x60, 0x2f,
-    0xe0, 0x36, 0xef, 0x80, 0xcc, 0xe0, 0x04, 0xef,
-    0x06, 0x20, 0xef, 0x05, 0x40, 0xef, 0x02, 0x80,
-    0xef, 0x30, 0xc0, 0xef, 0x07, 0x20, 0xef, 0x03,
-    0xa0, 0xef, 0x01, 0xc0, 0xef, 0x80, 0x0b, 0x00,
-    0xef, 0x54, 0xe9, 0x02, 0xe0, 0x83, 0x7e, 0xe5,
-    0xc0, 0x66, 0x58, 0xe0, 0x18, 0xe5, 0x8f, 0xb2,
-    0xa0, 0xe5, 0x80, 0x56, 0x20, 0xe5, 0x95, 0xfa,
-    0xe0, 0x06, 0xe5, 0x9c, 0xa9, 0xe0, 0x07, 0xe5,
-    0x81, 0xe6, 0xe0, 0x89, 0x1a, 0xe5, 0x81, 0x96,
-    0xe0, 0x85, 0x5a, 0xe5, 0x92, 0xc3, 0x80, 0xe5,
-    0x8f, 0xd8, 0xe0, 0xca, 0x9b, 0xc9, 0x1b, 0xe0,
-    0x16, 0xfb, 0x58, 0xe0, 0x78, 0xe6, 0x80, 0x68,
-    0xe0, 0xc0, 0xbd, 0x88, 0xfd, 0xc0, 0xbf, 0x76,
-    0x20, 0xfd, 0xc0, 0xbf, 0x76, 0x20,
+    0xa2, 0x3f, 0x20, 0xe9, 0x2a, 0xef, 0x81, 0x78,
+    0xe6, 0x2f, 0x6f, 0xe6, 0x2a, 0xef, 0x00, 0x06,
+    0xef, 0x06, 0x06, 0x2f, 0x96, 0xe0, 0x07, 0x86,
+    0x00, 0xe6, 0x07, 0xe0, 0x83, 0xc8, 0xe2, 0x02,
+    0x05, 0xe2, 0x0c, 0xa0, 0xa2, 0xe0, 0x80, 0x4d,
+    0xc6, 0x00, 0xe6, 0x09, 0x20, 0xc6, 0x00, 0x26,
+    0x00, 0x86, 0x80, 0xe4, 0x36, 0xe0, 0x19, 0x06,
+    0xe0, 0x68, 0xe5, 0x25, 0x40, 0xc6, 0xc4, 0x20,
+    0xe9, 0x02, 0x60, 0x05, 0x0f, 0xe0, 0x80, 0xb8,
+    0xe5, 0x16, 0x06, 0xe0, 0x09, 0xe5, 0x24, 0x66,
+    0xe9, 0x02, 0x80, 0x0d, 0xe0, 0x81, 0x48, 0xe5,
+    0x13, 0x04, 0x66, 0xe9, 0x02, 0xe0, 0x80, 0x4e,
+    0xe5, 0x16, 0x26, 0x05, 0xe9, 0x02, 0x60, 0x16,
+    0xe0, 0x80, 0x38, 0xe5, 0x17, 0x00, 0x45, 0x06,
+    0x25, 0x06, 0xc5, 0x26, 0x85, 0x06, 0xe0, 0x00,
+    0x05, 0x04, 0xe0, 0x80, 0x58, 0xc5, 0x00, 0x65,
+    0x00, 0x25, 0x00, 0xe5, 0x07, 0x00, 0xe5, 0x80,
+    0x3d, 0x20, 0xeb, 0x01, 0xc6, 0xe0, 0x21, 0xe1,
+    0x1a, 0xe2, 0x1a, 0xc6, 0x04, 0x60, 0xe9, 0x02,
+    0x60, 0x36, 0xe0, 0x82, 0x89, 0xeb, 0x33, 0x0f,
+    0x4b, 0x0d, 0x6b, 0xe0, 0x44, 0xeb, 0x25, 0x0f,
+    0xeb, 0x07, 0xe0, 0x80, 0x3a, 0x65, 0x00, 0xe5,
+    0x13, 0x00, 0x25, 0x00, 0x05, 0x20, 0x05, 0x00,
+    0xe5, 0x02, 0x00, 0x65, 0x00, 0x05, 0x00, 0x05,
+    0xa0, 0x05, 0x60, 0x05, 0x00, 0x05, 0x00, 0x05,
+    0x00, 0x45, 0x00, 0x25, 0x00, 0x05, 0x20, 0x05,
+    0x00, 0x05, 0x00, 0x05, 0x00, 0x05, 0x00, 0x05,
+    0x00, 0x25, 0x00, 0x05, 0x20, 0x65, 0x00, 0xc5,
+    0x00, 0x65, 0x00, 0x65, 0x00, 0x05, 0x00, 0xe5,
+    0x02, 0x00, 0xe5, 0x09, 0x80, 0x45, 0x00, 0x85,
+    0x00, 0xe5, 0x09, 0xe0, 0x2c, 0x2c, 0xe0, 0x80,
+    0x86, 0xef, 0x24, 0x60, 0xef, 0x5c, 0xe0, 0x04,
+    0xef, 0x07, 0x20, 0xef, 0x07, 0x00, 0xef, 0x07,
+    0x00, 0xef, 0x1d, 0xe0, 0x02, 0xeb, 0x05, 0xef,
+    0x80, 0x19, 0xe0, 0x30, 0xef, 0x15, 0xe0, 0x05,
+    0xef, 0x24, 0x60, 0xef, 0x01, 0xc0, 0x2f, 0xe0,
+    0x06, 0xaf, 0xe0, 0x80, 0x12, 0xef, 0x80, 0x73,
+    0x8e, 0xef, 0x82, 0x51, 0x40, 0xef, 0x09, 0x40,
+    0xef, 0x05, 0x40, 0xef, 0x80, 0x52, 0xa0, 0xef,
+    0x04, 0x60, 0x0f, 0xe0, 0x07, 0xef, 0x04, 0x60,
+    0xef, 0x30, 0xe0, 0x00, 0xef, 0x02, 0xa0, 0xef,
+    0x20, 0xe0, 0x00, 0xef, 0x16, 0x20, 0xef, 0x04,
+    0x60, 0x2f, 0xe0, 0x06, 0xec, 0x01, 0xe0, 0x1f,
+    0xef, 0x80, 0xd0, 0xe0, 0x00, 0xef, 0x06, 0x20,
+    0xef, 0x05, 0x40, 0xef, 0x03, 0x40, 0xef, 0x31,
+    0x00, 0x0f, 0x60, 0xef, 0x08, 0x20, 0xef, 0x04,
+    0x60, 0xef, 0x02, 0xc0, 0xef, 0x80, 0x0b, 0x00,
+    0xef, 0x54, 0xe9, 0x02, 0x0f, 0xe0, 0x83, 0x7d,
+    0xe5, 0xc0, 0x66, 0x58, 0xe0, 0x18, 0xe5, 0x90,
+    0x96, 0x20, 0xe5, 0x96, 0x06, 0x20, 0xe5, 0x9c,
+    0xa9, 0xe0, 0x07, 0xe5, 0x81, 0xe6, 0xe0, 0x89,
+    0x1a, 0xe5, 0x81, 0x96, 0xe0, 0x85, 0x5a, 0xe5,
+    0x92, 0xc3, 0x80, 0xe5, 0xa0, 0xa2, 0xe0, 0xca,
+    0x8a, 0xff, 0x1b, 0xe0, 0x16, 0xfb, 0x58, 0xe0,
+    0x78, 0xe6, 0x80, 0x68, 0xe0, 0xc0, 0xbd, 0x88,
+    0xfd, 0xc0, 0xbf, 0x76, 0x20, 0xfd, 0xc0, 0xbf,
+    0x76, 0x20,
 };
 
 typedef enum {
@@ -4015,6 +5392,7 @@ typedef enum {
     UNICODE_SCRIPT_Bassa_Vah,
     UNICODE_SCRIPT_Batak,
     UNICODE_SCRIPT_Bengali,
+    UNICODE_SCRIPT_Beria_Erfe,
     UNICODE_SCRIPT_Bhaiksuki,
     UNICODE_SCRIPT_Bopomofo,
     UNICODE_SCRIPT_Brahmi,
@@ -4068,6 +5446,7 @@ typedef enum {
     UNICODE_SCRIPT_Kaithi,
     UNICODE_SCRIPT_Kannada,
     UNICODE_SCRIPT_Katakana,
+    UNICODE_SCRIPT_Katakana_Or_Hiragana,
     UNICODE_SCRIPT_Kawi,
     UNICODE_SCRIPT_Kayah_Li,
     UNICODE_SCRIPT_Kharoshthi,
@@ -4139,6 +5518,7 @@ typedef enum {
     UNICODE_SCRIPT_Sharada,
     UNICODE_SCRIPT_Shavian,
     UNICODE_SCRIPT_Siddham,
+    UNICODE_SCRIPT_Sidetic,
     UNICODE_SCRIPT_SignWriting,
     UNICODE_SCRIPT_Sinhala,
     UNICODE_SCRIPT_Sogdian,
@@ -4153,6 +5533,7 @@ typedef enum {
     UNICODE_SCRIPT_Tai_Le,
     UNICODE_SCRIPT_Tai_Tham,
     UNICODE_SCRIPT_Tai_Viet,
+    UNICODE_SCRIPT_Tai_Yo,
     UNICODE_SCRIPT_Takri,
     UNICODE_SCRIPT_Tamil,
     UNICODE_SCRIPT_Tangut,
@@ -4164,6 +5545,7 @@ typedef enum {
     UNICODE_SCRIPT_Tirhuta,
     UNICODE_SCRIPT_Tangsa,
     UNICODE_SCRIPT_Todhri,
+    UNICODE_SCRIPT_Tolong_Siki,
     UNICODE_SCRIPT_Toto,
     UNICODE_SCRIPT_Tulu_Tigalari,
     UNICODE_SCRIPT_Ugaritic,
@@ -4189,6 +5571,7 @@ static const char unicode_script_name_table[] =
     "Bassa_Vah,Bass"              "\0"
     "Batak,Batk"                  "\0"
     "Bengali,Beng"                "\0"
+    "Beria_Erfe,Berf"             "\0"
     "Bhaiksuki,Bhks"              "\0"
     "Bopomofo,Bopo"               "\0"
     "Brahmi,Brah"                 "\0"
@@ -4242,6 +5625,7 @@ static const char unicode_script_name_table[] =
     "Kaithi,Kthi"                 "\0"
     "Kannada,Knda"                "\0"
     "Katakana,Kana"               "\0"
+    "Katakana_Or_Hiragana,Hrkt"   "\0"
     "Kawi,Kawi"                   "\0"
     "Kayah_Li,Kali"               "\0"
     "Kharoshthi,Khar"             "\0"
@@ -4313,6 +5697,7 @@ static const char unicode_script_name_table[] =
     "Sharada,Shrd"                "\0"
     "Shavian,Shaw"                "\0"
     "Siddham,Sidd"                "\0"
+    "Sidetic,Sidt"                "\0"
     "SignWriting,Sgnw"            "\0"
     "Sinhala,Sinh"                "\0"
     "Sogdian,Sogd"                "\0"
@@ -4327,6 +5712,7 @@ static const char unicode_script_name_table[] =
     "Tai_Le,Tale"                 "\0"
     "Tai_Tham,Lana"               "\0"
     "Tai_Viet,Tavt"               "\0"
+    "Tai_Yo,Tayo"                 "\0"
     "Takri,Takr"                  "\0"
     "Tamil,Taml"                  "\0"
     "Tangut,Tang"                 "\0"
@@ -4338,6 +5724,7 @@ static const char unicode_script_name_table[] =
     "Tirhuta,Tirh"                "\0"
     "Tangsa,Tnsa"                 "\0"
     "Todhri,Todr"                 "\0"
+    "Tolong_Siki,Tols"            "\0"
     "Toto,Toto"                   "\0"
     "Tulu_Tigalari,Tutg"          "\0"
     "Ugaritic,Ugar"               "\0"
@@ -4350,518 +5737,523 @@ static const char unicode_script_name_table[] =
     "Zanabazar_Square,Zanb"       "\0"
 ;
 
-static const uint8_t unicode_script_table[2803] = {
-    0xc0, 0x19, 0x99, 0x4a, 0x85, 0x19, 0x99, 0x4a,
-    0xae, 0x19, 0x80, 0x4a, 0x8e, 0x19, 0x80, 0x4a,
-    0x84, 0x19, 0x96, 0x4a, 0x80, 0x19, 0x9e, 0x4a,
-    0x80, 0x19, 0xe1, 0x60, 0x4a, 0xa6, 0x19, 0x84,
-    0x4a, 0x84, 0x19, 0x81, 0x0d, 0x93, 0x19, 0xe0,
-    0x0f, 0x3a, 0x83, 0x2d, 0x80, 0x19, 0x82, 0x2d,
-    0x01, 0x83, 0x2d, 0x80, 0x19, 0x80, 0x2d, 0x03,
-    0x80, 0x2d, 0x80, 0x19, 0x80, 0x2d, 0x80, 0x19,
-    0x82, 0x2d, 0x00, 0x80, 0x2d, 0x00, 0x93, 0x2d,
-    0x00, 0xbe, 0x2d, 0x8d, 0x1a, 0x8f, 0x2d, 0xe0,
-    0x24, 0x1d, 0x81, 0x3a, 0xe0, 0x48, 0x1d, 0x00,
+static const uint8_t unicode_script_table[2818] = {
+    0xc0, 0x1a, 0x99, 0x4c, 0x85, 0x1a, 0x99, 0x4c,
+    0xae, 0x1a, 0x80, 0x4c, 0x8e, 0x1a, 0x80, 0x4c,
+    0x84, 0x1a, 0x96, 0x4c, 0x80, 0x1a, 0x9e, 0x4c,
+    0x80, 0x1a, 0xe1, 0x60, 0x4c, 0xa6, 0x1a, 0x84,
+    0x4c, 0x84, 0x1a, 0x81, 0x0e, 0x93, 0x1a, 0xe0,
+    0x0f, 0x3b, 0x83, 0x2e, 0x80, 0x1a, 0x82, 0x2e,
+    0x01, 0x83, 0x2e, 0x80, 0x1a, 0x80, 0x2e, 0x03,
+    0x80, 0x2e, 0x80, 0x1a, 0x80, 0x2e, 0x80, 0x1a,
+    0x82, 0x2e, 0x00, 0x80, 0x2e, 0x00, 0x93, 0x2e,
+    0x00, 0xbe, 0x2e, 0x8d, 0x1b, 0x8f, 0x2e, 0xe0,
+    0x24, 0x1e, 0x81, 0x3b, 0xe0, 0x48, 0x1e, 0x00,
     0xa5, 0x05, 0x01, 0xb1, 0x05, 0x01, 0x82, 0x05,
-    0x00, 0xb6, 0x37, 0x07, 0x9a, 0x37, 0x03, 0x85,
-    0x37, 0x0a, 0x84, 0x04, 0x80, 0x19, 0x85, 0x04,
-    0x80, 0x19, 0x8d, 0x04, 0x80, 0x19, 0x82, 0x04,
-    0x80, 0x19, 0x9f, 0x04, 0x80, 0x19, 0x89, 0x04,
-    0x8a, 0x3a, 0x99, 0x04, 0x80, 0x3a, 0xe0, 0x0b,
-    0x04, 0x80, 0x19, 0xa1, 0x04, 0x8d, 0x90, 0x00,
-    0xbb, 0x90, 0x01, 0x82, 0x90, 0xaf, 0x04, 0xb1,
-    0x9a, 0x0d, 0xba, 0x69, 0x01, 0x82, 0x69, 0xad,
-    0x83, 0x01, 0x8e, 0x83, 0x00, 0x9b, 0x55, 0x01,
-    0x80, 0x55, 0x00, 0x8a, 0x90, 0x04, 0x9e, 0x04,
-    0x00, 0x81, 0x04, 0x04, 0xca, 0x04, 0x80, 0x19,
-    0x9c, 0x04, 0xd0, 0x20, 0x83, 0x3a, 0x8e, 0x20,
-    0x81, 0x19, 0x99, 0x20, 0x83, 0x0b, 0x00, 0x87,
-    0x0b, 0x01, 0x81, 0x0b, 0x01, 0x95, 0x0b, 0x00,
-    0x86, 0x0b, 0x00, 0x80, 0x0b, 0x02, 0x83, 0x0b,
-    0x01, 0x88, 0x0b, 0x01, 0x81, 0x0b, 0x01, 0x83,
-    0x0b, 0x07, 0x80, 0x0b, 0x03, 0x81, 0x0b, 0x00,
-    0x84, 0x0b, 0x01, 0x98, 0x0b, 0x01, 0x82, 0x30,
-    0x00, 0x85, 0x30, 0x03, 0x81, 0x30, 0x01, 0x95,
-    0x30, 0x00, 0x86, 0x30, 0x00, 0x81, 0x30, 0x00,
-    0x81, 0x30, 0x00, 0x81, 0x30, 0x01, 0x80, 0x30,
-    0x00, 0x84, 0x30, 0x03, 0x81, 0x30, 0x01, 0x82,
-    0x30, 0x02, 0x80, 0x30, 0x06, 0x83, 0x30, 0x00,
-    0x80, 0x30, 0x06, 0x90, 0x30, 0x09, 0x82, 0x2e,
-    0x00, 0x88, 0x2e, 0x00, 0x82, 0x2e, 0x00, 0x95,
-    0x2e, 0x00, 0x86, 0x2e, 0x00, 0x81, 0x2e, 0x00,
-    0x84, 0x2e, 0x01, 0x89, 0x2e, 0x00, 0x82, 0x2e,
-    0x00, 0x82, 0x2e, 0x01, 0x80, 0x2e, 0x0e, 0x83,
-    0x2e, 0x01, 0x8b, 0x2e, 0x06, 0x86, 0x2e, 0x00,
-    0x82, 0x78, 0x00, 0x87, 0x78, 0x01, 0x81, 0x78,
-    0x01, 0x95, 0x78, 0x00, 0x86, 0x78, 0x00, 0x81,
-    0x78, 0x00, 0x84, 0x78, 0x01, 0x88, 0x78, 0x01,
-    0x81, 0x78, 0x01, 0x82, 0x78, 0x06, 0x82, 0x78,
-    0x03, 0x81, 0x78, 0x00, 0x84, 0x78, 0x01, 0x91,
-    0x78, 0x09, 0x81, 0x97, 0x00, 0x85, 0x97, 0x02,
-    0x82, 0x97, 0x00, 0x83, 0x97, 0x02, 0x81, 0x97,
-    0x00, 0x80, 0x97, 0x00, 0x81, 0x97, 0x02, 0x81,
-    0x97, 0x02, 0x82, 0x97, 0x02, 0x8b, 0x97, 0x03,
-    0x84, 0x97, 0x02, 0x82, 0x97, 0x00, 0x83, 0x97,
-    0x01, 0x80, 0x97, 0x05, 0x80, 0x97, 0x0d, 0x94,
-    0x97, 0x04, 0x8c, 0x99, 0x00, 0x82, 0x99, 0x00,
-    0x96, 0x99, 0x00, 0x8f, 0x99, 0x01, 0x88, 0x99,
-    0x00, 0x82, 0x99, 0x00, 0x83, 0x99, 0x06, 0x81,
-    0x99, 0x00, 0x82, 0x99, 0x01, 0x80, 0x99, 0x01,
-    0x83, 0x99, 0x01, 0x89, 0x99, 0x06, 0x88, 0x99,
-    0x8c, 0x3f, 0x00, 0x82, 0x3f, 0x00, 0x96, 0x3f,
-    0x00, 0x89, 0x3f, 0x00, 0x84, 0x3f, 0x01, 0x88,
-    0x3f, 0x00, 0x82, 0x3f, 0x00, 0x83, 0x3f, 0x06,
-    0x81, 0x3f, 0x05, 0x81, 0x3f, 0x00, 0x83, 0x3f,
-    0x01, 0x89, 0x3f, 0x00, 0x82, 0x3f, 0x0b, 0x8c,
-    0x54, 0x00, 0x82, 0x54, 0x00, 0xb2, 0x54, 0x00,
-    0x82, 0x54, 0x00, 0x85, 0x54, 0x03, 0x8f, 0x54,
-    0x01, 0x99, 0x54, 0x00, 0x82, 0x89, 0x00, 0x91,
-    0x89, 0x02, 0x97, 0x89, 0x00, 0x88, 0x89, 0x00,
-    0x80, 0x89, 0x01, 0x86, 0x89, 0x02, 0x80, 0x89,
-    0x03, 0x85, 0x89, 0x00, 0x80, 0x89, 0x00, 0x87,
-    0x89, 0x05, 0x89, 0x89, 0x01, 0x82, 0x89, 0x0b,
-    0xb9, 0x9b, 0x03, 0x80, 0x19, 0x9b, 0x9b, 0x24,
-    0x81, 0x49, 0x00, 0x80, 0x49, 0x00, 0x84, 0x49,
-    0x00, 0x97, 0x49, 0x00, 0x80, 0x49, 0x00, 0x96,
-    0x49, 0x01, 0x84, 0x49, 0x00, 0x80, 0x49, 0x00,
-    0x86, 0x49, 0x00, 0x89, 0x49, 0x01, 0x83, 0x49,
-    0x1f, 0xc7, 0x9c, 0x00, 0xa3, 0x9c, 0x03, 0xa6,
-    0x9c, 0x00, 0xa3, 0x9c, 0x00, 0x8e, 0x9c, 0x00,
-    0x86, 0x9c, 0x83, 0x19, 0x81, 0x9c, 0x24, 0xe0,
-    0x3f, 0x63, 0xa5, 0x28, 0x00, 0x80, 0x28, 0x04,
-    0x80, 0x28, 0x01, 0xaa, 0x28, 0x80, 0x19, 0x83,
-    0x28, 0xe0, 0x9f, 0x33, 0xc8, 0x27, 0x00, 0x83,
-    0x27, 0x01, 0x86, 0x27, 0x00, 0x80, 0x27, 0x00,
-    0x83, 0x27, 0x01, 0xa8, 0x27, 0x00, 0x83, 0x27,
-    0x01, 0xa0, 0x27, 0x00, 0x83, 0x27, 0x01, 0x86,
-    0x27, 0x00, 0x80, 0x27, 0x00, 0x83, 0x27, 0x01,
-    0x8e, 0x27, 0x00, 0xb8, 0x27, 0x00, 0x83, 0x27,
-    0x01, 0xc2, 0x27, 0x01, 0x9f, 0x27, 0x02, 0x99,
-    0x27, 0x05, 0xd5, 0x17, 0x01, 0x85, 0x17, 0x01,
-    0xe2, 0x1f, 0x12, 0x9c, 0x6c, 0x02, 0xca, 0x82,
-    0x82, 0x19, 0x8a, 0x82, 0x06, 0x95, 0x91, 0x08,
-    0x80, 0x91, 0x94, 0x35, 0x81, 0x19, 0x08, 0x93,
-    0x11, 0x0b, 0x8c, 0x92, 0x00, 0x82, 0x92, 0x00,
-    0x81, 0x92, 0x0b, 0xdd, 0x44, 0x01, 0x89, 0x44,
-    0x05, 0x89, 0x44, 0x05, 0x81, 0x60, 0x81, 0x19,
-    0x80, 0x60, 0x80, 0x19, 0x93, 0x60, 0x05, 0xd8,
-    0x60, 0x06, 0xaa, 0x60, 0x04, 0xc5, 0x12, 0x09,
-    0x9e, 0x4c, 0x00, 0x8b, 0x4c, 0x03, 0x8b, 0x4c,
-    0x03, 0x80, 0x4c, 0x02, 0x8b, 0x4c, 0x9d, 0x93,
-    0x01, 0x84, 0x93, 0x0a, 0xab, 0x67, 0x03, 0x99,
-    0x67, 0x05, 0x8a, 0x67, 0x02, 0x81, 0x67, 0x9f,
-    0x44, 0x9b, 0x10, 0x01, 0x81, 0x10, 0xbe, 0x94,
-    0x00, 0x9c, 0x94, 0x01, 0x8a, 0x94, 0x05, 0x89,
-    0x94, 0x05, 0x8d, 0x94, 0x01, 0x9e, 0x3a, 0x30,
-    0xcc, 0x07, 0x00, 0xb1, 0x07, 0xbf, 0x8d, 0xb3,
-    0x0a, 0x07, 0x83, 0x0a, 0xb7, 0x4b, 0x02, 0x8e,
-    0x4b, 0x02, 0x82, 0x4b, 0xaf, 0x6d, 0x8a, 0x1d,
-    0x04, 0xaa, 0x28, 0x01, 0x82, 0x28, 0x87, 0x8d,
-    0x07, 0x82, 0x3a, 0x80, 0x19, 0x8c, 0x3a, 0x80,
-    0x19, 0x86, 0x3a, 0x83, 0x19, 0x80, 0x3a, 0x85,
-    0x19, 0x80, 0x3a, 0x82, 0x19, 0x81, 0x3a, 0x80,
-    0x19, 0x04, 0xa5, 0x4a, 0x84, 0x2d, 0x80, 0x1d,
-    0xb0, 0x4a, 0x84, 0x2d, 0x83, 0x4a, 0x84, 0x2d,
-    0x8c, 0x4a, 0x80, 0x1d, 0xc5, 0x4a, 0x80, 0x2d,
-    0xbf, 0x3a, 0xe0, 0x9f, 0x4a, 0x95, 0x2d, 0x01,
-    0x85, 0x2d, 0x01, 0xa5, 0x2d, 0x01, 0x85, 0x2d,
-    0x01, 0x87, 0x2d, 0x00, 0x80, 0x2d, 0x00, 0x80,
-    0x2d, 0x00, 0x80, 0x2d, 0x00, 0x9e, 0x2d, 0x01,
-    0xb4, 0x2d, 0x00, 0x8e, 0x2d, 0x00, 0x8d, 0x2d,
-    0x01, 0x85, 0x2d, 0x00, 0x92, 0x2d, 0x01, 0x82,
-    0x2d, 0x00, 0x88, 0x2d, 0x00, 0x8b, 0x19, 0x81,
-    0x3a, 0xd6, 0x19, 0x00, 0x8a, 0x19, 0x80, 0x4a,
-    0x01, 0x8a, 0x19, 0x80, 0x4a, 0x8e, 0x19, 0x00,
-    0x8c, 0x4a, 0x02, 0xa0, 0x19, 0x0e, 0xa0, 0x3a,
-    0x0e, 0xa5, 0x19, 0x80, 0x2d, 0x82, 0x19, 0x81,
-    0x4a, 0x85, 0x19, 0x80, 0x4a, 0x9a, 0x19, 0x80,
-    0x4a, 0x90, 0x19, 0xa8, 0x4a, 0x82, 0x19, 0x03,
-    0xe2, 0x39, 0x19, 0x15, 0x8a, 0x19, 0x14, 0xe3,
-    0x3f, 0x19, 0xe0, 0x9f, 0x0f, 0xe2, 0x13, 0x19,
-    0x01, 0x9f, 0x19, 0x00, 0xe0, 0x08, 0x19, 0xdf,
-    0x29, 0x9f, 0x4a, 0xe0, 0x13, 0x1a, 0x04, 0x86,
-    0x1a, 0xa5, 0x28, 0x00, 0x80, 0x28, 0x04, 0x80,
-    0x28, 0x01, 0xb7, 0x9d, 0x06, 0x81, 0x9d, 0x0d,
-    0x80, 0x9d, 0x96, 0x27, 0x08, 0x86, 0x27, 0x00,
-    0x86, 0x27, 0x00, 0x86, 0x27, 0x00, 0x86, 0x27,
-    0x00, 0x86, 0x27, 0x00, 0x86, 0x27, 0x00, 0x86,
-    0x27, 0x00, 0x86, 0x27, 0x00, 0x9f, 0x1d, 0xdd,
-    0x19, 0x21, 0x99, 0x32, 0x00, 0xd8, 0x32, 0x0b,
-    0xe0, 0x75, 0x32, 0x19, 0x94, 0x19, 0x80, 0x32,
-    0x80, 0x19, 0x80, 0x32, 0x98, 0x19, 0x88, 0x32,
-    0x83, 0x3a, 0x81, 0x33, 0x87, 0x19, 0x83, 0x32,
-    0x83, 0x19, 0x00, 0xd5, 0x38, 0x01, 0x81, 0x3a,
-    0x81, 0x19, 0x82, 0x38, 0x80, 0x19, 0xd9, 0x40,
-    0x81, 0x19, 0x82, 0x40, 0x04, 0xaa, 0x0d, 0x00,
-    0xdd, 0x33, 0x00, 0x8f, 0x19, 0x9f, 0x0d, 0xa5,
-    0x19, 0x08, 0x80, 0x19, 0x8f, 0x40, 0x9e, 0x33,
-    0x00, 0xbf, 0x19, 0x9e, 0x33, 0xd0, 0x19, 0xae,
-    0x40, 0x80, 0x19, 0xd7, 0x40, 0xe0, 0x47, 0x19,
-    0xf0, 0x09, 0x5f, 0x32, 0xbf, 0x19, 0xf0, 0x41,
-    0x9f, 0x32, 0xe4, 0x2c, 0xa9, 0x02, 0xb6, 0xa9,
-    0x08, 0xaf, 0x4f, 0xe0, 0xcb, 0xa4, 0x13, 0xdf,
-    0x1d, 0xd7, 0x08, 0x07, 0xa1, 0x19, 0xe0, 0x05,
-    0x4a, 0x82, 0x19, 0xc2, 0x4a, 0x01, 0x81, 0x4a,
-    0x00, 0x80, 0x4a, 0x00, 0x87, 0x4a, 0x14, 0x8d,
-    0x4a, 0xac, 0x8f, 0x02, 0x89, 0x19, 0x05, 0xb7,
-    0x7e, 0x07, 0xc5, 0x84, 0x07, 0x8b, 0x84, 0x05,
-    0x9f, 0x20, 0xad, 0x42, 0x80, 0x19, 0x80, 0x42,
-    0xa3, 0x81, 0x0a, 0x80, 0x81, 0x9c, 0x33, 0x02,
-    0xcd, 0x3d, 0x00, 0x80, 0x19, 0x89, 0x3d, 0x03,
-    0x81, 0x3d, 0x9e, 0x63, 0x00, 0xb6, 0x16, 0x08,
-    0x8d, 0x16, 0x01, 0x89, 0x16, 0x01, 0x83, 0x16,
-    0x9f, 0x63, 0xc2, 0x95, 0x17, 0x84, 0x95, 0x96,
-    0x5a, 0x09, 0x85, 0x27, 0x01, 0x85, 0x27, 0x01,
-    0x85, 0x27, 0x08, 0x86, 0x27, 0x00, 0x86, 0x27,
-    0x00, 0xaa, 0x4a, 0x80, 0x19, 0x88, 0x4a, 0x80,
-    0x2d, 0x83, 0x4a, 0x81, 0x19, 0x03, 0xcf, 0x17,
-    0xad, 0x5a, 0x01, 0x89, 0x5a, 0x05, 0xf0, 0x1b,
-    0x43, 0x33, 0x0b, 0x96, 0x33, 0x03, 0xb0, 0x33,
-    0x70, 0x10, 0xa3, 0xe1, 0x0d, 0x32, 0x01, 0xe0,
-    0x09, 0x32, 0x25, 0x86, 0x4a, 0x0b, 0x84, 0x05,
-    0x04, 0x99, 0x37, 0x00, 0x84, 0x37, 0x00, 0x80,
-    0x37, 0x00, 0x81, 0x37, 0x00, 0x81, 0x37, 0x00,
-    0x89, 0x37, 0xe0, 0x12, 0x04, 0x0f, 0xe1, 0x0a,
-    0x04, 0x81, 0x19, 0xcf, 0x04, 0x01, 0xb5, 0x04,
-    0x06, 0x80, 0x04, 0x1f, 0x8f, 0x04, 0x8f, 0x3a,
-    0x89, 0x19, 0x05, 0x8d, 0x3a, 0x81, 0x1d, 0xa2,
-    0x19, 0x00, 0x92, 0x19, 0x00, 0x83, 0x19, 0x03,
-    0x84, 0x04, 0x00, 0xe0, 0x26, 0x04, 0x01, 0x80,
-    0x19, 0x00, 0x9f, 0x19, 0x99, 0x4a, 0x85, 0x19,
-    0x99, 0x4a, 0x8a, 0x19, 0x89, 0x40, 0x80, 0x19,
-    0xac, 0x40, 0x81, 0x19, 0x9e, 0x33, 0x02, 0x85,
-    0x33, 0x01, 0x85, 0x33, 0x01, 0x85, 0x33, 0x01,
-    0x82, 0x33, 0x02, 0x86, 0x19, 0x00, 0x86, 0x19,
-    0x09, 0x84, 0x19, 0x01, 0x8b, 0x4e, 0x00, 0x99,
-    0x4e, 0x00, 0x92, 0x4e, 0x00, 0x81, 0x4e, 0x00,
-    0x8e, 0x4e, 0x01, 0x8d, 0x4e, 0x21, 0xe0, 0x1a,
-    0x4e, 0x04, 0x82, 0x19, 0x03, 0xac, 0x19, 0x02,
-    0x88, 0x19, 0xce, 0x2d, 0x00, 0x8c, 0x19, 0x02,
-    0x80, 0x2d, 0x2e, 0xac, 0x19, 0x80, 0x3a, 0x60,
-    0x21, 0x9c, 0x50, 0x02, 0xb0, 0x13, 0x0e, 0x80,
-    0x3a, 0x9a, 0x19, 0x03, 0xa3, 0x70, 0x08, 0x82,
-    0x70, 0x9a, 0x2a, 0x04, 0xaa, 0x72, 0x04, 0x9d,
-    0xa3, 0x00, 0x80, 0xa3, 0xa3, 0x73, 0x03, 0x8d,
-    0x73, 0x29, 0xcf, 0x1f, 0xaf, 0x86, 0x9d, 0x7a,
-    0x01, 0x89, 0x7a, 0x05, 0xa3, 0x79, 0x03, 0xa3,
-    0x79, 0x03, 0xa7, 0x25, 0x07, 0xb3, 0x14, 0x0a,
-    0x80, 0x14, 0x8a, 0xa5, 0x00, 0x8e, 0xa5, 0x00,
-    0x86, 0xa5, 0x00, 0x81, 0xa5, 0x00, 0x8a, 0xa5,
-    0x00, 0x8e, 0xa5, 0x00, 0x86, 0xa5, 0x00, 0x81,
-    0xa5, 0x02, 0xb3, 0xa0, 0x0b, 0xe0, 0xd6, 0x4d,
-    0x08, 0x95, 0x4d, 0x09, 0x87, 0x4d, 0x17, 0x85,
-    0x4a, 0x00, 0xa9, 0x4a, 0x00, 0x88, 0x4a, 0x44,
-    0x85, 0x1c, 0x01, 0x80, 0x1c, 0x00, 0xab, 0x1c,
-    0x00, 0x81, 0x1c, 0x02, 0x80, 0x1c, 0x01, 0x80,
-    0x1c, 0x95, 0x39, 0x00, 0x88, 0x39, 0x9f, 0x7c,
-    0x9e, 0x64, 0x07, 0x88, 0x64, 0x2f, 0x92, 0x36,
-    0x00, 0x81, 0x36, 0x04, 0x84, 0x36, 0x9b, 0x7f,
-    0x02, 0x80, 0x7f, 0x99, 0x51, 0x04, 0x80, 0x51,
-    0x3f, 0x9f, 0x5d, 0x97, 0x5c, 0x03, 0x93, 0x5c,
-    0x01, 0xad, 0x5c, 0x83, 0x43, 0x00, 0x81, 0x43,
-    0x04, 0x87, 0x43, 0x00, 0x82, 0x43, 0x00, 0x9c,
-    0x43, 0x01, 0x82, 0x43, 0x03, 0x89, 0x43, 0x06,
-    0x88, 0x43, 0x06, 0x9f, 0x75, 0x9f, 0x71, 0x1f,
-    0xa6, 0x56, 0x03, 0x8b, 0x56, 0x08, 0xb5, 0x06,
-    0x02, 0x86, 0x06, 0x95, 0x3c, 0x01, 0x87, 0x3c,
-    0x92, 0x3b, 0x04, 0x87, 0x3b, 0x91, 0x80, 0x06,
-    0x83, 0x80, 0x0b, 0x86, 0x80, 0x4f, 0xc8, 0x76,
-    0x36, 0xb2, 0x6f, 0x0c, 0xb2, 0x6f, 0x06, 0x85,
-    0x6f, 0xa7, 0x34, 0x07, 0x89, 0x34, 0x05, 0xa5,
-    0x2b, 0x02, 0x9c, 0x2b, 0x07, 0x81, 0x2b, 0x60,
-    0x6f, 0x9e, 0x04, 0x00, 0xa9, 0xa8, 0x00, 0x82,
-    0xa8, 0x01, 0x81, 0xa8, 0x0f, 0x82, 0x04, 0x36,
-    0x83, 0x04, 0xa7, 0x74, 0x07, 0xa9, 0x8a, 0x15,
-    0x99, 0x77, 0x25, 0x9b, 0x18, 0x13, 0x96, 0x26,
-    0x08, 0xcd, 0x0e, 0x03, 0xa3, 0x0e, 0x08, 0x80,
-    0x0e, 0xc2, 0x3e, 0x09, 0x80, 0x3e, 0x01, 0x98,
-    0x8b, 0x06, 0x89, 0x8b, 0x05, 0xb4, 0x15, 0x00,
-    0x91, 0x15, 0x07, 0xa6, 0x53, 0x08, 0xdf, 0x85,
-    0x00, 0x93, 0x89, 0x0a, 0x91, 0x45, 0x00, 0xae,
-    0x45, 0x3d, 0x86, 0x62, 0x00, 0x80, 0x62, 0x00,
-    0x83, 0x62, 0x00, 0x8e, 0x62, 0x00, 0x8a, 0x62,
-    0x05, 0xba, 0x47, 0x04, 0x89, 0x47, 0x05, 0x83,
-    0x2c, 0x00, 0x87, 0x2c, 0x01, 0x81, 0x2c, 0x01,
-    0x95, 0x2c, 0x00, 0x86, 0x2c, 0x00, 0x81, 0x2c,
-    0x00, 0x84, 0x2c, 0x00, 0x80, 0x3a, 0x88, 0x2c,
-    0x01, 0x81, 0x2c, 0x01, 0x82, 0x2c, 0x01, 0x80,
-    0x2c, 0x05, 0x80, 0x2c, 0x04, 0x86, 0x2c, 0x01,
-    0x86, 0x2c, 0x02, 0x84, 0x2c, 0x0a, 0x89, 0xa2,
-    0x00, 0x80, 0xa2, 0x01, 0x80, 0xa2, 0x00, 0xa5,
-    0xa2, 0x00, 0x89, 0xa2, 0x00, 0x80, 0xa2, 0x01,
-    0x80, 0xa2, 0x00, 0x83, 0xa2, 0x00, 0x89, 0xa2,
-    0x00, 0x81, 0xa2, 0x07, 0x81, 0xa2, 0x1c, 0xdb,
-    0x68, 0x00, 0x84, 0x68, 0x1d, 0xc7, 0x9e, 0x07,
-    0x89, 0x9e, 0x60, 0x45, 0xb5, 0x87, 0x01, 0xa5,
-    0x87, 0x21, 0xc4, 0x5f, 0x0a, 0x89, 0x5f, 0x05,
-    0x8c, 0x60, 0x12, 0xb9, 0x96, 0x05, 0x89, 0x96,
-    0x05, 0x93, 0x63, 0x1b, 0x9a, 0x02, 0x01, 0x8e,
-    0x02, 0x03, 0x96, 0x02, 0x60, 0x58, 0xbb, 0x22,
-    0x60, 0x03, 0xd2, 0xa7, 0x0b, 0x80, 0xa7, 0x86,
-    0x21, 0x01, 0x80, 0x21, 0x01, 0x87, 0x21, 0x00,
-    0x81, 0x21, 0x00, 0x9d, 0x21, 0x00, 0x81, 0x21,
-    0x01, 0x8b, 0x21, 0x08, 0x89, 0x21, 0x45, 0x87,
-    0x66, 0x01, 0xad, 0x66, 0x01, 0x8a, 0x66, 0x1a,
-    0xc7, 0xaa, 0x07, 0xd2, 0x8c, 0x0c, 0x8f, 0x12,
-    0xb8, 0x7d, 0x06, 0x89, 0x20, 0x60, 0x55, 0xa1,
-    0x8e, 0x0d, 0x89, 0x8e, 0x05, 0x88, 0x0c, 0x00,
-    0xac, 0x0c, 0x00, 0x8d, 0x0c, 0x09, 0x9c, 0x0c,
-    0x02, 0x9f, 0x57, 0x01, 0x95, 0x57, 0x00, 0x8d,
-    0x57, 0x48, 0x86, 0x58, 0x00, 0x81, 0x58, 0x00,
-    0xab, 0x58, 0x02, 0x80, 0x58, 0x00, 0x81, 0x58,
-    0x00, 0x88, 0x58, 0x07, 0x89, 0x58, 0x05, 0x85,
-    0x2f, 0x00, 0x81, 0x2f, 0x00, 0xa4, 0x2f, 0x00,
-    0x81, 0x2f, 0x00, 0x85, 0x2f, 0x06, 0x89, 0x2f,
-    0x60, 0xd5, 0x98, 0x52, 0x06, 0x90, 0x41, 0x00,
-    0xa8, 0x41, 0x02, 0x9c, 0x41, 0x54, 0x80, 0x4f,
-    0x0e, 0xb1, 0x97, 0x0c, 0x80, 0x97, 0xe3, 0x39,
-    0x1b, 0x60, 0x05, 0xe0, 0x0e, 0x1b, 0x00, 0x84,
-    0x1b, 0x0a, 0xe0, 0x63, 0x1b, 0x69, 0xeb, 0xe0,
-    0x02, 0x1e, 0x0c, 0xe3, 0xf5, 0x24, 0x09, 0xef,
-    0x3a, 0x24, 0x04, 0xe1, 0xe6, 0x03, 0x70, 0x0a,
-    0x58, 0xb9, 0x31, 0x66, 0x65, 0xe1, 0xd8, 0x08,
-    0x06, 0x9e, 0x61, 0x00, 0x89, 0x61, 0x03, 0x81,
-    0x61, 0xce, 0x9f, 0x00, 0x89, 0x9f, 0x05, 0x9d,
-    0x09, 0x01, 0x85, 0x09, 0x09, 0xc5, 0x7b, 0x09,
-    0x89, 0x7b, 0x00, 0x86, 0x7b, 0x00, 0x94, 0x7b,
-    0x04, 0x92, 0x7b, 0x61, 0x4f, 0xb9, 0x48, 0x60,
-    0x65, 0xda, 0x59, 0x60, 0x04, 0xca, 0x5e, 0x03,
-    0xb8, 0x5e, 0x06, 0x90, 0x5e, 0x3f, 0x80, 0x98,
-    0x80, 0x6a, 0x81, 0x32, 0x80, 0x46, 0x0a, 0x81,
-    0x32, 0x0d, 0xf0, 0x07, 0x97, 0x98, 0x07, 0xe2,
-    0x9f, 0x98, 0xe1, 0x75, 0x46, 0x28, 0x80, 0x46,
-    0x88, 0x98, 0x70, 0x12, 0x86, 0x83, 0x40, 0x00,
-    0x86, 0x40, 0x00, 0x81, 0x40, 0x00, 0x80, 0x40,
-    0xe0, 0xbe, 0x38, 0x82, 0x40, 0x0e, 0x80, 0x38,
-    0x1c, 0x82, 0x38, 0x01, 0x80, 0x40, 0x0d, 0x83,
-    0x40, 0x07, 0xe1, 0x2b, 0x6a, 0x68, 0xa3, 0xe0,
-    0x0a, 0x23, 0x04, 0x8c, 0x23, 0x02, 0x88, 0x23,
-    0x06, 0x89, 0x23, 0x01, 0x83, 0x23, 0x83, 0x19,
-    0x6e, 0xfb, 0xe0, 0x99, 0x19, 0x05, 0xe1, 0x53,
-    0x19, 0x4b, 0xad, 0x3a, 0x01, 0x96, 0x3a, 0x08,
-    0xe0, 0x13, 0x19, 0x3b, 0xe0, 0x95, 0x19, 0x09,
-    0xa6, 0x19, 0x01, 0xbd, 0x19, 0x82, 0x3a, 0x90,
-    0x19, 0x87, 0x3a, 0x81, 0x19, 0x86, 0x3a, 0x9d,
-    0x19, 0x83, 0x3a, 0xbc, 0x19, 0x14, 0xc5, 0x2d,
-    0x60, 0x19, 0x93, 0x19, 0x0b, 0x93, 0x19, 0x0b,
-    0xd6, 0x19, 0x08, 0x98, 0x19, 0x60, 0x26, 0xd4,
-    0x19, 0x00, 0xc6, 0x19, 0x00, 0x81, 0x19, 0x01,
-    0x80, 0x19, 0x01, 0x81, 0x19, 0x01, 0x83, 0x19,
-    0x00, 0x8b, 0x19, 0x00, 0x80, 0x19, 0x00, 0x86,
-    0x19, 0x00, 0xc0, 0x19, 0x00, 0x83, 0x19, 0x01,
-    0x87, 0x19, 0x00, 0x86, 0x19, 0x00, 0x9b, 0x19,
-    0x00, 0x83, 0x19, 0x00, 0x84, 0x19, 0x00, 0x80,
-    0x19, 0x02, 0x86, 0x19, 0x00, 0xe0, 0xf3, 0x19,
-    0x01, 0xe0, 0xc3, 0x19, 0x01, 0xb1, 0x19, 0xe2,
-    0x2b, 0x88, 0x0e, 0x84, 0x88, 0x00, 0x8e, 0x88,
-    0x63, 0xef, 0x9e, 0x4a, 0x05, 0x85, 0x4a, 0x60,
-    0x74, 0x86, 0x29, 0x00, 0x90, 0x29, 0x01, 0x86,
-    0x29, 0x00, 0x81, 0x29, 0x00, 0x84, 0x29, 0x04,
-    0xbd, 0x1d, 0x20, 0x80, 0x1d, 0x60, 0x0f, 0xac,
-    0x6b, 0x02, 0x8d, 0x6b, 0x01, 0x89, 0x6b, 0x03,
-    0x81, 0x6b, 0x60, 0xdf, 0x9e, 0xa1, 0x10, 0xb9,
-    0xa6, 0x04, 0x80, 0xa6, 0x61, 0x6f, 0xa9, 0x65,
-    0x60, 0x75, 0xaa, 0x6e, 0x03, 0x80, 0x6e, 0x61,
-    0x7f, 0x86, 0x27, 0x00, 0x83, 0x27, 0x00, 0x81,
-    0x27, 0x00, 0x8e, 0x27, 0x00, 0xe0, 0x64, 0x5b,
-    0x01, 0x8f, 0x5b, 0x28, 0xcb, 0x01, 0x03, 0x89,
-    0x01, 0x03, 0x81, 0x01, 0x62, 0xb0, 0xc3, 0x19,
-    0x4b, 0xbc, 0x19, 0x60, 0x61, 0x83, 0x04, 0x00,
-    0x9a, 0x04, 0x00, 0x81, 0x04, 0x00, 0x80, 0x04,
-    0x01, 0x80, 0x04, 0x00, 0x89, 0x04, 0x00, 0x83,
-    0x04, 0x00, 0x80, 0x04, 0x00, 0x80, 0x04, 0x05,
-    0x80, 0x04, 0x03, 0x80, 0x04, 0x00, 0x80, 0x04,
-    0x00, 0x80, 0x04, 0x00, 0x82, 0x04, 0x00, 0x81,
-    0x04, 0x00, 0x80, 0x04, 0x01, 0x80, 0x04, 0x00,
-    0x80, 0x04, 0x00, 0x80, 0x04, 0x00, 0x80, 0x04,
-    0x00, 0x80, 0x04, 0x00, 0x81, 0x04, 0x00, 0x80,
-    0x04, 0x01, 0x83, 0x04, 0x00, 0x86, 0x04, 0x00,
-    0x83, 0x04, 0x00, 0x83, 0x04, 0x00, 0x80, 0x04,
-    0x00, 0x89, 0x04, 0x00, 0x90, 0x04, 0x04, 0x82,
-    0x04, 0x00, 0x84, 0x04, 0x00, 0x90, 0x04, 0x33,
-    0x81, 0x04, 0x60, 0xad, 0xab, 0x19, 0x03, 0xe0,
-    0x03, 0x19, 0x0b, 0x8e, 0x19, 0x01, 0x8e, 0x19,
-    0x00, 0x8e, 0x19, 0x00, 0xa4, 0x19, 0x09, 0xe0,
-    0x4d, 0x19, 0x37, 0x99, 0x19, 0x80, 0x38, 0x81,
-    0x19, 0x0c, 0xab, 0x19, 0x03, 0x88, 0x19, 0x06,
-    0x81, 0x19, 0x0d, 0x85, 0x19, 0x60, 0x39, 0xe3,
-    0x77, 0x19, 0x03, 0x90, 0x19, 0x02, 0x8c, 0x19,
-    0x02, 0xe0, 0x16, 0x19, 0x03, 0xde, 0x19, 0x05,
-    0x8b, 0x19, 0x03, 0x80, 0x19, 0x0e, 0x8b, 0x19,
-    0x03, 0xb7, 0x19, 0x07, 0x89, 0x19, 0x05, 0xa7,
-    0x19, 0x07, 0x9d, 0x19, 0x01, 0x8b, 0x19, 0x03,
-    0x81, 0x19, 0x3d, 0xe0, 0xf3, 0x19, 0x0b, 0x8d,
-    0x19, 0x01, 0x8c, 0x19, 0x02, 0x89, 0x19, 0x04,
-    0xb7, 0x19, 0x06, 0x8e, 0x19, 0x01, 0x8a, 0x19,
-    0x05, 0x88, 0x19, 0x06, 0xe0, 0x32, 0x19, 0x00,
-    0xe0, 0x05, 0x19, 0x63, 0xa5, 0xf0, 0x96, 0x7f,
-    0x32, 0x1f, 0xef, 0xd9, 0x32, 0x05, 0xe0, 0x7d,
-    0x32, 0x01, 0xf0, 0x06, 0x21, 0x32, 0x0d, 0xf0,
-    0x0c, 0xd0, 0x32, 0x0e, 0xe2, 0x0d, 0x32, 0x69,
-    0x41, 0xe1, 0xbd, 0x32, 0x65, 0x81, 0xf0, 0x02,
-    0xea, 0x32, 0x04, 0xef, 0xff, 0x32, 0x7a, 0xcb,
-    0xf0, 0x80, 0x19, 0x1d, 0xdf, 0x19, 0x60, 0x1f,
-    0xe0, 0x8f, 0x3a,
+    0x00, 0xb6, 0x38, 0x07, 0x9a, 0x38, 0x03, 0x85,
+    0x38, 0x0a, 0x84, 0x04, 0x80, 0x1a, 0x85, 0x04,
+    0x80, 0x1a, 0x8d, 0x04, 0x80, 0x1a, 0x82, 0x04,
+    0x80, 0x1a, 0x9f, 0x04, 0x80, 0x1a, 0x89, 0x04,
+    0x8a, 0x3b, 0x99, 0x04, 0x80, 0x3b, 0xe0, 0x0b,
+    0x04, 0x80, 0x1a, 0xa1, 0x04, 0x8d, 0x93, 0x00,
+    0xbb, 0x93, 0x01, 0x82, 0x93, 0xaf, 0x04, 0xb1,
+    0x9e, 0x0d, 0xba, 0x6b, 0x01, 0x82, 0x6b, 0xad,
+    0x85, 0x01, 0x8e, 0x85, 0x00, 0x9b, 0x57, 0x01,
+    0x80, 0x57, 0x00, 0x8a, 0x93, 0x04, 0xa1, 0x04,
+    0x04, 0xca, 0x04, 0x80, 0x1a, 0x9c, 0x04, 0xd0,
+    0x21, 0x83, 0x3b, 0x8e, 0x21, 0x81, 0x1a, 0x99,
+    0x21, 0x83, 0x0b, 0x00, 0x87, 0x0b, 0x01, 0x81,
+    0x0b, 0x01, 0x95, 0x0b, 0x00, 0x86, 0x0b, 0x00,
+    0x80, 0x0b, 0x02, 0x83, 0x0b, 0x01, 0x88, 0x0b,
+    0x01, 0x81, 0x0b, 0x01, 0x83, 0x0b, 0x07, 0x80,
+    0x0b, 0x03, 0x81, 0x0b, 0x00, 0x84, 0x0b, 0x01,
+    0x98, 0x0b, 0x01, 0x82, 0x31, 0x00, 0x85, 0x31,
+    0x03, 0x81, 0x31, 0x01, 0x95, 0x31, 0x00, 0x86,
+    0x31, 0x00, 0x81, 0x31, 0x00, 0x81, 0x31, 0x00,
+    0x81, 0x31, 0x01, 0x80, 0x31, 0x00, 0x84, 0x31,
+    0x03, 0x81, 0x31, 0x01, 0x82, 0x31, 0x02, 0x80,
+    0x31, 0x06, 0x83, 0x31, 0x00, 0x80, 0x31, 0x06,
+    0x90, 0x31, 0x09, 0x82, 0x2f, 0x00, 0x88, 0x2f,
+    0x00, 0x82, 0x2f, 0x00, 0x95, 0x2f, 0x00, 0x86,
+    0x2f, 0x00, 0x81, 0x2f, 0x00, 0x84, 0x2f, 0x01,
+    0x89, 0x2f, 0x00, 0x82, 0x2f, 0x00, 0x82, 0x2f,
+    0x01, 0x80, 0x2f, 0x0e, 0x83, 0x2f, 0x01, 0x8b,
+    0x2f, 0x06, 0x86, 0x2f, 0x00, 0x82, 0x7a, 0x00,
+    0x87, 0x7a, 0x01, 0x81, 0x7a, 0x01, 0x95, 0x7a,
+    0x00, 0x86, 0x7a, 0x00, 0x81, 0x7a, 0x00, 0x84,
+    0x7a, 0x01, 0x88, 0x7a, 0x01, 0x81, 0x7a, 0x01,
+    0x82, 0x7a, 0x06, 0x82, 0x7a, 0x03, 0x81, 0x7a,
+    0x00, 0x84, 0x7a, 0x01, 0x91, 0x7a, 0x09, 0x81,
+    0x9b, 0x00, 0x85, 0x9b, 0x02, 0x82, 0x9b, 0x00,
+    0x83, 0x9b, 0x02, 0x81, 0x9b, 0x00, 0x80, 0x9b,
+    0x00, 0x81, 0x9b, 0x02, 0x81, 0x9b, 0x02, 0x82,
+    0x9b, 0x02, 0x8b, 0x9b, 0x03, 0x84, 0x9b, 0x02,
+    0x82, 0x9b, 0x00, 0x83, 0x9b, 0x01, 0x80, 0x9b,
+    0x05, 0x80, 0x9b, 0x0d, 0x94, 0x9b, 0x04, 0x8c,
+    0x9d, 0x00, 0x82, 0x9d, 0x00, 0x96, 0x9d, 0x00,
+    0x8f, 0x9d, 0x01, 0x88, 0x9d, 0x00, 0x82, 0x9d,
+    0x00, 0x83, 0x9d, 0x06, 0x81, 0x9d, 0x00, 0x82,
+    0x9d, 0x00, 0x81, 0x9d, 0x01, 0x83, 0x9d, 0x01,
+    0x89, 0x9d, 0x06, 0x88, 0x9d, 0x8c, 0x40, 0x00,
+    0x82, 0x40, 0x00, 0x96, 0x40, 0x00, 0x89, 0x40,
+    0x00, 0x84, 0x40, 0x01, 0x88, 0x40, 0x00, 0x82,
+    0x40, 0x00, 0x83, 0x40, 0x06, 0x81, 0x40, 0x04,
+    0x82, 0x40, 0x00, 0x83, 0x40, 0x01, 0x89, 0x40,
+    0x00, 0x82, 0x40, 0x0b, 0x8c, 0x56, 0x00, 0x82,
+    0x56, 0x00, 0xb2, 0x56, 0x00, 0x82, 0x56, 0x00,
+    0x85, 0x56, 0x03, 0x8f, 0x56, 0x01, 0x99, 0x56,
+    0x00, 0x82, 0x8c, 0x00, 0x91, 0x8c, 0x02, 0x97,
+    0x8c, 0x00, 0x88, 0x8c, 0x00, 0x80, 0x8c, 0x01,
+    0x86, 0x8c, 0x02, 0x80, 0x8c, 0x03, 0x85, 0x8c,
+    0x00, 0x80, 0x8c, 0x00, 0x87, 0x8c, 0x05, 0x89,
+    0x8c, 0x01, 0x82, 0x8c, 0x0b, 0xb9, 0x9f, 0x03,
+    0x80, 0x1a, 0x9b, 0x9f, 0x24, 0x81, 0x4b, 0x00,
+    0x80, 0x4b, 0x00, 0x84, 0x4b, 0x00, 0x97, 0x4b,
+    0x00, 0x80, 0x4b, 0x00, 0x96, 0x4b, 0x01, 0x84,
+    0x4b, 0x00, 0x80, 0x4b, 0x00, 0x86, 0x4b, 0x00,
+    0x89, 0x4b, 0x01, 0x83, 0x4b, 0x1f, 0xc7, 0xa0,
+    0x00, 0xa3, 0xa0, 0x03, 0xa6, 0xa0, 0x00, 0xa3,
+    0xa0, 0x00, 0x8e, 0xa0, 0x00, 0x86, 0xa0, 0x83,
+    0x1a, 0x81, 0xa0, 0x24, 0xe0, 0x3f, 0x65, 0xa5,
+    0x29, 0x00, 0x80, 0x29, 0x04, 0x80, 0x29, 0x01,
+    0xaa, 0x29, 0x80, 0x1a, 0x83, 0x29, 0xe0, 0x9f,
+    0x34, 0xc8, 0x28, 0x00, 0x83, 0x28, 0x01, 0x86,
+    0x28, 0x00, 0x80, 0x28, 0x00, 0x83, 0x28, 0x01,
+    0xa8, 0x28, 0x00, 0x83, 0x28, 0x01, 0xa0, 0x28,
+    0x00, 0x83, 0x28, 0x01, 0x86, 0x28, 0x00, 0x80,
+    0x28, 0x00, 0x83, 0x28, 0x01, 0x8e, 0x28, 0x00,
+    0xb8, 0x28, 0x00, 0x83, 0x28, 0x01, 0xc2, 0x28,
+    0x01, 0x9f, 0x28, 0x02, 0x99, 0x28, 0x05, 0xd5,
+    0x18, 0x01, 0x85, 0x18, 0x01, 0xe2, 0x1f, 0x13,
+    0x9c, 0x6e, 0x02, 0xca, 0x84, 0x82, 0x1a, 0x8a,
+    0x84, 0x06, 0x95, 0x94, 0x08, 0x80, 0x94, 0x94,
+    0x36, 0x81, 0x1a, 0x08, 0x93, 0x12, 0x0b, 0x8c,
+    0x95, 0x00, 0x82, 0x95, 0x00, 0x81, 0x95, 0x0b,
+    0xdd, 0x46, 0x01, 0x89, 0x46, 0x05, 0x89, 0x46,
+    0x05, 0x81, 0x62, 0x81, 0x1a, 0x80, 0x62, 0x80,
+    0x1a, 0x93, 0x62, 0x05, 0xd8, 0x62, 0x06, 0xaa,
+    0x62, 0x04, 0xc5, 0x13, 0x09, 0x9e, 0x4e, 0x00,
+    0x8b, 0x4e, 0x03, 0x8b, 0x4e, 0x03, 0x80, 0x4e,
+    0x02, 0x8b, 0x4e, 0x9d, 0x96, 0x01, 0x84, 0x96,
+    0x0a, 0xab, 0x69, 0x03, 0x99, 0x69, 0x05, 0x8a,
+    0x69, 0x02, 0x81, 0x69, 0x9f, 0x46, 0x9b, 0x11,
+    0x01, 0x81, 0x11, 0xbe, 0x97, 0x00, 0x9c, 0x97,
+    0x01, 0x8a, 0x97, 0x05, 0x89, 0x97, 0x05, 0x8d,
+    0x97, 0x01, 0xad, 0x3b, 0x01, 0x8b, 0x3b, 0x13,
+    0xcc, 0x07, 0x00, 0xb1, 0x07, 0xbf, 0x90, 0xb3,
+    0x0a, 0x07, 0x83, 0x0a, 0xb7, 0x4d, 0x02, 0x8e,
+    0x4d, 0x02, 0x82, 0x4d, 0xaf, 0x6f, 0x8a, 0x1e,
+    0x04, 0xaa, 0x29, 0x01, 0x82, 0x29, 0x87, 0x90,
+    0x07, 0x82, 0x3b, 0x80, 0x1a, 0x8c, 0x3b, 0x80,
+    0x1a, 0x86, 0x3b, 0x83, 0x1a, 0x80, 0x3b, 0x85,
+    0x1a, 0x80, 0x3b, 0x82, 0x1a, 0x81, 0x3b, 0x80,
+    0x1a, 0x04, 0xa5, 0x4c, 0x84, 0x2e, 0x80, 0x1e,
+    0xb0, 0x4c, 0x84, 0x2e, 0x83, 0x4c, 0x84, 0x2e,
+    0x8c, 0x4c, 0x80, 0x1e, 0xc5, 0x4c, 0x80, 0x2e,
+    0xbf, 0x3b, 0xe0, 0x9f, 0x4c, 0x95, 0x2e, 0x01,
+    0x85, 0x2e, 0x01, 0xa5, 0x2e, 0x01, 0x85, 0x2e,
+    0x01, 0x87, 0x2e, 0x00, 0x80, 0x2e, 0x00, 0x80,
+    0x2e, 0x00, 0x80, 0x2e, 0x00, 0x9e, 0x2e, 0x01,
+    0xb4, 0x2e, 0x00, 0x8e, 0x2e, 0x00, 0x8d, 0x2e,
+    0x01, 0x85, 0x2e, 0x00, 0x92, 0x2e, 0x01, 0x82,
+    0x2e, 0x00, 0x88, 0x2e, 0x00, 0x8b, 0x1a, 0x81,
+    0x3b, 0xd6, 0x1a, 0x00, 0x8a, 0x1a, 0x80, 0x4c,
+    0x01, 0x8a, 0x1a, 0x80, 0x4c, 0x8e, 0x1a, 0x00,
+    0x8c, 0x4c, 0x02, 0xa1, 0x1a, 0x0d, 0xa0, 0x3b,
+    0x0e, 0xa5, 0x1a, 0x80, 0x2e, 0x82, 0x1a, 0x81,
+    0x4c, 0x85, 0x1a, 0x80, 0x4c, 0x9a, 0x1a, 0x80,
+    0x4c, 0x90, 0x1a, 0xa8, 0x4c, 0x82, 0x1a, 0x03,
+    0xe2, 0x39, 0x1a, 0x15, 0x8a, 0x1a, 0x14, 0xe3,
+    0x3f, 0x1a, 0xe0, 0x9f, 0x10, 0xe2, 0x13, 0x1a,
+    0x01, 0xe0, 0x29, 0x1a, 0xdf, 0x2a, 0x9f, 0x4c,
+    0xe0, 0x13, 0x1b, 0x04, 0x86, 0x1b, 0xa5, 0x29,
+    0x00, 0x80, 0x29, 0x04, 0x80, 0x29, 0x01, 0xb7,
+    0xa1, 0x06, 0x81, 0xa1, 0x0d, 0x80, 0xa1, 0x96,
+    0x28, 0x08, 0x86, 0x28, 0x00, 0x86, 0x28, 0x00,
+    0x86, 0x28, 0x00, 0x86, 0x28, 0x00, 0x86, 0x28,
+    0x00, 0x86, 0x28, 0x00, 0x86, 0x28, 0x00, 0x86,
+    0x28, 0x00, 0x9f, 0x1e, 0xdd, 0x1a, 0x21, 0x99,
+    0x33, 0x00, 0xd8, 0x33, 0x0b, 0xe0, 0x75, 0x33,
+    0x19, 0x94, 0x1a, 0x80, 0x33, 0x80, 0x1a, 0x80,
+    0x33, 0x98, 0x1a, 0x88, 0x33, 0x83, 0x3b, 0x81,
+    0x34, 0x87, 0x1a, 0x83, 0x33, 0x83, 0x1a, 0x00,
+    0xd5, 0x39, 0x01, 0x81, 0x3b, 0x81, 0x1a, 0x82,
+    0x39, 0x80, 0x1a, 0xd9, 0x41, 0x81, 0x1a, 0x82,
+    0x41, 0x04, 0xaa, 0x0e, 0x00, 0xdd, 0x34, 0x00,
+    0x8f, 0x1a, 0x9f, 0x0e, 0xa5, 0x1a, 0x08, 0x80,
+    0x1a, 0x8f, 0x41, 0x9e, 0x34, 0x00, 0xbf, 0x1a,
+    0x9e, 0x34, 0xd0, 0x1a, 0xae, 0x41, 0x80, 0x1a,
+    0xd7, 0x41, 0xe0, 0x47, 0x1a, 0xf0, 0x09, 0x5f,
+    0x33, 0xbf, 0x1a, 0xf0, 0x41, 0x9f, 0x33, 0xe4,
+    0x2c, 0xae, 0x02, 0xb6, 0xae, 0x08, 0xaf, 0x51,
+    0xe0, 0xcb, 0xa9, 0x13, 0xdf, 0x1e, 0xd7, 0x08,
+    0x07, 0xa1, 0x1a, 0xe0, 0x05, 0x4c, 0x82, 0x1a,
+    0xd1, 0x4c, 0x13, 0x8e, 0x4c, 0xac, 0x92, 0x02,
+    0x89, 0x1a, 0x05, 0xb7, 0x80, 0x07, 0xc5, 0x86,
+    0x07, 0x8b, 0x86, 0x05, 0x9f, 0x21, 0xad, 0x44,
+    0x80, 0x1a, 0x80, 0x44, 0xa3, 0x83, 0x0a, 0x80,
+    0x83, 0x9c, 0x34, 0x02, 0xcd, 0x3e, 0x00, 0x80,
+    0x1a, 0x89, 0x3e, 0x03, 0x81, 0x3e, 0x9e, 0x65,
+    0x00, 0xb6, 0x17, 0x08, 0x8d, 0x17, 0x01, 0x89,
+    0x17, 0x01, 0x83, 0x17, 0x9f, 0x65, 0xc2, 0x98,
+    0x17, 0x84, 0x98, 0x96, 0x5c, 0x09, 0x85, 0x28,
+    0x01, 0x85, 0x28, 0x01, 0x85, 0x28, 0x08, 0x86,
+    0x28, 0x00, 0x86, 0x28, 0x00, 0xaa, 0x4c, 0x80,
+    0x1a, 0x88, 0x4c, 0x80, 0x2e, 0x83, 0x4c, 0x81,
+    0x1a, 0x03, 0xcf, 0x18, 0xad, 0x5c, 0x01, 0x89,
+    0x5c, 0x05, 0xf0, 0x1b, 0x43, 0x34, 0x0b, 0x96,
+    0x34, 0x03, 0xb0, 0x34, 0x70, 0x10, 0xa3, 0xe1,
+    0x0d, 0x33, 0x01, 0xe0, 0x09, 0x33, 0x25, 0x86,
+    0x4c, 0x0b, 0x84, 0x05, 0x04, 0x99, 0x38, 0x00,
+    0x84, 0x38, 0x00, 0x80, 0x38, 0x00, 0x81, 0x38,
+    0x00, 0x81, 0x38, 0x00, 0x89, 0x38, 0xe1, 0x8d,
+    0x04, 0x81, 0x1a, 0xe0, 0x2f, 0x04, 0x1f, 0x8f,
+    0x04, 0x8f, 0x3b, 0x89, 0x1a, 0x05, 0x8d, 0x3b,
+    0x81, 0x1e, 0xa2, 0x1a, 0x00, 0x92, 0x1a, 0x00,
+    0x83, 0x1a, 0x03, 0x84, 0x04, 0x00, 0xe0, 0x26,
+    0x04, 0x01, 0x80, 0x1a, 0x00, 0x9f, 0x1a, 0x99,
+    0x4c, 0x85, 0x1a, 0x99, 0x4c, 0x8a, 0x1a, 0x89,
+    0x41, 0x80, 0x1a, 0xac, 0x41, 0x81, 0x1a, 0x9e,
+    0x34, 0x02, 0x85, 0x34, 0x01, 0x85, 0x34, 0x01,
+    0x85, 0x34, 0x01, 0x82, 0x34, 0x02, 0x86, 0x1a,
+    0x00, 0x86, 0x1a, 0x09, 0x84, 0x1a, 0x01, 0x8b,
+    0x50, 0x00, 0x99, 0x50, 0x00, 0x92, 0x50, 0x00,
+    0x81, 0x50, 0x00, 0x8e, 0x50, 0x01, 0x8d, 0x50,
+    0x21, 0xe0, 0x1a, 0x50, 0x04, 0x82, 0x1a, 0x03,
+    0xac, 0x1a, 0x02, 0x88, 0x1a, 0xce, 0x2e, 0x00,
+    0x8c, 0x1a, 0x02, 0x80, 0x2e, 0x2e, 0xac, 0x1a,
+    0x80, 0x3b, 0x60, 0x21, 0x9c, 0x52, 0x02, 0xb0,
+    0x14, 0x0e, 0x80, 0x3b, 0x9a, 0x1a, 0x03, 0xa3,
+    0x72, 0x08, 0x82, 0x72, 0x9a, 0x2b, 0x04, 0xaa,
+    0x74, 0x04, 0x9d, 0xa8, 0x00, 0x80, 0xa8, 0xa3,
+    0x75, 0x03, 0x8d, 0x75, 0x29, 0xcf, 0x20, 0xaf,
+    0x88, 0x9d, 0x7c, 0x01, 0x89, 0x7c, 0x05, 0xa3,
+    0x7b, 0x03, 0xa3, 0x7b, 0x03, 0xa7, 0x26, 0x07,
+    0xb3, 0x15, 0x0a, 0x80, 0x15, 0x8a, 0xaa, 0x00,
+    0x8e, 0xaa, 0x00, 0x86, 0xaa, 0x00, 0x81, 0xaa,
+    0x00, 0x8a, 0xaa, 0x00, 0x8e, 0xaa, 0x00, 0x86,
+    0xaa, 0x00, 0x81, 0xaa, 0x02, 0xb3, 0xa4, 0x0b,
+    0xe0, 0xd6, 0x4f, 0x08, 0x95, 0x4f, 0x09, 0x87,
+    0x4f, 0x17, 0x85, 0x4c, 0x00, 0xa9, 0x4c, 0x00,
+    0x88, 0x4c, 0x44, 0x85, 0x1d, 0x01, 0x80, 0x1d,
+    0x00, 0xab, 0x1d, 0x00, 0x81, 0x1d, 0x02, 0x80,
+    0x1d, 0x01, 0x80, 0x1d, 0x95, 0x3a, 0x00, 0x88,
+    0x3a, 0x9f, 0x7e, 0x9e, 0x66, 0x07, 0x88, 0x66,
+    0x2f, 0x92, 0x37, 0x00, 0x81, 0x37, 0x04, 0x84,
+    0x37, 0x9b, 0x81, 0x02, 0x80, 0x81, 0x99, 0x53,
+    0x04, 0x80, 0x53, 0x99, 0x8a, 0x25, 0x9f, 0x5f,
+    0x97, 0x5e, 0x03, 0x93, 0x5e, 0x01, 0xad, 0x5e,
+    0x83, 0x45, 0x00, 0x81, 0x45, 0x04, 0x87, 0x45,
+    0x00, 0x82, 0x45, 0x00, 0x9c, 0x45, 0x01, 0x82,
+    0x45, 0x03, 0x89, 0x45, 0x06, 0x88, 0x45, 0x06,
+    0x9f, 0x77, 0x9f, 0x73, 0x1f, 0xa6, 0x58, 0x03,
+    0x8b, 0x58, 0x08, 0xb5, 0x06, 0x02, 0x86, 0x06,
+    0x95, 0x3d, 0x01, 0x87, 0x3d, 0x92, 0x3c, 0x04,
+    0x87, 0x3c, 0x91, 0x82, 0x06, 0x83, 0x82, 0x0b,
+    0x86, 0x82, 0x4f, 0xc8, 0x78, 0x36, 0xb2, 0x71,
+    0x0c, 0xb2, 0x71, 0x06, 0x85, 0x71, 0xa7, 0x35,
+    0x07, 0x89, 0x35, 0x05, 0xa5, 0x2c, 0x02, 0x9c,
+    0x2c, 0x07, 0x81, 0x2c, 0x60, 0x6f, 0x9e, 0x04,
+    0x00, 0xa9, 0xad, 0x00, 0x82, 0xad, 0x01, 0x81,
+    0xad, 0x0f, 0x85, 0x04, 0x07, 0x88, 0x04, 0x20,
+    0x85, 0x04, 0xa7, 0x76, 0x07, 0xa9, 0x8d, 0x15,
+    0x99, 0x79, 0x25, 0x9b, 0x19, 0x13, 0x96, 0x27,
+    0x08, 0xcd, 0x0f, 0x03, 0xa3, 0x0f, 0x08, 0x80,
+    0x0f, 0xc2, 0x3f, 0x09, 0x80, 0x3f, 0x01, 0x98,
+    0x8e, 0x06, 0x89, 0x8e, 0x05, 0xb4, 0x16, 0x00,
+    0x91, 0x16, 0x07, 0xa6, 0x55, 0x08, 0xdf, 0x87,
+    0x00, 0x93, 0x8c, 0x0a, 0x91, 0x47, 0x00, 0xae,
+    0x47, 0x3d, 0x86, 0x64, 0x00, 0x80, 0x64, 0x00,
+    0x83, 0x64, 0x00, 0x8e, 0x64, 0x00, 0x8a, 0x64,
+    0x05, 0xba, 0x49, 0x04, 0x89, 0x49, 0x05, 0x83,
+    0x2d, 0x00, 0x87, 0x2d, 0x01, 0x81, 0x2d, 0x01,
+    0x95, 0x2d, 0x00, 0x86, 0x2d, 0x00, 0x81, 0x2d,
+    0x00, 0x84, 0x2d, 0x00, 0x80, 0x3b, 0x88, 0x2d,
+    0x01, 0x81, 0x2d, 0x01, 0x82, 0x2d, 0x01, 0x80,
+    0x2d, 0x05, 0x80, 0x2d, 0x04, 0x86, 0x2d, 0x01,
+    0x86, 0x2d, 0x02, 0x84, 0x2d, 0x0a, 0x89, 0xa7,
+    0x00, 0x80, 0xa7, 0x01, 0x80, 0xa7, 0x00, 0xa5,
+    0xa7, 0x00, 0x89, 0xa7, 0x00, 0x80, 0xa7, 0x01,
+    0x80, 0xa7, 0x00, 0x83, 0xa7, 0x00, 0x89, 0xa7,
+    0x00, 0x81, 0xa7, 0x07, 0x81, 0xa7, 0x1c, 0xdb,
+    0x6a, 0x00, 0x84, 0x6a, 0x1d, 0xc7, 0xa2, 0x07,
+    0x89, 0xa2, 0x60, 0x45, 0xb5, 0x89, 0x01, 0xa5,
+    0x89, 0x21, 0xc4, 0x61, 0x0a, 0x89, 0x61, 0x05,
+    0x8c, 0x62, 0x12, 0xb9, 0x9a, 0x05, 0x89, 0x9a,
+    0x05, 0x93, 0x65, 0x1b, 0x9a, 0x02, 0x01, 0x8e,
+    0x02, 0x03, 0x96, 0x02, 0x60, 0x58, 0xbb, 0x23,
+    0x60, 0x03, 0xd2, 0xac, 0x0b, 0x80, 0xac, 0x86,
+    0x22, 0x01, 0x80, 0x22, 0x01, 0x87, 0x22, 0x00,
+    0x81, 0x22, 0x00, 0x9d, 0x22, 0x00, 0x81, 0x22,
+    0x01, 0x8b, 0x22, 0x08, 0x89, 0x22, 0x45, 0x87,
+    0x68, 0x01, 0xad, 0x68, 0x01, 0x8a, 0x68, 0x1a,
+    0xc7, 0xaf, 0x07, 0xd2, 0x8f, 0x0c, 0x8f, 0x13,
+    0xb8, 0x7f, 0x06, 0x89, 0x21, 0x55, 0x87, 0x87,
+    0x57, 0xa1, 0x91, 0x0d, 0x89, 0x91, 0x05, 0x88,
+    0x0d, 0x00, 0xac, 0x0d, 0x00, 0x8d, 0x0d, 0x09,
+    0x9c, 0x0d, 0x02, 0x9f, 0x59, 0x01, 0x95, 0x59,
+    0x00, 0x8d, 0x59, 0x48, 0x86, 0x5a, 0x00, 0x81,
+    0x5a, 0x00, 0xab, 0x5a, 0x02, 0x80, 0x5a, 0x00,
+    0x81, 0x5a, 0x00, 0x88, 0x5a, 0x07, 0x89, 0x5a,
+    0x05, 0x85, 0x30, 0x00, 0x81, 0x30, 0x00, 0xa4,
+    0x30, 0x00, 0x81, 0x30, 0x00, 0x85, 0x30, 0x06,
+    0x89, 0x30, 0x05, 0xab, 0xa5, 0x03, 0x89, 0xa5,
+    0x60, 0x95, 0x98, 0x54, 0x06, 0x90, 0x43, 0x00,
+    0xa8, 0x43, 0x02, 0x9c, 0x43, 0x54, 0x80, 0x51,
+    0x0e, 0xb1, 0x9b, 0x0c, 0x80, 0x9b, 0xe3, 0x39,
+    0x1c, 0x60, 0x05, 0xe0, 0x0e, 0x1c, 0x00, 0x84,
+    0x1c, 0x0a, 0xe0, 0x63, 0x1c, 0x69, 0xeb, 0xe0,
+    0x02, 0x1f, 0x0c, 0xe3, 0xf5, 0x25, 0x09, 0xef,
+    0x3a, 0x25, 0x04, 0xe1, 0xe6, 0x03, 0x70, 0x0a,
+    0x58, 0xb9, 0x32, 0x66, 0x65, 0xe1, 0xd8, 0x08,
+    0x06, 0x9e, 0x63, 0x00, 0x89, 0x63, 0x03, 0x81,
+    0x63, 0xce, 0xa3, 0x00, 0x89, 0xa3, 0x05, 0x9d,
+    0x09, 0x01, 0x85, 0x09, 0x09, 0xc5, 0x7d, 0x09,
+    0x89, 0x7d, 0x00, 0x86, 0x7d, 0x00, 0x94, 0x7d,
+    0x04, 0x92, 0x7d, 0x61, 0x4f, 0xb9, 0x4a, 0x60,
+    0x65, 0xda, 0x5b, 0x04, 0x98, 0x0c, 0x01, 0x98,
+    0x0c, 0x2b, 0xca, 0x60, 0x03, 0xb8, 0x60, 0x06,
+    0x90, 0x60, 0x3f, 0x80, 0x9c, 0x80, 0x6c, 0x81,
+    0x33, 0x80, 0x48, 0x0a, 0x86, 0x33, 0x08, 0xf0,
+    0x0a, 0x9f, 0x9c, 0xe1, 0x75, 0x48, 0x28, 0x80,
+    0x48, 0x9e, 0x9c, 0x60, 0x00, 0xe0, 0x12, 0x9c,
+    0x70, 0x11, 0x9c, 0x83, 0x41, 0x00, 0x86, 0x41,
+    0x00, 0x81, 0x41, 0x00, 0x80, 0x41, 0xe0, 0xbe,
+    0x39, 0x82, 0x41, 0x0e, 0x80, 0x39, 0x1c, 0x82,
+    0x39, 0x01, 0x80, 0x41, 0x0d, 0x83, 0x41, 0x07,
+    0xe1, 0x2b, 0x6c, 0x68, 0xa3, 0xe0, 0x0a, 0x24,
+    0x04, 0x8c, 0x24, 0x02, 0x88, 0x24, 0x06, 0x89,
+    0x24, 0x01, 0x83, 0x24, 0x83, 0x1a, 0x6e, 0xfb,
+    0xe0, 0x9c, 0x1a, 0x02, 0xe1, 0x53, 0x1a, 0x05,
+    0x96, 0x1a, 0x0e, 0x90, 0x1a, 0x0e, 0xad, 0x3b,
+    0x01, 0x96, 0x3b, 0x08, 0xe0, 0x13, 0x1a, 0x3b,
+    0xe0, 0x95, 0x1a, 0x09, 0xa6, 0x1a, 0x01, 0xbd,
+    0x1a, 0x82, 0x3b, 0x90, 0x1a, 0x87, 0x3b, 0x81,
+    0x1a, 0x86, 0x3b, 0x9d, 0x1a, 0x83, 0x3b, 0xbc,
+    0x1a, 0x14, 0xc5, 0x2e, 0x60, 0x19, 0x93, 0x1a,
+    0x0b, 0x93, 0x1a, 0x0b, 0xd6, 0x1a, 0x08, 0x98,
+    0x1a, 0x60, 0x26, 0xd4, 0x1a, 0x00, 0xc6, 0x1a,
+    0x00, 0x81, 0x1a, 0x01, 0x80, 0x1a, 0x01, 0x81,
+    0x1a, 0x01, 0x83, 0x1a, 0x00, 0x8b, 0x1a, 0x00,
+    0x80, 0x1a, 0x00, 0x86, 0x1a, 0x00, 0xc0, 0x1a,
+    0x00, 0x83, 0x1a, 0x01, 0x87, 0x1a, 0x00, 0x86,
+    0x1a, 0x00, 0x9b, 0x1a, 0x00, 0x83, 0x1a, 0x00,
+    0x84, 0x1a, 0x00, 0x80, 0x1a, 0x02, 0x86, 0x1a,
+    0x00, 0xe0, 0xf3, 0x1a, 0x01, 0xe0, 0xc3, 0x1a,
+    0x01, 0xb1, 0x1a, 0xe2, 0x2b, 0x8b, 0x0e, 0x84,
+    0x8b, 0x00, 0x8e, 0x8b, 0x63, 0xef, 0x9e, 0x4c,
+    0x05, 0x85, 0x4c, 0x60, 0x74, 0x86, 0x2a, 0x00,
+    0x90, 0x2a, 0x01, 0x86, 0x2a, 0x00, 0x81, 0x2a,
+    0x00, 0x84, 0x2a, 0x04, 0xbd, 0x1e, 0x20, 0x80,
+    0x1e, 0x60, 0x0f, 0xac, 0x6d, 0x02, 0x8d, 0x6d,
+    0x01, 0x89, 0x6d, 0x03, 0x81, 0x6d, 0x60, 0xdf,
+    0x9e, 0xa6, 0x10, 0xb9, 0xab, 0x04, 0x80, 0xab,
+    0x61, 0x6f, 0xa9, 0x67, 0x60, 0x75, 0xaa, 0x70,
+    0x03, 0x80, 0x70, 0x60, 0x5f, 0x9e, 0x99, 0x00,
+    0x95, 0x99, 0x07, 0x81, 0x99, 0x60, 0x7f, 0x86,
+    0x28, 0x00, 0x83, 0x28, 0x00, 0x81, 0x28, 0x00,
+    0x8e, 0x28, 0x00, 0xe0, 0x64, 0x5d, 0x01, 0x8f,
+    0x5d, 0x28, 0xcb, 0x01, 0x03, 0x89, 0x01, 0x03,
+    0x81, 0x01, 0x62, 0xb0, 0xc3, 0x1a, 0x4b, 0xbc,
+    0x1a, 0x60, 0x61, 0x83, 0x04, 0x00, 0x9a, 0x04,
+    0x00, 0x81, 0x04, 0x00, 0x80, 0x04, 0x01, 0x80,
+    0x04, 0x00, 0x89, 0x04, 0x00, 0x83, 0x04, 0x00,
+    0x80, 0x04, 0x00, 0x80, 0x04, 0x05, 0x80, 0x04,
+    0x03, 0x80, 0x04, 0x00, 0x80, 0x04, 0x00, 0x80,
+    0x04, 0x00, 0x82, 0x04, 0x00, 0x81, 0x04, 0x00,
+    0x80, 0x04, 0x01, 0x80, 0x04, 0x00, 0x80, 0x04,
+    0x00, 0x80, 0x04, 0x00, 0x80, 0x04, 0x00, 0x80,
+    0x04, 0x00, 0x81, 0x04, 0x00, 0x80, 0x04, 0x01,
+    0x83, 0x04, 0x00, 0x86, 0x04, 0x00, 0x83, 0x04,
+    0x00, 0x83, 0x04, 0x00, 0x80, 0x04, 0x00, 0x89,
+    0x04, 0x00, 0x90, 0x04, 0x04, 0x82, 0x04, 0x00,
+    0x84, 0x04, 0x00, 0x90, 0x04, 0x33, 0x81, 0x04,
+    0x60, 0xad, 0xab, 0x1a, 0x03, 0xe0, 0x03, 0x1a,
+    0x0b, 0x8e, 0x1a, 0x01, 0x8e, 0x1a, 0x00, 0x8e,
+    0x1a, 0x00, 0xa4, 0x1a, 0x09, 0xe0, 0x4d, 0x1a,
+    0x37, 0x99, 0x1a, 0x80, 0x39, 0x81, 0x1a, 0x0c,
+    0xab, 0x1a, 0x03, 0x88, 0x1a, 0x06, 0x81, 0x1a,
+    0x0d, 0x85, 0x1a, 0x60, 0x39, 0xe3, 0x78, 0x1a,
+    0x02, 0x90, 0x1a, 0x02, 0x8c, 0x1a, 0x02, 0xe0,
+    0x79, 0x1a, 0x05, 0x8b, 0x1a, 0x03, 0x80, 0x1a,
+    0x0e, 0x8b, 0x1a, 0x03, 0xb7, 0x1a, 0x07, 0x89,
+    0x1a, 0x05, 0xa7, 0x1a, 0x07, 0x9d, 0x1a, 0x01,
+    0x8b, 0x1a, 0x03, 0x81, 0x1a, 0x0d, 0x88, 0x1a,
+    0x26, 0xe0, 0xf7, 0x1a, 0x07, 0x8d, 0x1a, 0x01,
+    0x8c, 0x1a, 0x02, 0x8a, 0x1a, 0x02, 0xb8, 0x1a,
+    0x00, 0x80, 0x1a, 0x03, 0x8f, 0x1a, 0x01, 0x8b,
+    0x1a, 0x03, 0x89, 0x1a, 0x06, 0xe0, 0x32, 0x1a,
+    0x00, 0xe0, 0x06, 0x1a, 0x63, 0xa4, 0xf0, 0x96,
+    0x7f, 0x33, 0x1f, 0xf0, 0x00, 0xbd, 0x33, 0x01,
+    0xf0, 0x06, 0x2d, 0x33, 0x01, 0xf0, 0x0c, 0xd0,
+    0x33, 0x0e, 0xe2, 0x0d, 0x33, 0x69, 0x41, 0xe1,
+    0xbd, 0x33, 0x65, 0x81, 0xf0, 0x02, 0xea, 0x33,
+    0x04, 0xf0, 0x10, 0xc9, 0x33, 0x7a, 0xbb, 0x26,
+    0x80, 0x1a, 0x1d, 0xdf, 0x1a, 0x60, 0x1f, 0xe0,
+    0x8f, 0x3b,
 };
 
-static const uint8_t unicode_script_ext_table[1253] = {
-    0x80, 0x36, 0x00, 0x00, 0x10, 0x06, 0x13, 0x1a,
-    0x23, 0x25, 0x28, 0x29, 0x2f, 0x2a, 0x2d, 0x32,
-    0x4a, 0x51, 0x53, 0x72, 0x86, 0x81, 0x83, 0x00,
-    0x00, 0x07, 0x0b, 0x1d, 0x20, 0x4a, 0x4f, 0x9b,
-    0xa1, 0x09, 0x00, 0x00, 0x02, 0x0d, 0x4a, 0x00,
-    0x00, 0x02, 0x02, 0x0d, 0x4a, 0x00, 0x00, 0x00,
-    0x02, 0x4a, 0x4f, 0x08, 0x00, 0x00, 0x02, 0x4a,
-    0x9b, 0x00, 0x00, 0x00, 0x02, 0x0d, 0x4a, 0x25,
-    0x00, 0x00, 0x08, 0x17, 0x1a, 0x1d, 0x2d, 0x4a,
-    0x72, 0x8e, 0x93, 0x00, 0x08, 0x17, 0x1d, 0x2d,
-    0x4a, 0x79, 0x8e, 0x93, 0xa0, 0x00, 0x04, 0x17,
-    0x1d, 0x4a, 0x9d, 0x00, 0x05, 0x29, 0x4a, 0x8e,
-    0x90, 0x9b, 0x00, 0x0b, 0x14, 0x17, 0x1a, 0x1d,
-    0x2a, 0x2d, 0x4a, 0x79, 0x90, 0x9d, 0xa0, 0x00,
-    0x06, 0x1a, 0x25, 0x29, 0x2a, 0x40, 0x4a, 0x00,
-    0x04, 0x1d, 0x2d, 0x4a, 0x72, 0x00, 0x09, 0x1a,
-    0x23, 0x37, 0x4a, 0x72, 0x90, 0x93, 0x9d, 0xa0,
-    0x00, 0x0a, 0x05, 0x1d, 0x23, 0x2a, 0x2d, 0x37,
-    0x4a, 0x72, 0x90, 0x93, 0x00, 0x02, 0x4a, 0x9d,
-    0x00, 0x03, 0x23, 0x4a, 0x90, 0x00, 0x04, 0x17,
-    0x1d, 0x4a, 0x79, 0x00, 0x03, 0x17, 0x4a, 0x93,
-    0x00, 0x02, 0x4a, 0x8e, 0x00, 0x02, 0x27, 0x4a,
-    0x00, 0x00, 0x00, 0x02, 0x4a, 0x8e, 0x00, 0x03,
-    0x1d, 0x4a, 0xa0, 0x00, 0x00, 0x00, 0x04, 0x2d,
-    0x4a, 0x72, 0xa0, 0x0b, 0x00, 0x00, 0x02, 0x4a,
-    0x90, 0x01, 0x00, 0x00, 0x05, 0x17, 0x23, 0x40,
-    0x4a, 0x90, 0x00, 0x04, 0x17, 0x23, 0x4a, 0x90,
-    0x00, 0x02, 0x4a, 0x90, 0x06, 0x00, 0x00, 0x03,
-    0x4a, 0x8e, 0x90, 0x00, 0x02, 0x4a, 0x90, 0x00,
-    0x00, 0x00, 0x03, 0x17, 0x4a, 0x90, 0x00, 0x06,
-    0x14, 0x17, 0x2a, 0x4a, 0x8e, 0x9b, 0x0f, 0x00,
-    0x00, 0x01, 0x2d, 0x01, 0x00, 0x00, 0x01, 0x2d,
-    0x11, 0x00, 0x00, 0x02, 0x4a, 0x79, 0x04, 0x00,
-    0x00, 0x03, 0x14, 0x4a, 0xa0, 0x03, 0x00, 0x0c,
-    0x01, 0x4a, 0x03, 0x00, 0x01, 0x02, 0x1a, 0x2d,
-    0x80, 0x8c, 0x00, 0x00, 0x02, 0x1d, 0x72, 0x00,
-    0x02, 0x1d, 0x29, 0x01, 0x02, 0x1d, 0x4a, 0x00,
-    0x02, 0x1d, 0x29, 0x80, 0x80, 0x00, 0x00, 0x03,
-    0x05, 0x28, 0x29, 0x80, 0x01, 0x00, 0x00, 0x07,
-    0x04, 0x2b, 0x69, 0x34, 0x90, 0x9a, 0xa8, 0x0d,
-    0x00, 0x00, 0x07, 0x04, 0x2b, 0x69, 0x34, 0x90,
-    0x9a, 0xa8, 0x00, 0x03, 0x04, 0x90, 0x9a, 0x01,
-    0x00, 0x00, 0x08, 0x01, 0x04, 0x2b, 0x69, 0x34,
-    0x90, 0x9a, 0xa8, 0x1f, 0x00, 0x00, 0x09, 0x01,
-    0x04, 0x55, 0x56, 0x77, 0x80, 0x34, 0x8a, 0x90,
-    0x09, 0x00, 0x0a, 0x02, 0x04, 0x90, 0x09, 0x00,
-    0x09, 0x03, 0x04, 0x9a, 0xa8, 0x05, 0x00, 0x00,
-    0x02, 0x04, 0x90, 0x62, 0x00, 0x00, 0x02, 0x04,
-    0x34, 0x81, 0xfb, 0x00, 0x00, 0x0d, 0x0b, 0x20,
-    0x2c, 0x2e, 0x30, 0x3f, 0x4a, 0x54, 0x78, 0x85,
-    0x97, 0x99, 0x9e, 0x00, 0x0c, 0x0b, 0x20, 0x2c,
-    0x2e, 0x30, 0x3f, 0x4a, 0x54, 0x78, 0x97, 0x99,
-    0x9e, 0x10, 0x00, 0x00, 0x15, 0x0b, 0x20, 0x22,
-    0x2f, 0x58, 0x2c, 0x2e, 0x30, 0x3f, 0x53, 0x54,
-    0x66, 0x6e, 0x78, 0x47, 0x89, 0x8f, 0x96, 0x97,
-    0x99, 0x9e, 0x00, 0x17, 0x0b, 0x20, 0x22, 0x2f,
-    0x58, 0x2c, 0x2e, 0x31, 0x30, 0x3f, 0x4c, 0x53,
-    0x54, 0x66, 0x6e, 0x78, 0x47, 0x89, 0x8f, 0x96,
-    0x97, 0x99, 0x9e, 0x09, 0x04, 0x20, 0x22, 0x3e,
-    0x53, 0x75, 0x00, 0x09, 0x03, 0x0b, 0x15, 0x8f,
-    0x75, 0x00, 0x09, 0x02, 0x30, 0x62, 0x75, 0x00,
-    0x09, 0x02, 0x2e, 0x45, 0x80, 0x75, 0x00, 0x0d,
-    0x02, 0x2c, 0x97, 0x80, 0x71, 0x00, 0x09, 0x03,
-    0x3f, 0x66, 0xa2, 0x82, 0xcf, 0x00, 0x09, 0x03,
-    0x15, 0x63, 0x93, 0x80, 0x30, 0x00, 0x00, 0x03,
-    0x28, 0x29, 0x4a, 0x85, 0x6e, 0x00, 0x02, 0x01,
-    0x82, 0x46, 0x00, 0x01, 0x04, 0x11, 0x35, 0x92,
-    0x91, 0x80, 0x4a, 0x00, 0x01, 0x02, 0x60, 0x7e,
-    0x00, 0x00, 0x00, 0x02, 0x60, 0x7e, 0x84, 0x49,
-    0x00, 0x00, 0x04, 0x0b, 0x20, 0x2c, 0x3f, 0x00,
-    0x01, 0x20, 0x00, 0x04, 0x0b, 0x20, 0x2c, 0x3f,
-    0x00, 0x03, 0x20, 0x2c, 0x3f, 0x00, 0x01, 0x20,
-    0x01, 0x02, 0x0b, 0x20, 0x00, 0x02, 0x20, 0x85,
-    0x00, 0x02, 0x0b, 0x20, 0x00, 0x02, 0x20, 0x85,
-    0x00, 0x06, 0x20, 0x3f, 0x54, 0x78, 0x97, 0x99,
-    0x00, 0x01, 0x20, 0x01, 0x02, 0x20, 0x85, 0x01,
-    0x01, 0x20, 0x00, 0x02, 0x20, 0x85, 0x00, 0x02,
-    0x0b, 0x20, 0x06, 0x01, 0x20, 0x00, 0x02, 0x20,
-    0x66, 0x00, 0x02, 0x0b, 0x20, 0x01, 0x01, 0x20,
-    0x00, 0x02, 0x0b, 0x20, 0x03, 0x01, 0x20, 0x00,
-    0x0b, 0x0b, 0x20, 0x2c, 0x3f, 0x54, 0x66, 0x78,
-    0x89, 0x99, 0x9e, 0xa2, 0x00, 0x02, 0x20, 0x2c,
-    0x00, 0x04, 0x20, 0x2c, 0x3f, 0xa2, 0x01, 0x02,
-    0x0b, 0x20, 0x00, 0x01, 0x0b, 0x01, 0x02, 0x20,
-    0x2c, 0x00, 0x01, 0x66, 0x80, 0x44, 0x00, 0x01,
-    0x01, 0x2d, 0x35, 0x00, 0x00, 0x03, 0x1d, 0x4a,
-    0x90, 0x00, 0x00, 0x00, 0x01, 0x90, 0x81, 0xb3,
-    0x00, 0x00, 0x03, 0x4a, 0x60, 0x7e, 0x1e, 0x00,
-    0x00, 0x02, 0x01, 0x04, 0x09, 0x00, 0x00, 0x06,
-    0x13, 0x28, 0x29, 0x6f, 0x50, 0x76, 0x01, 0x00,
-    0x00, 0x04, 0x13, 0x2d, 0x6f, 0x5d, 0x80, 0x11,
-    0x00, 0x00, 0x03, 0x20, 0x2c, 0x4a, 0x8c, 0xa5,
-    0x00, 0x00, 0x02, 0x1a, 0x4a, 0x17, 0x00, 0x00,
-    0x02, 0x06, 0x76, 0x00, 0x07, 0x06, 0x13, 0x28,
-    0x6f, 0x3e, 0x51, 0x83, 0x09, 0x00, 0x00, 0x01,
-    0x23, 0x03, 0x00, 0x00, 0x03, 0x01, 0x04, 0x6f,
-    0x00, 0x00, 0x00, 0x02, 0x1d, 0x29, 0x81, 0x2b,
-    0x00, 0x0f, 0x02, 0x32, 0x98, 0x00, 0x00, 0x00,
-    0x07, 0x0d, 0x33, 0x32, 0x38, 0x40, 0x60, 0xa9,
-    0x00, 0x08, 0x0d, 0x33, 0x32, 0x38, 0x40, 0x60,
-    0x7e, 0xa9, 0x00, 0x05, 0x0d, 0x33, 0x32, 0x38,
-    0x40, 0x01, 0x00, 0x00, 0x01, 0x32, 0x00, 0x00,
-    0x01, 0x08, 0x0d, 0x33, 0x32, 0x38, 0x40, 0x60,
-    0x9c, 0xa9, 0x01, 0x09, 0x0d, 0x33, 0x32, 0x38,
-    0x40, 0x4f, 0x60, 0x9c, 0xa9, 0x05, 0x06, 0x0d,
-    0x33, 0x32, 0x38, 0x40, 0xa9, 0x00, 0x00, 0x00,
-    0x05, 0x0d, 0x33, 0x32, 0x38, 0x40, 0x07, 0x06,
-    0x0d, 0x33, 0x32, 0x38, 0x40, 0xa9, 0x03, 0x05,
-    0x0d, 0x33, 0x32, 0x38, 0x40, 0x09, 0x00, 0x03,
-    0x02, 0x0d, 0x32, 0x01, 0x00, 0x00, 0x05, 0x0d,
-    0x33, 0x32, 0x38, 0x40, 0x04, 0x02, 0x38, 0x40,
-    0x00, 0x00, 0x00, 0x05, 0x0d, 0x33, 0x32, 0x38,
-    0x40, 0x03, 0x00, 0x01, 0x03, 0x32, 0x38, 0x40,
-    0x01, 0x01, 0x32, 0x58, 0x00, 0x03, 0x02, 0x38,
-    0x40, 0x02, 0x00, 0x00, 0x02, 0x38, 0x40, 0x59,
-    0x00, 0x00, 0x06, 0x0d, 0x33, 0x32, 0x38, 0x40,
-    0xa9, 0x00, 0x02, 0x38, 0x40, 0x80, 0x12, 0x00,
-    0x0f, 0x01, 0x32, 0x1f, 0x00, 0x25, 0x01, 0x32,
-    0x08, 0x00, 0x00, 0x02, 0x32, 0x98, 0x2f, 0x00,
-    0x27, 0x01, 0x32, 0x37, 0x00, 0x30, 0x01, 0x32,
-    0x0e, 0x00, 0x0b, 0x01, 0x32, 0x32, 0x00, 0x00,
-    0x01, 0x32, 0x57, 0x00, 0x18, 0x01, 0x32, 0x09,
-    0x00, 0x04, 0x01, 0x32, 0x5f, 0x00, 0x1e, 0x01,
-    0x32, 0xc0, 0x31, 0xef, 0x00, 0x00, 0x02, 0x1d,
-    0x29, 0x80, 0x0f, 0x00, 0x07, 0x02, 0x32, 0x4a,
-    0x80, 0xa7, 0x00, 0x02, 0x10, 0x20, 0x22, 0x2e,
-    0x30, 0x45, 0x3f, 0x3e, 0x53, 0x54, 0x5f, 0x66,
-    0x85, 0x47, 0x96, 0x9e, 0xa2, 0x02, 0x0f, 0x20,
-    0x22, 0x2e, 0x30, 0x45, 0x3f, 0x3e, 0x53, 0x5f,
-    0x66, 0x85, 0x47, 0x96, 0x9e, 0xa2, 0x01, 0x0b,
-    0x20, 0x22, 0x2e, 0x30, 0x45, 0x3e, 0x53, 0x5f,
-    0x47, 0x96, 0x9e, 0x00, 0x0c, 0x20, 0x22, 0x2e,
-    0x30, 0x45, 0x3e, 0x53, 0x5f, 0x85, 0x47, 0x96,
-    0x9e, 0x00, 0x0b, 0x20, 0x22, 0x2e, 0x30, 0x45,
-    0x3e, 0x53, 0x5f, 0x47, 0x96, 0x9e, 0x80, 0x36,
-    0x00, 0x00, 0x03, 0x0b, 0x20, 0xa2, 0x00, 0x00,
-    0x00, 0x02, 0x20, 0x97, 0x39, 0x00, 0x00, 0x03,
-    0x42, 0x4a, 0x63, 0x80, 0x1f, 0x00, 0x00, 0x02,
-    0x10, 0x3d, 0xc0, 0x12, 0xed, 0x00, 0x01, 0x02,
-    0x04, 0x69, 0x80, 0x31, 0x00, 0x00, 0x02, 0x04,
-    0x9a, 0x09, 0x00, 0x00, 0x02, 0x04, 0x9a, 0x46,
-    0x00, 0x01, 0x05, 0x0d, 0x33, 0x32, 0x38, 0x40,
-    0x80, 0x99, 0x00, 0x04, 0x06, 0x0d, 0x33, 0x32,
-    0x38, 0x40, 0xa9, 0x09, 0x00, 0x00, 0x02, 0x38,
-    0x40, 0x2c, 0x00, 0x01, 0x02, 0x38, 0x40, 0x80,
-    0xdf, 0x00, 0x01, 0x03, 0x1e, 0x1c, 0x4e, 0x00,
-    0x02, 0x1c, 0x4e, 0x03, 0x00, 0x2c, 0x03, 0x1c,
-    0x4d, 0x4e, 0x02, 0x00, 0x08, 0x02, 0x1c, 0x4e,
-    0x81, 0x1f, 0x00, 0x1b, 0x02, 0x04, 0x1a, 0x87,
-    0x75, 0x00, 0x00, 0x02, 0x56, 0x77, 0x87, 0x8d,
-    0x00, 0x00, 0x02, 0x2c, 0x97, 0x00, 0x00, 0x00,
-    0x02, 0x2c, 0x97, 0x36, 0x00, 0x01, 0x02, 0x2c,
-    0x97, 0x8c, 0x12, 0x00, 0x01, 0x02, 0x2c, 0x97,
-    0x00, 0x00, 0x00, 0x02, 0x2c, 0x97, 0xc0, 0x5c,
-    0x4b, 0x00, 0x03, 0x01, 0x23, 0x96, 0x3b, 0x00,
-    0x11, 0x01, 0x32, 0x9e, 0x5d, 0x00, 0x01, 0x01,
-    0x32, 0xce, 0xcd, 0x2d, 0x00,
+static const uint8_t unicode_script_ext_table[1278] = {
+    0x80, 0x36, 0x00, 0x00, 0x10, 0x06, 0x14, 0x1b,
+    0x24, 0x26, 0x29, 0x2a, 0x30, 0x2b, 0x2e, 0x33,
+    0x4c, 0x53, 0x55, 0x74, 0x88, 0x81, 0x83, 0x00,
+    0x00, 0x07, 0x0b, 0x1e, 0x21, 0x4c, 0x51, 0x9f,
+    0xa6, 0x09, 0x00, 0x00, 0x02, 0x0e, 0x4c, 0x00,
+    0x00, 0x02, 0x02, 0x0e, 0x4c, 0x00, 0x00, 0x00,
+    0x02, 0x4c, 0x51, 0x08, 0x00, 0x00, 0x02, 0x4c,
+    0x9f, 0x00, 0x00, 0x00, 0x02, 0x0e, 0x4c, 0x25,
+    0x00, 0x00, 0x08, 0x18, 0x1b, 0x1e, 0x2e, 0x4c,
+    0x74, 0x91, 0x96, 0x00, 0x08, 0x18, 0x1e, 0x2e,
+    0x4c, 0x7b, 0x91, 0x96, 0xa4, 0x00, 0x04, 0x18,
+    0x1e, 0x4c, 0xa1, 0x00, 0x05, 0x2a, 0x4c, 0x91,
+    0x93, 0x9f, 0x00, 0x0b, 0x15, 0x18, 0x1b, 0x1e,
+    0x2b, 0x2e, 0x4c, 0x7b, 0x93, 0xa1, 0xa4, 0x00,
+    0x06, 0x1b, 0x26, 0x2a, 0x2b, 0x41, 0x4c, 0x00,
+    0x05, 0x1e, 0x2e, 0x4c, 0x74, 0xa1, 0x00, 0x09,
+    0x1b, 0x24, 0x38, 0x4c, 0x74, 0x93, 0x96, 0xa1,
+    0xa4, 0x00, 0x0b, 0x05, 0x1e, 0x24, 0x2b, 0x2e,
+    0x38, 0x4c, 0x74, 0x93, 0x96, 0xa1, 0x00, 0x02,
+    0x4c, 0xa1, 0x00, 0x03, 0x24, 0x4c, 0x93, 0x00,
+    0x04, 0x18, 0x1e, 0x4c, 0x7b, 0x00, 0x03, 0x18,
+    0x4c, 0x96, 0x00, 0x02, 0x4c, 0x91, 0x00, 0x02,
+    0x28, 0x4c, 0x00, 0x00, 0x00, 0x02, 0x4c, 0x91,
+    0x00, 0x03, 0x1e, 0x4c, 0xa4, 0x00, 0x00, 0x00,
+    0x04, 0x2e, 0x4c, 0x74, 0xa4, 0x0e, 0x00, 0x00,
+    0x06, 0x18, 0x24, 0x41, 0x4c, 0x93, 0xa1, 0x00,
+    0x04, 0x18, 0x24, 0x4c, 0x93, 0x00, 0x02, 0x4c,
+    0x93, 0x06, 0x00, 0x00, 0x03, 0x4c, 0x91, 0x93,
+    0x00, 0x02, 0x4c, 0x93, 0x00, 0x00, 0x00, 0x03,
+    0x18, 0x4c, 0x93, 0x00, 0x07, 0x15, 0x18, 0x2b,
+    0x4c, 0x91, 0x93, 0x9f, 0x0f, 0x00, 0x00, 0x01,
+    0x2e, 0x01, 0x00, 0x00, 0x01, 0x2e, 0x11, 0x00,
+    0x00, 0x02, 0x4c, 0x7b, 0x04, 0x00, 0x00, 0x03,
+    0x15, 0x4c, 0xa4, 0x03, 0x00, 0x0c, 0x01, 0x4c,
+    0x03, 0x00, 0x01, 0x02, 0x1b, 0x2e, 0x80, 0x8c,
+    0x00, 0x00, 0x02, 0x1e, 0x74, 0x00, 0x02, 0x1e,
+    0x2a, 0x01, 0x02, 0x1e, 0x4c, 0x00, 0x02, 0x1e,
+    0x2a, 0x80, 0x80, 0x00, 0x00, 0x03, 0x05, 0x29,
+    0x2a, 0x80, 0x01, 0x00, 0x00, 0x07, 0x04, 0x2c,
+    0x6b, 0x35, 0x93, 0x9e, 0xad, 0x0d, 0x00, 0x00,
+    0x07, 0x04, 0x2c, 0x6b, 0x35, 0x93, 0x9e, 0xad,
+    0x00, 0x03, 0x04, 0x93, 0x9e, 0x01, 0x00, 0x00,
+    0x08, 0x01, 0x04, 0x2c, 0x6b, 0x35, 0x93, 0x9e,
+    0xad, 0x1f, 0x00, 0x00, 0x09, 0x01, 0x04, 0x57,
+    0x58, 0x79, 0x82, 0x35, 0x8d, 0x93, 0x09, 0x00,
+    0x0a, 0x02, 0x04, 0x93, 0x09, 0x00, 0x09, 0x03,
+    0x04, 0x9e, 0xad, 0x05, 0x00, 0x00, 0x02, 0x04,
+    0x93, 0x62, 0x00, 0x00, 0x02, 0x04, 0x35, 0x81,
+    0xfb, 0x00, 0x00, 0x0f, 0x0b, 0x21, 0x2d, 0x2f,
+    0x31, 0x40, 0x4c, 0x56, 0x68, 0x6a, 0x7a, 0x87,
+    0x9b, 0x9d, 0xa2, 0x00, 0x0d, 0x0b, 0x21, 0x2d,
+    0x2f, 0x31, 0x40, 0x4c, 0x56, 0x6a, 0x7a, 0x9b,
+    0x9d, 0xa2, 0x10, 0x00, 0x00, 0x15, 0x0b, 0x21,
+    0x23, 0x30, 0x5a, 0x2d, 0x2f, 0x31, 0x40, 0x55,
+    0x56, 0x68, 0x70, 0x7a, 0x49, 0x8c, 0x92, 0x9a,
+    0x9b, 0x9d, 0xa2, 0x00, 0x17, 0x0b, 0x21, 0x23,
+    0x30, 0x5a, 0x2d, 0x2f, 0x32, 0x31, 0x40, 0x4e,
+    0x55, 0x56, 0x68, 0x70, 0x7a, 0x49, 0x8c, 0x92,
+    0x9a, 0x9b, 0x9d, 0xa2, 0x09, 0x04, 0x21, 0x23,
+    0x3f, 0x55, 0x75, 0x00, 0x09, 0x03, 0x0b, 0x16,
+    0x92, 0x75, 0x00, 0x09, 0x02, 0x31, 0x64, 0x75,
+    0x00, 0x09, 0x02, 0x2f, 0x47, 0x80, 0x75, 0x00,
+    0x0d, 0x02, 0x2d, 0x9b, 0x80, 0x71, 0x00, 0x09,
+    0x03, 0x40, 0x68, 0xa7, 0x82, 0xcf, 0x00, 0x09,
+    0x03, 0x16, 0x65, 0x96, 0x80, 0x30, 0x00, 0x00,
+    0x03, 0x29, 0x2a, 0x4c, 0x85, 0x6e, 0x00, 0x02,
+    0x01, 0x84, 0x46, 0x00, 0x01, 0x04, 0x12, 0x36,
+    0x95, 0x94, 0x80, 0x4a, 0x00, 0x01, 0x02, 0x62,
+    0x80, 0x00, 0x00, 0x00, 0x02, 0x62, 0x80, 0x84,
+    0x49, 0x00, 0x00, 0x04, 0x0b, 0x21, 0x2d, 0x40,
+    0x00, 0x01, 0x21, 0x00, 0x04, 0x0b, 0x21, 0x2d,
+    0x40, 0x00, 0x03, 0x21, 0x2d, 0x40, 0x00, 0x01,
+    0x21, 0x00, 0x05, 0x0b, 0x21, 0x6a, 0x9d, 0xa2,
+    0x00, 0x03, 0x0b, 0x21, 0x9d, 0x00, 0x03, 0x21,
+    0x6a, 0x87, 0x00, 0x04, 0x0b, 0x21, 0x6a, 0x9d,
+    0x00, 0x02, 0x21, 0x87, 0x00, 0x06, 0x21, 0x40,
+    0x56, 0x7a, 0x9b, 0x9d, 0x00, 0x01, 0x21, 0x01,
+    0x02, 0x21, 0x87, 0x01, 0x01, 0x21, 0x00, 0x02,
+    0x21, 0x87, 0x00, 0x02, 0x0b, 0x21, 0x00, 0x03,
+    0x21, 0x6a, 0xa2, 0x05, 0x01, 0x21, 0x00, 0x03,
+    0x21, 0x68, 0x6a, 0x00, 0x03, 0x0b, 0x21, 0x87,
+    0x00, 0x02, 0x21, 0x6a, 0x00, 0x01, 0x21, 0x00,
+    0x04, 0x0b, 0x21, 0x6a, 0x87, 0x03, 0x01, 0x21,
+    0x00, 0x0b, 0x0b, 0x21, 0x2d, 0x40, 0x56, 0x68,
+    0x7a, 0x8c, 0x9d, 0xa2, 0xa7, 0x00, 0x02, 0x21,
+    0x2d, 0x00, 0x04, 0x21, 0x2d, 0x40, 0xa7, 0x01,
+    0x02, 0x0b, 0x21, 0x00, 0x01, 0x0b, 0x01, 0x02,
+    0x21, 0x2d, 0x00, 0x01, 0x68, 0x80, 0x44, 0x00,
+    0x01, 0x01, 0x2e, 0x35, 0x00, 0x00, 0x03, 0x1e,
+    0x4c, 0x93, 0x00, 0x00, 0x00, 0x01, 0x93, 0x81,
+    0xb3, 0x00, 0x00, 0x03, 0x4c, 0x62, 0x80, 0x1e,
+    0x00, 0x00, 0x02, 0x01, 0x04, 0x09, 0x00, 0x00,
+    0x06, 0x14, 0x29, 0x2a, 0x71, 0x52, 0x78, 0x01,
+    0x00, 0x00, 0x04, 0x14, 0x2e, 0x71, 0x5f, 0x80,
+    0x11, 0x00, 0x00, 0x03, 0x21, 0x2d, 0x4c, 0x8c,
+    0xa5, 0x00, 0x00, 0x02, 0x1b, 0x4c, 0x17, 0x00,
+    0x00, 0x02, 0x06, 0x78, 0x00, 0x07, 0x06, 0x14,
+    0x29, 0x71, 0x3f, 0x53, 0x85, 0x09, 0x00, 0x00,
+    0x01, 0x24, 0x03, 0x00, 0x00, 0x03, 0x01, 0x04,
+    0x71, 0x00, 0x00, 0x00, 0x02, 0x1e, 0x2a, 0x81,
+    0x2b, 0x00, 0x0f, 0x02, 0x33, 0x9c, 0x00, 0x00,
+    0x00, 0x07, 0x0e, 0x34, 0x33, 0x39, 0x41, 0x62,
+    0xae, 0x00, 0x08, 0x0e, 0x34, 0x33, 0x39, 0x41,
+    0x62, 0x80, 0xae, 0x00, 0x05, 0x0e, 0x34, 0x33,
+    0x39, 0x41, 0x01, 0x00, 0x00, 0x01, 0x33, 0x00,
+    0x00, 0x01, 0x08, 0x0e, 0x34, 0x33, 0x39, 0x41,
+    0x62, 0xa0, 0xae, 0x01, 0x09, 0x0e, 0x34, 0x33,
+    0x39, 0x41, 0x51, 0x62, 0xa0, 0xae, 0x05, 0x06,
+    0x0e, 0x34, 0x33, 0x39, 0x41, 0xae, 0x00, 0x00,
+    0x00, 0x05, 0x0e, 0x34, 0x33, 0x39, 0x41, 0x07,
+    0x06, 0x0e, 0x34, 0x33, 0x39, 0x41, 0xae, 0x03,
+    0x05, 0x0e, 0x34, 0x33, 0x39, 0x41, 0x09, 0x00,
+    0x03, 0x02, 0x0e, 0x33, 0x01, 0x00, 0x00, 0x05,
+    0x0e, 0x34, 0x33, 0x39, 0x41, 0x04, 0x02, 0x39,
+    0x41, 0x00, 0x00, 0x00, 0x05, 0x0e, 0x34, 0x33,
+    0x39, 0x41, 0x03, 0x00, 0x01, 0x03, 0x33, 0x39,
+    0x41, 0x01, 0x01, 0x33, 0x58, 0x00, 0x03, 0x02,
+    0x39, 0x41, 0x02, 0x00, 0x00, 0x02, 0x39, 0x41,
+    0x59, 0x00, 0x00, 0x06, 0x0e, 0x34, 0x33, 0x39,
+    0x41, 0xae, 0x00, 0x02, 0x39, 0x41, 0x80, 0x12,
+    0x00, 0x0f, 0x01, 0x33, 0x1f, 0x00, 0x25, 0x01,
+    0x33, 0x08, 0x00, 0x00, 0x02, 0x33, 0x9c, 0x2f,
+    0x00, 0x27, 0x01, 0x33, 0x37, 0x00, 0x30, 0x01,
+    0x33, 0x0e, 0x00, 0x0b, 0x01, 0x33, 0x32, 0x00,
+    0x00, 0x01, 0x33, 0x57, 0x00, 0x18, 0x01, 0x33,
+    0x09, 0x00, 0x04, 0x01, 0x33, 0x5f, 0x00, 0x1e,
+    0x01, 0x33, 0xc0, 0x31, 0xef, 0x00, 0x00, 0x02,
+    0x1e, 0x2a, 0x80, 0x0f, 0x00, 0x07, 0x02, 0x33,
+    0x4c, 0x80, 0xa7, 0x00, 0x02, 0x10, 0x21, 0x23,
+    0x2f, 0x31, 0x47, 0x40, 0x3f, 0x55, 0x56, 0x61,
+    0x68, 0x87, 0x49, 0x9a, 0xa2, 0xa7, 0x02, 0x0f,
+    0x21, 0x23, 0x2f, 0x31, 0x47, 0x40, 0x3f, 0x55,
+    0x61, 0x68, 0x87, 0x49, 0x9a, 0xa2, 0xa7, 0x01,
+    0x0b, 0x21, 0x23, 0x2f, 0x31, 0x47, 0x3f, 0x55,
+    0x61, 0x49, 0x9a, 0xa2, 0x00, 0x0c, 0x21, 0x23,
+    0x2f, 0x31, 0x47, 0x3f, 0x55, 0x61, 0x87, 0x49,
+    0x9a, 0xa2, 0x00, 0x0b, 0x21, 0x23, 0x2f, 0x31,
+    0x47, 0x3f, 0x55, 0x61, 0x49, 0x9a, 0xa2, 0x80,
+    0x36, 0x00, 0x00, 0x03, 0x0b, 0x21, 0xa7, 0x00,
+    0x00, 0x00, 0x02, 0x21, 0x9b, 0x39, 0x00, 0x00,
+    0x03, 0x44, 0x4c, 0x65, 0x80, 0x1f, 0x00, 0x00,
+    0x02, 0x11, 0x3e, 0xc0, 0x12, 0xed, 0x00, 0x01,
+    0x02, 0x04, 0x6b, 0x80, 0x31, 0x00, 0x00, 0x02,
+    0x04, 0x9e, 0x09, 0x00, 0x00, 0x02, 0x04, 0x9e,
+    0x46, 0x00, 0x01, 0x05, 0x0e, 0x34, 0x33, 0x39,
+    0x41, 0x80, 0x99, 0x00, 0x04, 0x06, 0x0e, 0x34,
+    0x33, 0x39, 0x41, 0xae, 0x09, 0x00, 0x00, 0x02,
+    0x39, 0x41, 0x2c, 0x00, 0x01, 0x02, 0x39, 0x41,
+    0x80, 0xdf, 0x00, 0x01, 0x03, 0x1f, 0x1d, 0x50,
+    0x00, 0x02, 0x1d, 0x50, 0x03, 0x00, 0x2c, 0x03,
+    0x1d, 0x4f, 0x50, 0x02, 0x00, 0x08, 0x02, 0x1d,
+    0x50, 0x81, 0x1f, 0x00, 0x1b, 0x02, 0x04, 0x1b,
+    0x87, 0x75, 0x00, 0x00, 0x02, 0x58, 0x79, 0x87,
+    0x8d, 0x00, 0x00, 0x02, 0x2d, 0x9b, 0x00, 0x00,
+    0x00, 0x02, 0x2d, 0x9b, 0x36, 0x00, 0x01, 0x02,
+    0x2d, 0x9b, 0x8c, 0x12, 0x00, 0x01, 0x02, 0x2d,
+    0x9b, 0x00, 0x00, 0x00, 0x02, 0x2d, 0x9b, 0xc0,
+    0x5c, 0x4b, 0x00, 0x03, 0x01, 0x24, 0x96, 0x3b,
+    0x00, 0x11, 0x01, 0x33, 0x9e, 0x5d, 0x00, 0x01,
+    0x01, 0x33, 0xce, 0xcd, 0x2d, 0x00,
 };
 
 static const uint8_t unicode_prop_Hyphen_table[28] = {
@@ -4899,7 +6291,7 @@ static const uint8_t unicode_prop_Other_Math_table[200] = {
     0x80, 0x89, 0x80, 0x90, 0x22, 0x04, 0x80, 0x90,
 };
 
-static const uint8_t unicode_prop_Other_Alphabetic_table[443] = {
+static const uint8_t unicode_prop_Other_Alphabetic_table[452] = {
     0x43, 0x44, 0x80, 0x9c, 0x8c, 0x42, 0x3f, 0x8d,
     0x00, 0x01, 0x01, 0x00, 0xc7, 0x8a, 0xaf, 0x8c,
     0x06, 0x8f, 0x80, 0xe4, 0x33, 0x19, 0x0b, 0x80,
@@ -4935,8 +6327,8 @@ static const uint8_t unicode_prop_Other_Alphabetic_table[443] = {
     0xb1, 0x00, 0x11, 0x0c, 0x80, 0xab, 0x24, 0x80,
     0x40, 0xec, 0x87, 0x60, 0x4f, 0x32, 0x80, 0x48,
     0x56, 0x84, 0x46, 0x85, 0x10, 0x0c, 0x83, 0x43,
-    0x13, 0x83, 0xc0, 0x80, 0x41, 0x40, 0x81, 0xce,
-    0x80, 0x41, 0x02, 0x82, 0xb4, 0x8d, 0xac, 0x81,
+    0x13, 0x83, 0xc0, 0x80, 0x41, 0x40, 0x81, 0xcc,
+    0x82, 0x41, 0x02, 0x82, 0xb4, 0x8d, 0xac, 0x81,
     0x8a, 0x82, 0xac, 0x88, 0x88, 0x80, 0xbc, 0x82,
     0xa3, 0x8b, 0x91, 0x81, 0xb8, 0x82, 0xaf, 0x8c,
     0x8d, 0x81, 0xdb, 0x88, 0x08, 0x28, 0x08, 0x40,
@@ -4947,27 +6339,28 @@ static const uint8_t unicode_prop_Other_Alphabetic_table[443] = {
     0xe9, 0x8a, 0xe6, 0x8d, 0x41, 0x00, 0x8c, 0x40,
     0xf6, 0x28, 0x09, 0x0a, 0x00, 0x80, 0x40, 0x8d,
     0x31, 0x2b, 0x80, 0x9b, 0x89, 0xa9, 0x20, 0x83,
-    0x91, 0x8a, 0xad, 0x8d, 0x41, 0x96, 0x38, 0x86,
-    0xd2, 0x95, 0x80, 0x8d, 0xf9, 0x2a, 0x00, 0x08,
-    0x10, 0x02, 0x80, 0xc1, 0x20, 0x08, 0x83, 0x41,
-    0x5b, 0x83, 0x88, 0x08, 0x80, 0xaf, 0x32, 0x82,
-    0x60, 0x41, 0xdc, 0x90, 0x4e, 0x1f, 0x00, 0xb6,
-    0x33, 0xdc, 0x81, 0x60, 0x4c, 0xab, 0x80, 0x60,
-    0x23, 0x60, 0x30, 0x90, 0x0e, 0x01, 0x04, 0xe3,
-    0x80, 0x48, 0xb6, 0x80, 0x47, 0xe7, 0x99, 0x85,
-    0x99, 0x85, 0x99,
+    0x91, 0x8a, 0xad, 0x8d, 0x40, 0xc7, 0x87, 0x40,
+    0xc6, 0x38, 0x86, 0xd2, 0x95, 0x80, 0x8d, 0xf9,
+    0x2a, 0x00, 0x08, 0x10, 0x02, 0x80, 0xc1, 0x20,
+    0x08, 0x83, 0x41, 0x5b, 0x83, 0x88, 0x08, 0x80,
+    0xaf, 0x32, 0x82, 0x60, 0x41, 0xdc, 0x90, 0x4e,
+    0x1f, 0x00, 0xb6, 0x33, 0xdc, 0x81, 0x60, 0x4c,
+    0xab, 0x80, 0x60, 0x23, 0x60, 0x30, 0x90, 0x0e,
+    0x01, 0x04, 0xe3, 0x80, 0x46, 0x52, 0x01, 0x06,
+    0x0c, 0x80, 0x42, 0x50, 0x80, 0x47, 0xe7, 0x99,
+    0x85, 0x99, 0x85, 0x99,
 };
 
-static const uint8_t unicode_prop_Other_Lowercase_table[69] = {
+static const uint8_t unicode_prop_Other_Lowercase_table[68] = {
     0x40, 0xa9, 0x80, 0x8e, 0x80, 0x41, 0xf4, 0x88,
     0x31, 0x9d, 0x84, 0xdf, 0x80, 0xb3, 0x80, 0x4d,
     0x80, 0x80, 0x4c, 0x2e, 0xbe, 0x8c, 0x80, 0xa1,
     0xa4, 0x42, 0xb0, 0x80, 0x8c, 0x80, 0x8f, 0x8c,
     0x40, 0xd2, 0x8f, 0x43, 0x4f, 0x99, 0x47, 0x91,
     0x81, 0x60, 0x7a, 0x1d, 0x81, 0x40, 0xd1, 0x80,
-    0x40, 0x80, 0x12, 0x81, 0x43, 0x61, 0x83, 0x88,
-    0x80, 0x60, 0x5c, 0x15, 0x01, 0x10, 0xa9, 0x80,
-    0x88, 0x60, 0xd8, 0x74, 0xbd,
+    0xff, 0x1a, 0x81, 0x43, 0x61, 0x83, 0x88, 0x80,
+    0x60, 0x5c, 0x15, 0x01, 0x10, 0xa9, 0x80, 0x88,
+    0x60, 0xd8, 0x74, 0xbd,
 };
 
 static const uint8_t unicode_prop_Other_Uppercase_table[15] = {
@@ -5042,7 +6435,7 @@ static const uint8_t unicode_prop_Changes_When_Casefolded1_table[29] = {
     0x89, 0x10, 0x81, 0x8d, 0x80,
 };
 
-static const uint8_t unicode_prop_Changes_When_NFKC_Casefolded1_table[450] = {
+static const uint8_t unicode_prop_Changes_When_NFKC_Casefolded1_table[449] = {
     0x40, 0x9f, 0x06, 0x00, 0x01, 0x00, 0x01, 0x12,
     0x10, 0x82, 0xf3, 0x80, 0x8b, 0x80, 0x40, 0x84,
     0x01, 0x01, 0x80, 0xa2, 0x01, 0x80, 0x40, 0xbb,
@@ -5074,32 +6467,32 @@ static const uint8_t unicode_prop_Changes_When_NFKC_Casefolded1_table[450] = {
     0xa9, 0x80, 0xb4, 0x00, 0x82, 0xdf, 0x09, 0x80,
     0xde, 0x80, 0xb0, 0xdd, 0x82, 0x8d, 0xdf, 0x9e,
     0x80, 0xa7, 0x87, 0xae, 0x80, 0x41, 0x7f, 0x60,
-    0x72, 0x9b, 0x81, 0x40, 0xd1, 0x80, 0x40, 0x80,
-    0x12, 0x81, 0x43, 0x61, 0x83, 0x88, 0x80, 0x60,
-    0x4d, 0x95, 0x41, 0x0d, 0x08, 0x00, 0x81, 0x89,
-    0x00, 0x00, 0x09, 0x82, 0xc3, 0x81, 0xe9, 0xc2,
-    0x00, 0x97, 0x04, 0x00, 0x01, 0x01, 0x80, 0xeb,
-    0xa0, 0x41, 0x6a, 0x91, 0xbf, 0x81, 0xb5, 0xa7,
-    0x8c, 0x82, 0x99, 0x95, 0x94, 0x81, 0x8b, 0x80,
-    0x92, 0x03, 0x1a, 0x00, 0x80, 0x40, 0x86, 0x08,
-    0x80, 0x9f, 0x99, 0x40, 0x83, 0x15, 0x0d, 0x0d,
-    0x0a, 0x16, 0x06, 0x80, 0x88, 0x47, 0x87, 0x20,
-    0xa9, 0x80, 0x88, 0x60, 0xb4, 0xe4, 0x83, 0x50,
-    0x31, 0xa3, 0x44, 0x63, 0x86, 0x8d, 0x87, 0xbf,
-    0x85, 0x42, 0x3e, 0xd4, 0x80, 0xc6, 0x01, 0x08,
-    0x09, 0x0b, 0x80, 0x8b, 0x00, 0x06, 0x80, 0xc0,
-    0x03, 0x0f, 0x06, 0x80, 0x9b, 0x03, 0x04, 0x00,
-    0x16, 0x80, 0x41, 0x53, 0x81, 0x41, 0x23, 0x81,
-    0xb1, 0x48, 0x2f, 0xbd, 0x4d, 0x91, 0x18, 0x9a,
-    0x01, 0x00, 0x08, 0x80, 0x89, 0x03, 0x00, 0x00,
-    0x28, 0x18, 0x00, 0x00, 0x02, 0x01, 0x00, 0x08,
-    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x0b, 0x06,
-    0x03, 0x03, 0x00, 0x80, 0x89, 0x80, 0x90, 0x22,
-    0x04, 0x80, 0x90, 0x42, 0x43, 0x8a, 0x84, 0x9e,
-    0x80, 0x9f, 0x99, 0x82, 0xa2, 0x80, 0xee, 0x82,
-    0x8c, 0xab, 0x83, 0x88, 0x31, 0x49, 0x9d, 0x89,
-    0x60, 0xfc, 0x05, 0x42, 0x1d, 0x6b, 0x05, 0xe1,
-    0x4f, 0xff,
+    0x72, 0x9b, 0x81, 0x40, 0xd1, 0x80, 0xff, 0x1a,
+    0x81, 0x43, 0x61, 0x83, 0x88, 0x80, 0x60, 0x4d,
+    0x95, 0x41, 0x0d, 0x08, 0x00, 0x81, 0x89, 0x00,
+    0x00, 0x09, 0x82, 0xc3, 0x81, 0xe9, 0xc2, 0x00,
+    0x97, 0x04, 0x00, 0x01, 0x01, 0x80, 0xeb, 0xa0,
+    0x41, 0x6a, 0x91, 0xbf, 0x81, 0xb5, 0xa7, 0x8c,
+    0x82, 0x99, 0x95, 0x94, 0x81, 0x8b, 0x80, 0x92,
+    0x03, 0x1a, 0x00, 0x80, 0x40, 0x86, 0x08, 0x80,
+    0x9f, 0x99, 0x40, 0x83, 0x15, 0x0d, 0x0d, 0x0a,
+    0x16, 0x06, 0x80, 0x88, 0x47, 0x87, 0x20, 0xa9,
+    0x80, 0x88, 0x60, 0xb4, 0xe4, 0x83, 0x50, 0x31,
+    0xa3, 0x44, 0x63, 0x86, 0x8d, 0x87, 0xbf, 0x85,
+    0x42, 0x3e, 0xd4, 0x80, 0xc6, 0x01, 0x08, 0x09,
+    0x0b, 0x80, 0x8b, 0x00, 0x06, 0x80, 0xc0, 0x03,
+    0x0f, 0x06, 0x80, 0x9b, 0x03, 0x04, 0x00, 0x16,
+    0x80, 0x41, 0x53, 0x81, 0x41, 0x23, 0x81, 0xb1,
+    0x48, 0x2f, 0xbd, 0x4d, 0x91, 0x18, 0x9a, 0x01,
+    0x00, 0x08, 0x80, 0x89, 0x03, 0x00, 0x00, 0x28,
+    0x18, 0x00, 0x00, 0x02, 0x01, 0x00, 0x08, 0x00,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x0b, 0x06, 0x03,
+    0x03, 0x00, 0x80, 0x89, 0x80, 0x90, 0x22, 0x04,
+    0x80, 0x90, 0x42, 0x43, 0x8a, 0x84, 0x9e, 0x80,
+    0x9f, 0x99, 0x82, 0xa2, 0x80, 0xee, 0x82, 0x8c,
+    0xab, 0x83, 0x88, 0x31, 0x49, 0x9d, 0x89, 0x60,
+    0xfc, 0x05, 0x42, 0x1d, 0x6b, 0x05, 0xe1, 0x4f,
+    0xff,
 };
 
 static const uint8_t unicode_prop_ASCII_Hex_Digit_table[5] = {
@@ -5128,65 +6521,66 @@ static const uint8_t unicode_prop_Deprecated_table[23] = {
     0x42, 0xb8, 0x81, 0x6d, 0xdc, 0xd5, 0x80,
 };
 
-static const uint8_t unicode_prop_Diacritic_table[438] = {
+static const uint8_t unicode_prop_Diacritic_table[447] = {
     0xdd, 0x00, 0x80, 0xc6, 0x05, 0x03, 0x01, 0x81,
     0x41, 0xf6, 0x40, 0x9e, 0x07, 0x25, 0x90, 0x0b,
     0x80, 0x88, 0x81, 0x40, 0xfc, 0x84, 0x40, 0xd0,
-    0x80, 0xb6, 0x90, 0x80, 0x9a, 0x00, 0x01, 0x00,
-    0x40, 0x85, 0x3b, 0x81, 0x40, 0x85, 0x0b, 0x0a,
-    0x82, 0xc2, 0x9a, 0xda, 0x8a, 0xb9, 0x8a, 0xa1,
-    0x81, 0xfd, 0x87, 0xa8, 0x89, 0x8f, 0x9b, 0xbc,
-    0x80, 0x8f, 0x02, 0x83, 0x9b, 0x80, 0xc9, 0x80,
-    0x8f, 0x80, 0xed, 0x80, 0x8f, 0x80, 0xed, 0x80,
-    0x8f, 0x80, 0xae, 0x82, 0xbb, 0x80, 0x8f, 0x06,
-    0x80, 0xf6, 0x80, 0xed, 0x80, 0x8f, 0x80, 0xed,
-    0x80, 0x8f, 0x80, 0xec, 0x81, 0x8f, 0x80, 0xfb,
-    0x80, 0xee, 0x80, 0x8b, 0x28, 0x80, 0xea, 0x80,
-    0x8c, 0x84, 0xca, 0x81, 0x9a, 0x00, 0x00, 0x03,
-    0x81, 0xc1, 0x10, 0x81, 0xbd, 0x80, 0xef, 0x00,
-    0x81, 0xa7, 0x0b, 0x84, 0x98, 0x30, 0x80, 0x89,
-    0x81, 0x42, 0xc0, 0x82, 0x43, 0xb3, 0x81, 0x9d,
-    0x80, 0x40, 0x93, 0x8a, 0x88, 0x80, 0x41, 0x5a,
-    0x82, 0x41, 0x23, 0x80, 0x93, 0x39, 0x80, 0xaf,
-    0x8e, 0x81, 0x8a, 0xe7, 0x80, 0x8e, 0x80, 0xa5,
-    0x88, 0xb5, 0x81, 0xb9, 0x80, 0x8a, 0x81, 0xc1,
-    0x81, 0xbf, 0x85, 0xd1, 0x98, 0x18, 0x28, 0x0a,
-    0xb1, 0xbe, 0xd8, 0x8b, 0xa4, 0x8a, 0x41, 0xbc,
-    0x00, 0x82, 0x8a, 0x82, 0x8c, 0x82, 0x8c, 0x82,
-    0x8c, 0x81, 0x4c, 0xef, 0x82, 0x41, 0x3c, 0x80,
-    0x41, 0xf9, 0x85, 0xe8, 0x83, 0xde, 0x80, 0x60,
-    0x75, 0x71, 0x80, 0x8b, 0x08, 0x80, 0x9b, 0x81,
-    0xd1, 0x81, 0x8d, 0xa1, 0xe5, 0x82, 0xec, 0x81,
-    0x8b, 0x80, 0xa4, 0x80, 0x40, 0x96, 0x80, 0x9a,
-    0x91, 0xb8, 0x83, 0xa3, 0x80, 0xde, 0x80, 0x8b,
-    0x80, 0xa3, 0x80, 0x40, 0x94, 0x82, 0xc0, 0x83,
-    0xb2, 0x80, 0xe3, 0x84, 0x88, 0x82, 0xff, 0x81,
-    0x60, 0x4f, 0x2f, 0x80, 0x43, 0x00, 0x8f, 0x41,
-    0x0d, 0x00, 0x80, 0xae, 0x80, 0xac, 0x81, 0xc2,
-    0x80, 0x42, 0xfb, 0x80, 0x44, 0x9e, 0x28, 0xa9,
-    0x80, 0x88, 0x42, 0x7c, 0x13, 0x80, 0x40, 0xa4,
-    0x81, 0x42, 0x3a, 0x85, 0xa5, 0x80, 0x99, 0x84,
-    0x41, 0x8e, 0x82, 0xc5, 0x8a, 0xb0, 0x83, 0x40,
-    0xbf, 0x80, 0xa8, 0x80, 0xc7, 0x81, 0xf7, 0x81,
-    0xbd, 0x80, 0xcb, 0x80, 0x88, 0x82, 0xe7, 0x81,
-    0x40, 0xb1, 0x81, 0xcf, 0x81, 0x8f, 0x80, 0x97,
-    0x32, 0x84, 0xd8, 0x10, 0x81, 0x8c, 0x81, 0xde,
-    0x02, 0x80, 0xfa, 0x81, 0x40, 0xfa, 0x81, 0xfd,
-    0x80, 0xf5, 0x81, 0xf2, 0x80, 0x41, 0x0c, 0x81,
-    0x41, 0x01, 0x0b, 0x80, 0x40, 0x9b, 0x80, 0xd2,
-    0x80, 0x91, 0x80, 0xd0, 0x80, 0x41, 0xa4, 0x80,
-    0x41, 0x01, 0x00, 0x81, 0xd0, 0x80, 0x41, 0xa8,
-    0x81, 0x96, 0x80, 0x54, 0xeb, 0x8e, 0x60, 0x2c,
-    0xd8, 0x80, 0x49, 0xbf, 0x84, 0xba, 0x86, 0x42,
-    0x33, 0x81, 0x42, 0x21, 0x90, 0xcf, 0x81, 0x60,
-    0x3f, 0xfd, 0x18, 0x30, 0x81, 0x5f, 0x00, 0xad,
-    0x81, 0x96, 0x42, 0x1f, 0x12, 0x2f, 0x39, 0x86,
-    0x9d, 0x83, 0x4e, 0x81, 0xbd, 0x40, 0xc1, 0x86,
-    0x41, 0x76, 0x80, 0xbc, 0x83, 0x42, 0xfd, 0x81,
-    0x42, 0xdf, 0x86, 0xec, 0x10, 0x82,
+    0x80, 0xb6, 0xac, 0x00, 0x01, 0x01, 0x00, 0x40,
+    0x82, 0x3b, 0x81, 0x40, 0x85, 0x0b, 0x0a, 0x82,
+    0xc2, 0x9a, 0xda, 0x8a, 0xb9, 0x8a, 0xa1, 0x81,
+    0xfd, 0x87, 0xa8, 0x89, 0x8f, 0x9b, 0xbc, 0x80,
+    0x8f, 0x02, 0x83, 0x9b, 0x80, 0xc9, 0x80, 0x8f,
+    0x80, 0xed, 0x80, 0x8f, 0x80, 0xed, 0x80, 0x8f,
+    0x80, 0xae, 0x82, 0xbb, 0x80, 0x8f, 0x06, 0x80,
+    0xf6, 0x80, 0xed, 0x80, 0x8f, 0x80, 0xed, 0x80,
+    0x8f, 0x80, 0xec, 0x81, 0x8f, 0x80, 0xfb, 0x80,
+    0xee, 0x80, 0x8b, 0x28, 0x80, 0xea, 0x80, 0x8c,
+    0x84, 0xca, 0x81, 0x9a, 0x00, 0x00, 0x03, 0x81,
+    0xc1, 0x10, 0x81, 0xbd, 0x80, 0xef, 0x00, 0x81,
+    0xa7, 0x0b, 0x84, 0x98, 0x30, 0x80, 0x89, 0x81,
+    0x42, 0xc0, 0x82, 0x43, 0xb3, 0x81, 0x9d, 0x80,
+    0x40, 0x93, 0x8a, 0x88, 0x80, 0x41, 0x5a, 0x82,
+    0x41, 0x23, 0x80, 0x93, 0x39, 0x80, 0xaf, 0x8e,
+    0x81, 0x8a, 0x82, 0x8e, 0x81, 0x8b, 0xc7, 0x80,
+    0x8e, 0x80, 0xa5, 0x88, 0xb5, 0x81, 0xb9, 0x80,
+    0x8a, 0x81, 0xc1, 0x81, 0xbf, 0x85, 0xd1, 0x98,
+    0x18, 0x28, 0x0a, 0xb1, 0xbe, 0xaf, 0xa3, 0x84,
+    0x8b, 0xa4, 0x8a, 0x41, 0xbc, 0x00, 0x82, 0x8a,
+    0x82, 0x8c, 0x82, 0x8c, 0x82, 0x8c, 0x81, 0x4c,
+    0xef, 0x82, 0x41, 0x3c, 0x80, 0x41, 0xf9, 0x85,
+    0xe8, 0x83, 0xde, 0x80, 0x60, 0x75, 0x71, 0x80,
+    0x8b, 0x08, 0x80, 0x9b, 0x81, 0xd1, 0x81, 0x8d,
+    0xa1, 0xe5, 0x82, 0xe5, 0x05, 0x81, 0x8b, 0x80,
+    0xa4, 0x80, 0x40, 0x96, 0x80, 0x9a, 0x91, 0xb8,
+    0x83, 0xa3, 0x80, 0xde, 0x80, 0x8b, 0x80, 0xa3,
+    0x80, 0x40, 0x94, 0x82, 0xc0, 0x83, 0xb2, 0x80,
+    0xe3, 0x84, 0x88, 0x82, 0xff, 0x81, 0x60, 0x4f,
+    0x2f, 0x80, 0x43, 0x00, 0x8f, 0x41, 0x0d, 0x00,
+    0x80, 0xae, 0x80, 0xac, 0x81, 0xc2, 0x80, 0x42,
+    0xfb, 0x80, 0x44, 0x9e, 0x28, 0xa9, 0x80, 0x88,
+    0x42, 0x7c, 0x13, 0x80, 0x40, 0xa4, 0x81, 0x42,
+    0x3a, 0x85, 0xa5, 0x80, 0x99, 0x84, 0x41, 0x8b,
+    0x01, 0x82, 0xc5, 0x8a, 0xb0, 0x83, 0x40, 0xbf,
+    0x80, 0xa8, 0x80, 0xc7, 0x81, 0xf7, 0x81, 0xbd,
+    0x80, 0xcb, 0x80, 0x88, 0x82, 0xe7, 0x81, 0x40,
+    0xb1, 0x81, 0xcf, 0x81, 0x8f, 0x80, 0x97, 0x32,
+    0x84, 0xd8, 0x10, 0x81, 0x8c, 0x81, 0xde, 0x02,
+    0x80, 0xfa, 0x81, 0x40, 0xfa, 0x81, 0xfd, 0x80,
+    0xf5, 0x81, 0xf2, 0x80, 0x41, 0x0c, 0x81, 0x41,
+    0x01, 0x0b, 0x80, 0x40, 0x9b, 0x80, 0xd2, 0x80,
+    0x91, 0x80, 0xd0, 0x80, 0x41, 0xa4, 0x80, 0x41,
+    0x01, 0x00, 0x81, 0xd0, 0x80, 0xc0, 0x80, 0x41,
+    0x66, 0x81, 0x96, 0x80, 0x54, 0xeb, 0x8e, 0x60,
+    0x2c, 0xd8, 0x80, 0x49, 0xbf, 0x84, 0xba, 0x86,
+    0x42, 0x33, 0x81, 0x42, 0x21, 0x90, 0xcf, 0x81,
+    0x60, 0x3f, 0xfd, 0x18, 0x30, 0x81, 0x5f, 0x00,
+    0xad, 0x81, 0x96, 0x42, 0x1f, 0x12, 0x2f, 0x39,
+    0x86, 0x9d, 0x83, 0x4e, 0x81, 0xbd, 0x40, 0xc1,
+    0x86, 0x41, 0x76, 0x80, 0xbc, 0x83, 0x42, 0xfd,
+    0x81, 0x42, 0xdf, 0x86, 0xec, 0x10, 0x82,
 };
 
-static const uint8_t unicode_prop_Extender_table[111] = {
+static const uint8_t unicode_prop_Extender_table[116] = {
     0x40, 0xb6, 0x80, 0x42, 0x17, 0x81, 0x43, 0x6d,
     0x80, 0x41, 0xb8, 0x80, 0x42, 0x75, 0x80, 0x40,
     0x88, 0x80, 0xd8, 0x80, 0x42, 0xef, 0x80, 0xfe,
@@ -5198,9 +6592,10 @@ static const uint8_t unicode_prop_Extender_table[111] = {
     0x94, 0x81, 0x60, 0x54, 0x7a, 0x80, 0x48, 0x0f,
     0x81, 0x45, 0xca, 0x80, 0x9a, 0x03, 0x80, 0x44,
     0xc6, 0x80, 0x41, 0x24, 0x80, 0xf3, 0x81, 0x41,
-    0xf1, 0x82, 0x44, 0xce, 0x80, 0x60, 0x50, 0xa8,
-    0x81, 0x44, 0x9b, 0x08, 0x80, 0x60, 0x71, 0x57,
-    0x81, 0x44, 0xb0, 0x80, 0x43, 0x53, 0x82,
+    0xf1, 0x82, 0x44, 0xce, 0x80, 0x43, 0x3f, 0x80,
+    0x60, 0x4d, 0x67, 0x81, 0x44, 0x9b, 0x08, 0x80,
+    0x8d, 0x81, 0x60, 0x71, 0x47, 0x81, 0x44, 0xb0,
+    0x80, 0x43, 0x53, 0x82,
 };
 
 static const uint8_t unicode_prop_Hex_Digit_table[12] = {
@@ -5220,16 +6615,16 @@ static const uint8_t unicode_prop_IDS_Trinary_Operator_table[4] = {
     0x60, 0x2f, 0xf1, 0x81,
 };
 
-static const uint8_t unicode_prop_Ideographic_table[72] = {
+static const uint8_t unicode_prop_Ideographic_table[71] = {
     0x60, 0x30, 0x05, 0x81, 0x98, 0x88, 0x8d, 0x82,
     0x43, 0xc4, 0x59, 0xbf, 0xbf, 0x60, 0x51, 0xff,
     0x60, 0x58, 0xff, 0x41, 0x6d, 0x81, 0xe9, 0x60,
-    0x75, 0x09, 0x80, 0x9a, 0x57, 0xf7, 0x87, 0x44,
-    0xd5, 0xa8, 0x89, 0x60, 0x24, 0x66, 0x41, 0x8b,
-    0x60, 0x4d, 0x03, 0x60, 0xa6, 0xdf, 0x9f, 0x50,
-    0x39, 0x85, 0x40, 0xdd, 0x81, 0x56, 0x81, 0x8d,
-    0x5d, 0x30, 0x8e, 0x42, 0x6d, 0x49, 0xa1, 0x42,
-    0x1d, 0x45, 0xe1, 0x53, 0x4a, 0x84, 0x50, 0x5f,
+    0x75, 0x09, 0x80, 0x8c, 0x84, 0x88, 0x5c, 0xd5,
+    0xa8, 0x9f, 0xe0, 0xf2, 0x60, 0x23, 0x7c, 0x41,
+    0x8b, 0x60, 0x4d, 0x03, 0x60, 0xa6, 0xdf, 0x9f,
+    0x51, 0x1d, 0x81, 0x56, 0x8d, 0x81, 0x5d, 0x30,
+    0x8e, 0x42, 0x6d, 0x49, 0xa1, 0x42, 0x1d, 0x45,
+    0xe1, 0x53, 0x4a, 0x84, 0x60, 0x21, 0x29,
 };
 
 static const uint8_t unicode_prop_Join_Control_table[4] = {
@@ -5369,13 +6764,13 @@ static const uint8_t unicode_prop_Terminal_Punctuation_table[264] = {
     0x81, 0x60, 0x4e, 0x05, 0x80, 0x5d, 0xe6, 0x83,
 };
 
-static const uint8_t unicode_prop_Unified_Ideograph_table[48] = {
+static const uint8_t unicode_prop_Unified_Ideograph_table[46] = {
     0x60, 0x33, 0xff, 0x59, 0xbf, 0xbf, 0x60, 0x51,
     0xff, 0x60, 0x5a, 0x0d, 0x08, 0x00, 0x81, 0x89,
     0x00, 0x00, 0x09, 0x82, 0x61, 0x05, 0xd5, 0x60,
-    0xa6, 0xdf, 0x9f, 0x50, 0x39, 0x85, 0x40, 0xdd,
-    0x81, 0x56, 0x81, 0x8d, 0x5d, 0x30, 0x8e, 0x42,
-    0x6d, 0x51, 0xa1, 0x53, 0x4a, 0x84, 0x50, 0x5f,
+    0xa6, 0xdf, 0x9f, 0x51, 0x1d, 0x81, 0x56, 0x8d,
+    0x81, 0x5d, 0x30, 0x8e, 0x42, 0x6d, 0x51, 0xa1,
+    0x53, 0x4a, 0x84, 0x60, 0x21, 0x29,
 };
 
 static const uint8_t unicode_prop_Variation_Selector_table[13] = {
@@ -5408,7 +6803,7 @@ static const uint8_t unicode_prop_Bidi_Mirrored_table[173] = {
     0x80, 0xb8, 0x80, 0xb8, 0x80,
 };
 
-static const uint8_t unicode_prop_Emoji_table[238] = {
+static const uint8_t unicode_prop_Emoji_table[239] = {
     0xa2, 0x05, 0x04, 0x89, 0xee, 0x03, 0x80, 0x5f,
     0x8c, 0x80, 0x8b, 0x80, 0x40, 0xd7, 0x80, 0x95,
     0x80, 0xd9, 0x85, 0x8e, 0x81, 0x41, 0x6e, 0x81,
@@ -5434,11 +6829,11 @@ static const uint8_t unicode_prop_Emoji_table[238] = {
     0xbe, 0x8a, 0x28, 0x97, 0x31, 0x0f, 0x8b, 0x01,
     0x19, 0x03, 0x81, 0x8c, 0x09, 0x07, 0x81, 0x88,
     0x04, 0x82, 0x8b, 0x17, 0x11, 0x00, 0x03, 0x05,
-    0x02, 0x05, 0xd5, 0xaf, 0xc5, 0x27, 0x0a, 0x83,
+    0x02, 0x05, 0xd5, 0xaf, 0xc5, 0x27, 0x0b, 0x82,
     0x89, 0x10, 0x01, 0x10, 0x81, 0x89, 0x40, 0xe2,
     0x8b, 0x18, 0x41, 0x1a, 0xae, 0x80, 0x89, 0x80,
-    0x40, 0xb8, 0xef, 0x8c, 0x82, 0x89, 0x84, 0xb7,
-    0x86, 0x8e, 0x81, 0x8a, 0x85, 0x88,
+    0x40, 0xb8, 0xef, 0x8c, 0x82, 0x8a, 0x82, 0xb8,
+    0x00, 0x83, 0x8f, 0x81, 0x8b, 0x83, 0x89,
 };
 
 static const uint8_t unicode_prop_Emoji_Component_table[28] = {
@@ -5464,7 +6859,7 @@ static const uint8_t unicode_prop_Emoji_Modifier_Base_table[71] = {
     0x10, 0x8c, 0x40, 0xe4, 0x82, 0xa9, 0x88,
 };
 
-static const uint8_t unicode_prop_Emoji_Presentation_table[144] = {
+static const uint8_t unicode_prop_Emoji_Presentation_table[145] = {
     0x60, 0x23, 0x19, 0x81, 0x40, 0xcc, 0x1a, 0x01,
     0x80, 0x42, 0x08, 0x81, 0x94, 0x81, 0xb1, 0x8b,
     0xaa, 0x80, 0x92, 0x80, 0x8c, 0x07, 0x81, 0x90,
@@ -5479,33 +6874,46 @@ static const uint8_t unicode_prop_Emoji_Presentation_table[144] = {
     0x1c, 0x8b, 0x90, 0x10, 0x82, 0xc6, 0x00, 0x80,
     0x40, 0xba, 0x81, 0xbe, 0x8c, 0x18, 0x97, 0x91,
     0x80, 0x99, 0x81, 0x8c, 0x80, 0xd5, 0xd4, 0xaf,
-    0xc5, 0x28, 0x12, 0x0a, 0x1b, 0x8a, 0x0e, 0x88,
+    0xc5, 0x28, 0x12, 0x0b, 0x13, 0x8a, 0x0e, 0x88,
     0x40, 0xe2, 0x8b, 0x18, 0x41, 0x1a, 0xae, 0x80,
-    0x89, 0x80, 0x40, 0xb8, 0xef, 0x8c, 0x82, 0x89,
-    0x84, 0xb7, 0x86, 0x8e, 0x81, 0x8a, 0x85, 0x88,
+    0x89, 0x80, 0x40, 0xb8, 0xef, 0x8c, 0x82, 0x8a,
+    0x82, 0xb8, 0x00, 0x83, 0x8f, 0x81, 0x8b, 0x83,
+    0x89,
 };
 
-static const uint8_t unicode_prop_Extended_Pictographic_table[156] = {
+static const uint8_t unicode_prop_Extended_Pictographic_table[254] = {
     0x40, 0xa8, 0x03, 0x80, 0x5f, 0x8c, 0x80, 0x8b,
     0x80, 0x40, 0xd7, 0x80, 0x95, 0x80, 0xd9, 0x85,
-    0x8e, 0x81, 0x41, 0x6e, 0x81, 0x8b, 0x80, 0xde,
-    0x80, 0xc5, 0x80, 0x98, 0x8a, 0x1a, 0x40, 0xc6,
-    0x80, 0x40, 0xe6, 0x81, 0x89, 0x80, 0x88, 0x80,
-    0xb9, 0x18, 0x28, 0x8b, 0x80, 0xf1, 0x89, 0xf5,
-    0x81, 0x8a, 0x00, 0x00, 0x28, 0x10, 0x28, 0x89,
+    0x8e, 0x81, 0x41, 0x6e, 0x81, 0x8b, 0x80, 0x40,
+    0xa5, 0x80, 0x98, 0x8a, 0x1a, 0x40, 0xc6, 0x80,
+    0x40, 0xe6, 0x81, 0x89, 0x80, 0x88, 0x80, 0xb9,
+    0x18, 0x84, 0x88, 0x01, 0x01, 0x09, 0x03, 0x01,
+    0x00, 0x09, 0x02, 0x02, 0x0f, 0x14, 0x00, 0x04,
+    0x8b, 0x8a, 0x09, 0x00, 0x08, 0x80, 0x91, 0x01,
+    0x81, 0x91, 0x28, 0x00, 0x0a, 0x0c, 0x01, 0x0b,
+    0x81, 0x8a, 0x0c, 0x09, 0x04, 0x08, 0x00, 0x81,
+    0x93, 0x0c, 0x28, 0x19, 0x03, 0x01, 0x01, 0x28,
+    0x01, 0x00, 0x00, 0x05, 0x02, 0x05, 0x80, 0x89,
     0x81, 0x8e, 0x01, 0x03, 0x00, 0x03, 0x10, 0x80,
-    0x8a, 0x84, 0xac, 0x82, 0x88, 0x80, 0x8d, 0x80,
+    0x8a, 0x81, 0xaf, 0x82, 0x88, 0x80, 0x8d, 0x80,
     0x8d, 0x80, 0x41, 0x73, 0x81, 0x41, 0xce, 0x82,
     0x92, 0x81, 0xb2, 0x03, 0x80, 0x44, 0xd9, 0x80,
     0x8b, 0x80, 0x42, 0x58, 0x00, 0x80, 0x61, 0xbd,
-    0x65, 0x40, 0xff, 0x8c, 0x82, 0x9e, 0x80, 0xbb,
-    0x85, 0x8b, 0x81, 0x8d, 0x01, 0x89, 0x91, 0xb8,
-    0x9a, 0x8e, 0x89, 0x80, 0x93, 0x01, 0x88, 0x03,
-    0x88, 0x41, 0xb1, 0x84, 0x41, 0x3d, 0x87, 0x41,
-    0x09, 0xaf, 0xff, 0xf3, 0x8b, 0xd4, 0xaa, 0x8b,
+    0x69, 0x80, 0xa6, 0x83, 0xe3, 0x8b, 0x8e, 0x81,
+    0x8e, 0x80, 0x8d, 0x81, 0xa4, 0x89, 0xef, 0x81,
+    0x8b, 0x81, 0x8d, 0x01, 0x89, 0x92, 0xb7, 0x9a,
+    0x8e, 0x89, 0x80, 0x93, 0x01, 0x88, 0x03, 0x88,
+    0x96, 0x85, 0x40, 0xbb, 0x81, 0xef, 0x09, 0x02,
+    0x81, 0xd2, 0x0a, 0x03, 0x84, 0x40, 0xfd, 0x80,
+    0xbe, 0x8a, 0x28, 0x97, 0x31, 0x0f, 0x8b, 0x01,
+    0x19, 0x03, 0x81, 0x8c, 0x09, 0x07, 0x81, 0x88,
+    0x04, 0x82, 0x8b, 0x17, 0x11, 0x00, 0x03, 0x05,
+    0x02, 0x05, 0xd5, 0xaf, 0xc5, 0x27, 0x81, 0x90,
+    0x10, 0x05, 0x81, 0x8c, 0x40, 0xd9, 0xa5, 0x8b,
     0x83, 0xb7, 0x87, 0x89, 0x85, 0xa7, 0x87, 0x9d,
-    0xd1, 0x8b, 0xae, 0x80, 0x89, 0x80, 0x41, 0xb8,
-    0x40, 0xff, 0x43, 0xfd,
+    0x81, 0x8b, 0x19, 0x8d, 0x88, 0xa6, 0x8b, 0xae,
+    0x80, 0x89, 0x80, 0x40, 0xb8, 0xd7, 0x87, 0x8d,
+    0x40, 0x91, 0x40, 0xff, 0x43, 0xfd,
 };
 
 static const uint8_t unicode_prop_Default_Ignorable_Code_Point_table[51] = {
@@ -5770,10 +7178,10 @@ static const uint16_t unicode_prop_len_table[] = {
 /*
  * QuickJS Javascript Engine
  *
- * Copyright (c) 2017-2024 Fabrice Bellard
+ * Copyright (c) 2017-2026 Fabrice Bellard
  * Copyright (c) 2017-2024 Charlie Gordon
- * Copyright (c) 2023-2025 Ben Noordhuis
- * Copyright (c) 2023-2025 Saúl Ibarra Corretgé
+ * Copyright (c) 2023-2026 Ben Noordhuis
+ * Copyright (c) 2023-2026 Saúl Ibarra Corretgé
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -5808,17 +7216,87 @@ extern "C" {
 
 #define QUICKJS_NG 1
 
+/* Helpers. */
+#if defined(_WIN32) || defined(__CYGWIN__)
+# define QUICKJS_NG_PLAT_WIN32 1
+#endif /* defined(_WIN32) || defined(__CYGWIN__) */
+
 #if defined(__GNUC__) || defined(__clang__)
-#define js_force_inline       inline __attribute__((always_inline))
-#define JS_EXTERN __attribute__((visibility("default")))
+# define QUICKJS_NG_CC_GNULIKE 1
+#endif /* defined(__GNUC__) || defined(__clang__) */
+
+/*
+ * `JS_EXTERN` -- helper macro that must be used to mark the external
+ * interfaces of libqjs.
+ *
+ * Define BUILDING_QJS_SHARED when building and USING_QJS_SHARED when using
+ * shared libqjs.
+ *
+ * Windows note: The `__declspec` syntax is supported by both Clang and GCC.
+ * If building qjs, the BUILDING_QJS_SHARED macro must be defined for libqjs
+ * (and only for it) to properly export symbols.
+ */
+#ifdef QUICKJS_NG_PLAT_WIN32
+# if defined(BUILDING_QJS_SHARED)
+#  define JS_EXTERN __declspec(dllexport)
+# elif defined(USING_QJS_SHARED)
+#  define JS_EXTERN __declspec(dllimport)
+# else
+#  define JS_EXTERN /* nothing */
+# endif
 #else
-#define js_force_inline  inline
-#define JS_EXTERN /* nothing */
+# ifdef QUICKJS_NG_CC_GNULIKE
+#  define JS_EXTERN __attribute__((visibility("default")))
+# else
+#  define JS_EXTERN /* nothing */
+# endif
+#endif /* QUICKJS_NG_PLAT_WIN32 */
+
+/*
+ * `JS_LIBC_EXTERN` -- helper macro that must be used to mark the extern
+ * interfaces of quickjs-libc specifically.
+ */
+#if defined(QUICKJS_NG_BUILD) && !defined(QJS_BUILD_LIBC) && defined(QUICKJS_NG_PLAT_WIN32)
+/*
+ * We are building QuickJS-NG, quickjs-libc is a static library and we are on
+ * Windows. Then, make sure to not export any interfaces.
+ */
+# define JS_LIBC_EXTERN /* nothing */
+#else
+/*
+ * Otherwise, if we are either (1) not building QuickJS-NG, (2) libc is built as
+ * a part of libqjs, or (3) we are not on Windows, define JS_LIBC_EXTERN to
+ * JS_EXTERN.
+ */
+# define JS_LIBC_EXTERN JS_EXTERN
 #endif
+
+/*
+ * `JS_MODULE_EXTERN` -- helper macro that must be used to mark `js_init_module`
+ * and other public functions of the binary modules. See examples/ for examples
+ * of the usage.
+ *
+ * Windows note: -DQUICKJS_NG_MODULE_BUILD must be set when building a binary
+ * module to properly set __declspec.
+ */
+#ifdef QUICKJS_NG_PLAT_WIN32
+# ifdef QUICKJS_NG_MODULE_BUILD
+#  define JS_MODULE_EXTERN __declspec(dllexport)
+# else
+#  define JS_MODULE_EXTERN __declspec(dllimport)
+# endif
+#else
+# ifdef QUICKJS_NG_CC_GNULIKE
+#  define JS_MODULE_EXTERN __attribute__((visibility("default")))
+# else
+#  define JS_MODULE_EXTERN /* nothing */
+# endif
+#endif /* QUICKJS_NG_PLAT_WIN32 */
 
 /* Borrowed from Folly */
 #ifndef JS_PRINTF_FORMAT
-#ifdef _MSC_VER
+/* Clang on Windows doesn't seem to support _Printf_format_string_ */
+#if defined(_MSC_VER) && !defined(__clang__)
 #include <sal.h>
 #define JS_PRINTF_FORMAT _Printf_format_string_
 #define JS_PRINTF_FORMAT_ATTR(format_param, dots_param)
@@ -5833,6 +7311,9 @@ extern "C" {
 #endif
 #endif
 #endif
+
+#undef QUICKJS_NG_CC_GNULIKE
+#undef QUICKJS_NG_PLAT_WIN32
 
 typedef struct JSRuntime JSRuntime;
 typedef struct JSContext JSContext;
@@ -5860,6 +7341,7 @@ enum {
     JS_TAG_BIG_INT     = -9,
     JS_TAG_SYMBOL      = -8,
     JS_TAG_STRING      = -7,
+    JS_TAG_STRING_ROPE = -6,
     JS_TAG_MODULE      = -3, /* used internally */
     JS_TAG_FUNCTION_BYTECODE = -2, /* used internally */
     JS_TAG_OBJECT      = -1,
@@ -6093,7 +7575,6 @@ static inline bool JS_VALUE_IS_NAN(JSValue v)
 #define JS_VALUE_IS_BOTH_INT(v1, v2) ((JS_VALUE_GET_TAG(v1) | JS_VALUE_GET_TAG(v2)) == 0)
 #define JS_VALUE_IS_BOTH_FLOAT(v1, v2) (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(v1)) && JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(v2)))
 
-#define JS_VALUE_GET_OBJ(v) ((JSObject *)JS_VALUE_GET_PTR(v))
 #define JS_VALUE_HAS_REF_COUNT(v) ((unsigned)JS_VALUE_GET_TAG(v) >= (unsigned)JS_TAG_FIRST)
 
 /* special values */
@@ -6163,6 +7644,7 @@ static inline bool JS_VALUE_IS_NAN(JSValue v)
 typedef JSValue JSCFunction(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv);
 typedef JSValue JSCFunctionMagic(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
 typedef JSValue JSCFunctionData(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic, JSValueConst *func_data);
+typedef JSValue JSCClosure(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic, void *opaque);
 
 typedef struct JSMallocFunctions {
     void *(*js_calloc)(void *opaque, size_t count, size_t size);
@@ -6241,20 +7723,20 @@ JS_EXTERN JSValue JS_GetFunctionProto(JSContext *ctx);
 /* the following functions are used to select the intrinsic object to
    save memory */
 JS_EXTERN JSContext *JS_NewContextRaw(JSRuntime *rt);
-JS_EXTERN void JS_AddIntrinsicBaseObjects(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicDate(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicEval(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicBaseObjects(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicDate(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicEval(JSContext *ctx);
 JS_EXTERN void JS_AddIntrinsicRegExpCompiler(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicRegExp(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicJSON(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicProxy(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicMapSet(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicTypedArrays(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicPromise(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicBigInt(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicWeakRef(JSContext *ctx);
-JS_EXTERN void JS_AddPerformance(JSContext *ctx);
-JS_EXTERN void JS_AddIntrinsicDOMException(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicRegExp(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicJSON(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicProxy(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicMapSet(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicTypedArrays(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicPromise(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicBigInt(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicWeakRef(JSContext *ctx);
+JS_EXTERN int JS_AddPerformance(JSContext *ctx);
+JS_EXTERN int JS_AddIntrinsicDOMException(JSContext *ctx);
 
 /* for equality comparisons and sameness */
 JS_EXTERN int JS_IsEqual(JSContext *ctx, JSValueConst op1, JSValueConst op2);
@@ -6310,6 +7792,7 @@ JS_EXTERN JSAtom JS_NewAtomLen(JSContext *ctx, const char *str, size_t len);
 JS_EXTERN JSAtom JS_NewAtom(JSContext *ctx, const char *str);
 JS_EXTERN JSAtom JS_NewAtomUInt32(JSContext *ctx, uint32_t n);
 JS_EXTERN JSAtom JS_DupAtom(JSContext *ctx, JSAtom v);
+JS_EXTERN JSAtom JS_DupAtomRT(JSRuntime *rt, JSAtom v);
 JS_EXTERN void JS_FreeAtom(JSContext *ctx, JSAtom v);
 JS_EXTERN void JS_FreeAtomRT(JSRuntime *rt, JSAtom v);
 JS_EXTERN JSValue JS_AtomToValue(JSContext *ctx, JSAtom atom);
@@ -6403,34 +7886,36 @@ JS_EXTERN JSClassID JS_NewClassID(JSRuntime *rt, JSClassID *pclass_id);
 JS_EXTERN JSClassID JS_GetClassID(JSValueConst v);
 JS_EXTERN int JS_NewClass(JSRuntime *rt, JSClassID class_id, const JSClassDef *class_def);
 JS_EXTERN bool JS_IsRegisteredClass(JSRuntime *rt, JSClassID class_id);
+/* Returns the class name or JS_ATOM_NULL if `id` is not a registered class. Must be freed with JS_FreeAtom. */
+JS_EXTERN JSAtom JS_GetClassName(JSRuntime *rt, JSClassID class_id);
 
 /* value handling */
 
-static js_force_inline JSValue JS_NewBool(JSContext *ctx, bool val)
+static inline JSValue JS_NewBool(JSContext *ctx, bool val)
 {
     (void)&ctx;
     return JS_MKVAL(JS_TAG_BOOL, (val != 0));
 }
 
-static js_force_inline JSValue JS_NewInt32(JSContext *ctx, int32_t val)
+static inline JSValue JS_NewInt32(JSContext *ctx, int32_t val)
 {
     (void)&ctx;
     return JS_MKVAL(JS_TAG_INT, val);
 }
 
-static js_force_inline JSValue JS_NewFloat64(JSContext *ctx, double val)
+static inline JSValue JS_NewFloat64(JSContext *ctx, double val)
 {
     (void)&ctx;
     return __JS_NewFloat64(val);
 }
 
-static js_force_inline JSValue JS_NewCatchOffset(JSContext *ctx, int32_t val)
+static inline JSValue JS_NewCatchOffset(JSContext *ctx, int32_t val)
 {
     (void)&ctx;
     return JS_MKVAL(JS_TAG_CATCH_OFFSET, val);
 }
 
-static js_force_inline JSValue JS_NewInt64(JSContext *ctx, int64_t val)
+static inline JSValue JS_NewInt64(JSContext *ctx, int64_t val)
 {
     JSValue v;
     if (val >= INT32_MIN && val <= INT32_MAX) {
@@ -6441,7 +7926,7 @@ static js_force_inline JSValue JS_NewInt64(JSContext *ctx, int64_t val)
     return v;
 }
 
-static js_force_inline JSValue JS_NewUint32(JSContext *ctx, uint32_t val)
+static inline JSValue JS_NewUint32(JSContext *ctx, uint32_t val)
 {
     JSValue v;
     if (val <= INT32_MAX) {
@@ -6495,7 +7980,8 @@ static inline bool JS_IsUninitialized(JSValueConst v)
 
 static inline bool JS_IsString(JSValueConst v)
 {
-    return JS_VALUE_GET_TAG(v) == JS_TAG_STRING;
+    int tag = JS_VALUE_GET_TAG(v);
+    return tag == JS_TAG_STRING || tag == JS_TAG_STRING_ROPE;
 }
 
 static inline bool JS_IsSymbol(JSValueConst v)
@@ -6570,8 +8056,8 @@ static inline JSValue JS_NewString(JSContext *ctx, const char *str) {
 }
 // makes a copy of the input; does not check if the input is valid UTF-16,
 // that is the responsibility of the caller
-JS_EXTERN JSValue JS_NewTwoByteString(JSContext *ctx, const uint16_t *buf,
-                                      size_t len);
+JS_EXTERN JSValue JS_NewStringUTF16(JSContext *ctx, const uint16_t *buf,
+                                    size_t len);
 JS_EXTERN JSValue JS_NewAtomString(JSContext *ctx, const char *str);
 JS_EXTERN JSValue JS_ToString(JSContext *ctx, JSValueConst val);
 JS_EXTERN JSValue JS_ToPropertyKey(JSContext *ctx, JSValueConst val);
@@ -6584,7 +8070,21 @@ static inline const char *JS_ToCString(JSContext *ctx, JSValueConst val1)
 {
     return JS_ToCStringLen2(ctx, NULL, val1, 0);
 }
+// returns a utf-16 version of the string in native endianness; the
+// string is not nul terminated and can contain unmatched surrogates
+// |*plen| is in uint16s, not code points; a surrogate pair such as
+// U+D834 U+DF06 has len=2; an unmatched surrogate has len=1
+JS_EXTERN const uint16_t *JS_ToCStringLenUTF16(JSContext *ctx, size_t *plen,
+                                               JSValueConst val1);
+static inline const uint16_t *JS_ToCStringUTF16(JSContext *ctx,
+                                                JSValueConst val1)
+{
+    return JS_ToCStringLenUTF16(ctx, NULL, val1);
+}
 JS_EXTERN void JS_FreeCString(JSContext *ctx, const char *ptr);
+JS_EXTERN void JS_FreeCStringRT(JSRuntime *rt, const char *ptr);
+JS_EXTERN void JS_FreeCStringUTF16(JSContext *ctx, const uint16_t *ptr);
+JS_EXTERN void JS_FreeCStringRT_UTF16(JSRuntime *rt, const uint16_t *ptr);
 
 JS_EXTERN JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto,
                                          JSClassID class_id);
@@ -6603,6 +8103,7 @@ JS_EXTERN JSValue JS_ToObject(JSContext *ctx, JSValueConst val);
 JS_EXTERN JSValue JS_ToObjectString(JSContext *ctx, JSValueConst val);
 
 JS_EXTERN bool JS_IsFunction(JSContext* ctx, JSValueConst val);
+JS_EXTERN bool JS_IsAsyncFunction(JSValueConst val);
 JS_EXTERN bool JS_IsConstructor(JSContext* ctx, JSValueConst val);
 JS_EXTERN bool JS_SetConstructorBit(JSContext *ctx, JSValueConst func_obj, bool val);
 
@@ -6627,6 +8128,8 @@ JS_EXTERN bool JS_IsArray(JSValueConst val);
 JS_EXTERN bool JS_IsProxy(JSValueConst val);
 JS_EXTERN JSValue JS_GetProxyTarget(JSContext *ctx, JSValueConst proxy);
 JS_EXTERN JSValue JS_GetProxyHandler(JSContext *ctx, JSValueConst proxy);
+JS_EXTERN JSValue JS_NewProxy(JSContext *ctx, JSValueConst target,
+                              JSValueConst handler);
 
 JS_EXTERN JSValue JS_NewDate(JSContext *ctx, double epoch_ms);
 JS_EXTERN bool JS_IsDate(JSValueConst v);
@@ -6737,6 +8240,10 @@ JS_EXTERN JSValue JS_NewArrayBufferCopy(JSContext *ctx, const uint8_t *buf, size
 JS_EXTERN void JS_DetachArrayBuffer(JSContext *ctx, JSValueConst obj);
 JS_EXTERN uint8_t *JS_GetArrayBuffer(JSContext *ctx, size_t *psize, JSValueConst obj);
 JS_EXTERN bool JS_IsArrayBuffer(JSValueConst obj);
+// returns true or false if obj is an ArrayBuffer, -1 otherwise
+JS_EXTERN int JS_IsImmutableArrayBuffer(JSValueConst obj);
+// returns 0 if obj is an ArrayBuffer, -1 otherwise
+JS_EXTERN int JS_SetImmutableArrayBuffer(JSValueConst obj, bool immutable);
 JS_EXTERN uint8_t *JS_GetUint8Array(JSContext *ctx, size_t *psize, JSValueConst obj);
 
 typedef enum JSTypedArrayEnum {
@@ -6775,7 +8282,9 @@ typedef struct {
 JS_EXTERN void JS_SetSharedArrayBufferFunctions(JSRuntime *rt, const JSSharedArrayBufferFunctions *sf);
 
 typedef enum JSPromiseStateEnum {
-    JS_PROMISE_PENDING,
+    // argument to JS_PromiseState() was not in fact a promise
+    JS_PROMISE_NOT_A_PROMISE = -1,
+    JS_PROMISE_PENDING       =  0,
     JS_PROMISE_FULFILLED,
     JS_PROMISE_REJECTED,
 } JSPromiseStateEnum;
@@ -6785,6 +8294,7 @@ JS_EXTERN JSPromiseStateEnum JS_PromiseState(JSContext *ctx,
                                              JSValueConst promise);
 JS_EXTERN JSValue JS_PromiseResult(JSContext *ctx, JSValueConst promise);
 JS_EXTERN bool JS_IsPromise(JSValueConst val);
+JS_EXTERN JSValue JS_NewSettledPromise(JSContext *ctx, bool is_reject, JSValueConst value);
 
 JS_EXTERN JSValue JS_NewSymbol(JSContext *ctx, const char *description, bool is_global);
 
@@ -6826,18 +8336,48 @@ typedef struct JSModuleDef JSModuleDef;
 typedef char *JSModuleNormalizeFunc(JSContext *ctx,
                                     const char *module_base_name,
                                     const char *module_name, void *opaque);
+typedef char *JSModuleNormalizeFunc2(JSContext *ctx,
+                                     const char *module_base_name,
+                                     const char *module_name,
+                                     JSValueConst attributes,
+                                     void *opaque);
 typedef JSModuleDef *JSModuleLoaderFunc(JSContext *ctx,
                                         const char *module_name, void *opaque);
+
+/* module loader with import attributes support */
+typedef JSModuleDef *JSModuleLoaderFunc2(JSContext *ctx,
+                                         const char *module_name, void *opaque,
+                                         JSValueConst attributes);
+
+/* return -1 if exception, 0 if OK */
+typedef int JSModuleCheckSupportedImportAttributes(JSContext *ctx, void *opaque,
+                                                   JSValueConst attributes);
 
 /* module_normalize = NULL is allowed and invokes the default module
    filename normalizer */
 JS_EXTERN void JS_SetModuleLoaderFunc(JSRuntime *rt,
                                       JSModuleNormalizeFunc *module_normalize,
                                       JSModuleLoaderFunc *module_loader, void *opaque);
+
+/* same as JS_SetModuleLoaderFunc but with import attributes support */
+JS_EXTERN void JS_SetModuleLoaderFunc2(JSRuntime *rt,
+                                       JSModuleNormalizeFunc *module_normalize,
+                                       JSModuleLoaderFunc2 *module_loader,
+                                       JSModuleCheckSupportedImportAttributes *module_check_attrs,
+                                       void *opaque);
+
+/* Set an attributes-aware module normalizer. Call after JS_SetModuleLoaderFunc2. */
+JS_EXTERN void JS_SetModuleNormalizeFunc2(JSRuntime *rt,
+                                          JSModuleNormalizeFunc2 *module_normalize);
+
 /* return the import.meta object of a module */
 JS_EXTERN JSValue JS_GetImportMeta(JSContext *ctx, JSModuleDef *m);
 JS_EXTERN JSAtom JS_GetModuleName(JSContext *ctx, JSModuleDef *m);
 JS_EXTERN JSValue JS_GetModuleNamespace(JSContext *ctx, JSModuleDef *m);
+
+/* associate a JSValue to a C module */
+JS_EXTERN int JS_SetModulePrivateValue(JSContext *ctx, JSModuleDef *m, JSValue val);
+JS_EXTERN JSValue JS_GetModulePrivateValue(JSContext *ctx, JSModuleDef *m);
 
 /* JS Job support */
 
@@ -6846,6 +8386,7 @@ JS_EXTERN int JS_EnqueueJob(JSContext *ctx, JSJobFunc *job_func,
                             int argc, JSValueConst *argv);
 
 JS_EXTERN bool JS_IsJobPending(JSRuntime *rt);
+JS_EXTERN JSContext *JS_GetPendingJobContext(JSRuntime *rt);
 JS_EXTERN int JS_ExecutePendingJob(JSRuntime *rt, JSContext **pctx);
 
 /* Structure to retrieve (de)serialized SharedArrayBuffer objects. */
@@ -6924,7 +8465,7 @@ JS_EXTERN JSValue JS_NewCFunction2(JSContext *ctx, JSCFunction *func,
 JS_EXTERN JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
                                    const char *name,
                                    int length, JSCFunctionEnum cproto, int magic,
-                                   JSValueConst proto_val);
+                                   JSValueConst proto_val, int n_fields);
 JS_EXTERN JSValue JS_NewCFunctionData(JSContext *ctx, JSCFunctionData *func,
                                       int length, int magic, int data_len,
                                       JSValueConst *data);
@@ -6932,6 +8473,11 @@ JS_EXTERN JSValue JS_NewCFunctionData2(JSContext *ctx, JSCFunctionData *func,
                                        const char *name,
                                        int length, int magic, int data_len,
                                        JSValueConst *data);
+typedef void JSCClosureFinalizerFunc(void*);
+JS_EXTERN JSValue JS_NewCClosure(JSContext *ctx, JSCClosure *func,
+                                 const char *name,
+                                 JSCClosureFinalizerFunc *opaque_finalize,
+                                 int length, int magic, void *opaque);
 
 static inline JSValue JS_NewCFunction(JSContext *ctx, JSCFunction *func,
                                       const char *name, int length)
@@ -6948,8 +8494,8 @@ static inline JSValue JS_NewCFunctionMagic(JSContext *ctx, JSCFunctionMagic *fun
     ft.generic_magic = func;
     return JS_NewCFunction2(ctx, ft.generic, name, length, cproto, magic);
 }
-JS_EXTERN void JS_SetConstructor(JSContext *ctx, JSValueConst func_obj,
-                                 JSValueConst proto);
+JS_EXTERN int JS_SetConstructor(JSContext *ctx, JSValueConst func_obj,
+                                JSValueConst proto);
 
 /* C property definition */
 
@@ -6994,6 +8540,8 @@ typedef struct JSCFunctionListEntry {
 #define JS_DEF_PROP_UNDEFINED 7
 #define JS_DEF_OBJECT         8
 #define JS_DEF_ALIAS          9
+#define JS_DEF_PROP_SYMBOL   10
+#define JS_DEF_PROP_BOOL     11
 
 /* Note: c++ does not like nested designators */
 #define JS_CFUNC_DEF(name, length, func1) { name, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE, JS_DEF_CFUNC, 0, { .func = { length, JS_CFUNC_generic, { .generic = func1 } } } }
@@ -7010,6 +8558,8 @@ typedef struct JSCFunctionListEntry {
 #define JS_PROP_DOUBLE_DEF(name, val, prop_flags) { name, prop_flags, JS_DEF_PROP_DOUBLE, 0, { .f64 = val } }
 #define JS_PROP_U2D_DEF(name, val, prop_flags) { name, prop_flags, JS_DEF_PROP_DOUBLE, 0, { .u64 = val } }
 #define JS_PROP_UNDEFINED_DEF(name, prop_flags) { name, prop_flags, JS_DEF_PROP_UNDEFINED, 0, { .i32 = 0 } }
+#define JS_PROP_SYMBOL_DEF(name, val, prop_flags) { name, prop_flags, JS_DEF_PROP_SYMBOL, 0, { .i32 = val } }
+#define JS_PROP_BOOL_DEF(name, val, prop_flags) { name, prop_flags, JS_DEF_PROP_BOOL, 0, { .i32 = val } }
 #define JS_OBJECT_DEF(name, tab, len, prop_flags) { name, prop_flags, JS_DEF_OBJECT, 0, { .prop_list = { tab, len } } }
 #define JS_ALIAS_DEF(name, from) { name, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE, JS_DEF_ALIAS, 0, { .alias = { from, -1 } } }
 #define JS_ALIAS_BASE_DEF(name, from, base) { name, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE, JS_DEF_ALIAS, 0, { .alias = { from, base } } }
@@ -7037,7 +8587,7 @@ JS_EXTERN int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
 /* Version */
 
 #define QJS_VERSION_MAJOR 0
-#define QJS_VERSION_MINOR 11
+#define QJS_VERSION_MINOR 14
 #define QJS_VERSION_PATCH 0
 #define QJS_VERSION_SUFFIX ""
 
@@ -7045,9 +8595,6 @@ JS_EXTERN const char* JS_GetVersion(void);
 
 /* Integration point for quickjs-libc.c, not for public use. */
 JS_EXTERN uintptr_t js_std_cmd(int cmd, ...);
-
-#undef JS_EXTERN
-#undef js_force_inline
 
 #ifdef __cplusplus
 } /* extern "C" { */
@@ -7057,10 +8604,10 @@ JS_EXTERN uintptr_t js_std_cmd(int cmd, ...);
 /*
  * QuickJS Javascript Engine
  *
- * Copyright (c) 2017-2025 Fabrice Bellard
+ * Copyright (c) 2017-2026 Fabrice Bellard
  * Copyright (c) 2017-2025 Charlie Gordon
- * Copyright (c) 2023-2025 Ben Noordhuis
- * Copyright (c) 2023-2025 Saúl Ibarra Corretgé
+ * Copyright (c) 2023-2026 Ben Noordhuis
+ * Copyright (c) 2023-2026 Saúl Ibarra Corretgé
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -7096,7 +8643,6 @@ JS_EXTERN uintptr_t js_std_cmd(int cmd, ...);
 #include <intrin.h>
 #endif
 #include <time.h>
-#include <fenv.h>
 #include <math.h>
 
 
@@ -7121,10 +8667,15 @@ JS_EXTERN uintptr_t js_std_cmd(int cmd, ...);
 #define NO_TM_GMTOFF
 #endif
 
+#if defined(__sun)
+#include <alloca.h>
+#define NO_TM_GMTOFF
+#endif
+
 // atomic_store etc. are completely busted in recent versions of tcc;
 // somehow the compiler forgets to load |ptr| into %rdi when calling
 // the __atomic_*() helpers in its lib/stdatomic.c and lib/atomic.S
-#if !defined(__TINYC__) && !defined(EMSCRIPTEN) && !defined(__wasi__) && !__STDC_NO_ATOMICS__
+#if !defined(__TINYC__) && !defined(EMSCRIPTEN) && !defined(__wasi__) && !__STDC_NO_ATOMICS__ && !defined(__DJGPP)
 
 #define CONFIG_ATOMICS
 #endif
@@ -7194,6 +8745,7 @@ enum {
     JS_CLASS_BYTECODE_FUNCTION, /* u.func */
     JS_CLASS_BOUND_FUNCTION,    /* u.bound_function */
     JS_CLASS_C_FUNCTION_DATA,   /* u.c_function_data_record */
+    JS_CLASS_C_CLOSURE,         /* u.c_closure_record */
     JS_CLASS_GENERATOR_FUNCTION, /* u.func */
     JS_CLASS_FOR_IN_ITERATOR,   /* u.for_in_iterator */
     JS_CLASS_REGEXP,            /* u.regexp */
@@ -7241,6 +8793,7 @@ enum {
     JS_CLASS_FINALIZATION_REGISTRY,
     JS_CLASS_DOM_EXCEPTION,
     JS_CLASS_CALL_SITE,
+    JS_CLASS_RAWJSON,
 
     JS_CLASS_INIT_COUNT, /* last entry for predefined classes */
 };
@@ -7271,13 +8824,24 @@ typedef enum JSErrorEnum {
 // more profitable to ref slice than to copy
 #define JS_STRING_SLICE_LEN_MAX 1024 // in bytes
 
+/* strings <= this length are not concatenated using ropes. if too
+   small, the rope memory overhead becomes high. */
+#define JS_STRING_ROPE_SHORT_LEN  512
+/* specific threshold for initial rope use */
+#define JS_STRING_ROPE_SHORT2_LEN 8192
+/* rope depth at which we rebalance */
+#define JS_STRING_ROPE_MAX_DEPTH 60
+
 #define __exception __attribute__((warn_unused_result))
 
 typedef struct JSShape JSShape;
 typedef struct JSString JSString;
 typedef struct JSString JSAtomStruct;
+typedef struct JSStringRope JSStringRope;
 
+#define JS_VALUE_GET_OBJ(v) ((JSObject *)JS_VALUE_GET_PTR(v))
 #define JS_VALUE_GET_STRING(v) ((JSString *)JS_VALUE_GET_PTR(v))
+#define JS_VALUE_GET_STRING_ROPE(v) ((JSStringRope *)JS_VALUE_GET_PTR(v))
 
 typedef enum {
     JS_GC_PHASE_NONE,
@@ -7361,8 +8925,17 @@ struct JSRuntime {
 
     struct list_head job_list; /* list of JSJobEntry.link */
 
-    JSModuleNormalizeFunc *module_normalize_func;
-    JSModuleLoaderFunc *module_loader_func;
+    bool module_normalize_has_attr;
+    union {
+        JSModuleNormalizeFunc *module_normalize_func;
+        JSModuleNormalizeFunc2 *module_normalize_func2;
+    } normalize_u;
+    bool module_loader_has_attr;
+    union {
+        JSModuleLoaderFunc *module_loader_func;
+        JSModuleLoaderFunc2 *module_loader_func2;
+    } u;
+    JSModuleCheckSupportedImportAttributes *module_check_attrs;
     void *module_loader_opaque;
     /* timestamp for internal use in module evaluation */
     int64_t module_async_evaluation_next_timestamp;
@@ -7398,11 +8971,12 @@ typedef struct JSStackFrame {
     JSValue cur_func; /* current function, JS_UNDEFINED if the frame is detached */
     JSValue *arg_buf; /* arguments */
     JSValue *var_buf; /* variables */
-    struct list_head var_ref_list; /* list of JSVarRef.link */
+    struct JSVarRef **var_refs; /* references to arguments or local variables */
     uint8_t *cur_pc; /* only used in bytecode functions : PC of the
                         instruction after the call */
-    uint32_t arg_count : 31;
-    uint32_t is_strict_mode : 1;
+    uint16_t var_ref_count; /* number of var refs */
+    uint16_t arg_count;
+    bool is_strict_mode;
     /* only used in generators. Current stack pointer value. NULL if
        the function is running. */
     JSValue *cur_sp;
@@ -7423,7 +8997,8 @@ typedef enum {
 struct JSGCObjectHeader {
     int ref_count; /* must come first, 32-bit */
     JSGCObjectTypeEnum gc_obj_type : 4;
-    uint8_t mark : 4; /* used by the GC */
+    uint8_t mark : 1; /* used by the GC */
+    uint8_t dummy0 : 3;
     uint8_t dummy1; /* not used by the GC */
     uint16_t dummy2; /* not used by the GC */
     struct list_head link;
@@ -7436,11 +9011,19 @@ typedef struct JSVarRef {
             int __gc_ref_count; /* corresponds to header.ref_count */
             uint8_t __gc_mark; /* corresponds to header.mark/gc_obj_type */
             uint8_t is_detached;
+            uint8_t is_lexical; /* only used with global variables */
+            uint8_t is_const; /* only used with global variables */
         };
     };
     JSValue *pvalue; /* pointer to the value, either on the stack or
                         to 'value' */
-    JSValue value; /* used when the variable is no longer on the stack */
+    union {
+        JSValue value; /* used when is_detached = true */
+        struct {
+            uint16_t var_ref_idx; /* index in JSStackFrame.var_refs[] */
+            JSStackFrame *stack_frame;
+        }; /* used when is_detached = false */
+    };
 } JSVarRef;
 
 typedef struct JSRefCountHeader {
@@ -7487,6 +9070,8 @@ typedef enum {
 
 enum {
     JS_BUILTIN_ARRAY_FROMASYNC = 1,
+    JS_BUILTIN_ITERATOR_ZIP,
+    JS_BUILTIN_ITERATOR_ZIP_KEYED,
 };
 
 /* must be large enough to have a negligible runtime cost and small
@@ -7499,9 +9084,21 @@ struct JSContext {
     struct list_head link;
 
     uint16_t binary_object_count;
-    int binary_object_size;
+    uint32_t binary_object_size : 31;
+
+    /* true if the array prototype is "normal":
+       - no small index properties which are get/set or non writable
+       - its prototype is Object.prototype
+       - Object.prototype has no small index properties which are get/set or non writable
+       - the prototype of Object.prototype is null (always true as it is immutable)
+    */
+    uint8_t std_array_prototype : 1;
 
     JSShape *array_shape;   /* initial shape for Array objects */
+    JSShape *arguments_shape;  /* shape for arguments objects */
+    JSShape *mapped_arguments_shape;  /* shape for mapped arguments objects */
+    JSShape *regexp_shape;  /* shape for regexp objects */
+    JSShape *regexp_result_shape;  /* shape for regexp result objects */
 
     JSValue *class_proto;
     JSValue function_proto;
@@ -7613,20 +9210,21 @@ typedef enum {
 typedef enum {
     JS_STRING_KIND_NORMAL,
     JS_STRING_KIND_SLICE,
+    JS_STRING_KIND_INDIRECT,
 } JSStringKind;
 
-#define JS_ATOM_HASH_MASK  ((1 << 29) - 1)
+#define JS_ATOM_HASH_MASK  ((1 << 28) - 1)
 
 struct JSString {
     JSRefCountHeader header; /* must come first, 32-bit */
     uint32_t len : 31;
-    uint8_t is_wide_char : 1; /* 0 = 8 bits, 1 = 16 bits characters */
+    uint32_t is_wide_char : 1; /* 0 = 8 bits, 1 = 16 bits characters */
     /* for JS_ATOM_TYPE_SYMBOL: hash = 0, atom_type = 3,
        for JS_ATOM_TYPE_PRIVATE: hash = 1, atom_type = 3
        XXX: could change encoding to have one more bit in hash */
-    uint32_t hash : 29;
-    uint8_t kind : 1;
-    uint8_t atom_type : 2; /* != 0 if atom, JS_ATOM_TYPE_x */
+    uint32_t hash : 28;
+    uint32_t kind : 2;
+    uint32_t atom_type : 2; /* != 0 if atom, JS_ATOM_TYPE_x */
     uint32_t hash_next; /* atom_index for JS_ATOM_TYPE_SYMBOL */
     JSWeakRefRecord *first_weak_ref;
 #ifdef ENABLE_DUMPS // JS_DUMP_LEAKS
@@ -7639,9 +9237,19 @@ typedef struct JSStringSlice {
     uint32_t start; // in bytes, not characters
 } JSStringSlice;
 
+struct JSStringRope {
+    JSRefCountHeader header; /* must come first, 32-bit */
+    uint32_t len;
+    uint8_t is_wide_char; /* 0 = 8 bits, 1 = 16 bits characters */
+    uint8_t depth;        /* max depth of the rope tree */
+    JSValue left;
+    JSValue right;        /* might be the empty string */
+};
+
 static inline void *strv(JSString *p)
 {
     JSStringSlice *slice;
+    void **indirect;
 
     switch (p->kind) {
     case JS_STRING_KIND_NORMAL:
@@ -7649,6 +9257,9 @@ static inline void *strv(JSString *p)
     case JS_STRING_KIND_SLICE:
         slice = (void *)&p[1];
         return (char *)&slice->parent[1] + slice->start;
+    case JS_STRING_KIND_INDIRECT:
+        indirect = (void *)&p[1];
+        return *indirect;
     }
     abort();
     return NULL;
@@ -7664,14 +9275,25 @@ static inline uint16_t *str16(JSString *p)
     return strv(p);
 }
 
+typedef enum {
+    JS_CLOSURE_LOCAL, /* 'var_idx' is the index of a local variable in the parent function */
+    JS_CLOSURE_ARG, /* 'var_idx' is the index of an argument variable in the parent function */
+    JS_CLOSURE_REF, /* 'var_idx' is the index of a closure variable in the parent function */
+    JS_CLOSURE_GLOBAL_REF, /* 'var_idx' is the index of a closure variable in the parent
+                              function referencing a global variable */
+    JS_CLOSURE_GLOBAL_DECL, /* global variable declaration (eval code only) */
+    JS_CLOSURE_GLOBAL, /* global variable (eval code only) */
+    JS_CLOSURE_MODULE_DECL, /* definition of a module variable (eval code only) */
+    JS_CLOSURE_MODULE_IMPORT, /* definition of a module import (eval code only) */
+} JSClosureTypeEnum;
+
 typedef struct JSClosureVar {
-    uint8_t is_local : 1;
-    uint8_t is_arg : 1;
-    uint8_t is_const : 1;
-    uint8_t is_lexical : 1;
+    uint8_t closure_type : 3; /* see JSClosureTypeEnum */
+    uint8_t is_lexical : 1; /* lexical variable */
+    uint8_t is_const : 1; /* const variable (is_lexical = 1 if is_const = 1) */
     uint8_t var_kind : 4; /* see JSVarKindEnum */
-    /* 8 bits available */
-    uint16_t var_idx; /* is_local = true: index to a normal variable of the
+    /* 7 bits available */
+    uint16_t var_idx; /* JS_CLOSURE_LOCAL/JS_CLOSURE_ARG: index to a normal variable of the
                     parent function. otherwise: index to a closure
                     variable of the parent function */
     JSAtom var_name;
@@ -7720,14 +9342,17 @@ typedef struct JSVarDef {
     uint8_t is_captured : 1;
     uint8_t is_static_private : 1; /* only used during private class field parsing */
     uint8_t var_kind : 4; /* see JSVarKindEnum */
+    /* if is_captured = true, provides the index of the corresponding
+       JSVarRef on stack */
+    uint16_t var_ref_idx;
     /* only used during compilation: function pool index for lexical
        variables with var_kind =
        JS_VAR_FUNCTION_DECL/JS_VAR_NEW_FUNCTION_DECL or scope level of
        the definition of the 'var' variables (they have scope_level =
        0) */
-    int func_pool_idx : 24; /* only used during compilation : index in
-                               the constant pool for hoisted function
-                               definition */
+    int func_pool_idx; /* only used during compilation : index in
+                          the constant pool for hoisted function
+                          definition */
 } JSVarDef;
 
 /* for the encoding of the pc2line table */
@@ -7767,10 +9392,11 @@ typedef struct JSFunctionBytecode {
     uint16_t var_count;
     uint16_t defined_arg_count; /* for length function property */
     uint16_t stack_size; /* maximum stack size */
+    uint16_t var_ref_count; /* number of local variable references */
+    uint16_t closure_var_count;
+    int cpool_count;
     JSContext *realm; /* function realm */
     JSValue *cpool; /* constant pool (self pointer) */
-    int cpool_count;
-    int closure_var_count;
     JSAtom filename;
     int line_num;
     int col_num;
@@ -7828,6 +9454,7 @@ typedef struct JSArrayBuffer {
     int byte_length; /* 0 if detached */
     int max_byte_length; /* -1 if not resizable; >= byte_length otherwise */
     uint8_t detached;
+    uint8_t immutable;
     uint8_t shared; /* if shared, the array buffer cannot be detached */
     uint8_t *data; /* NULL if detached */
     struct list_head array_list;
@@ -7863,6 +9490,7 @@ typedef struct JSAsyncFunctionData {
 typedef struct JSReqModuleEntry {
     JSAtom module_name;
     JSModuleDef *module; /* used using resolution */
+    JSValue attributes; /* JS_UNDEFINED or an object containing the attributes as key/value */
 } JSReqModuleEntry;
 
 typedef enum JSExportTypeEnum {
@@ -7949,6 +9577,7 @@ struct JSModuleDef {
     bool eval_has_exception;
     JSValue eval_exception;
     JSValue meta_obj; /* for import.meta */
+    JSValue private_value; /* private value for C modules */
 };
 
 typedef struct JSJobEntry {
@@ -7979,7 +9608,6 @@ typedef struct JSProperty {
 
 #define JS_PROP_INITIAL_SIZE 2
 #define JS_PROP_INITIAL_HASH_SIZE 4 /* must be a power of two */
-#define JS_ARRAY_INITIAL_SIZE 2
 
 typedef struct JSShapeProperty {
     uint32_t hash_next : 26; /* 0 if last in list */
@@ -7994,10 +9622,6 @@ struct JSShape {
     /* true if the shape is inserted in the shape hash table. If not,
        JSShape.hash is not valid */
     uint8_t is_hashed;
-    /* If true, the shape may have small array index properties 'n' with 0
-       <= n <= 2^31-1. If false, the shape is guaranteed not to have
-       small array index properties */
-    uint8_t has_small_array_index;
     uint32_t hash; /* current hash value */
     uint32_t prop_hash_mask;
     int prop_size; /* allocated properties */
@@ -8013,12 +9637,13 @@ struct JSObject {
         JSGCObjectHeader header;
         struct {
             int __gc_ref_count; /* corresponds to header.ref_count */
-            uint8_t __gc_mark; /* corresponds to header.mark/gc_obj_type */
+            uint8_t __gc_mark : 7; /* corresponds to header.mark/gc_obj_type */
+            uint8_t is_prototype : 1; /* object may be used as prototype */
 
             uint8_t extensible : 1;
             uint8_t free_mark : 1; /* only used when freeing objects with cycles */
             uint8_t is_exotic : 1; /* true if object has exotic property handlers */
-            uint8_t fast_array : 1; /* true if u.array is used for get/put (for JS_CLASS_ARRAY, JS_CLASS_ARGUMENTS and typed arrays) */
+            uint8_t fast_array : 1; /* true if u.array is used for get/put (for JS_CLASS_ARRAY, JS_CLASS_ARGUMENTS, JS_CLASS_MAPPED_ARGUMENTS and typed arrays) */
             uint8_t is_constructor : 1; /* true if object is a constructor function */
             uint8_t is_uncatchable_error : 1; /* if true, error is not catchable */
             uint8_t tmp_mark : 1; /* used in JS_WriteObjectRec() */
@@ -8036,6 +9661,7 @@ struct JSObject {
         void *opaque;
         struct JSBoundFunction *bound_function; /* JS_CLASS_BOUND_FUNCTION */
         struct JSCFunctionDataRecord *c_function_data_record; /* JS_CLASS_C_FUNCTION_DATA */
+        struct JSCClosureRecord *c_closure_record; /* JS_CLASS_C_CLOSURE */
         struct JSForInIterator *for_in_iterator; /* JS_CLASS_FOR_IN_ITERATOR */
         struct JSArrayBuffer *array_buffer; /* JS_CLASS_ARRAY_BUFFER, JS_CLASS_SHARED_ARRAY_BUFFER */
         struct JSTypedArray *typed_array; /* JS_CLASS_UINT8C_ARRAY..JS_CLASS_DATAVIEW */
@@ -8067,13 +9693,14 @@ struct JSObject {
             int16_t magic;
         } cfunc;
         /* array part for fast arrays and typed arrays */
-        struct { /* JS_CLASS_ARRAY, JS_CLASS_ARGUMENTS, JS_CLASS_UINT8C_ARRAY..JS_CLASS_FLOAT64_ARRAY */
+        struct { /* JS_CLASS_ARRAY, JS_CLASS_ARGUMENTS, JS_CLASS_MAPPED_ARGUMENTS, JS_CLASS_UINT8C_ARRAY..JS_CLASS_FLOAT64_ARRAY */
             union {
-                uint32_t size;          /* JS_CLASS_ARRAY, JS_CLASS_ARGUMENTS */
+                uint32_t size;          /* JS_CLASS_ARRAY */
                 struct JSTypedArray *typed_array; /* JS_CLASS_UINT8C_ARRAY..JS_CLASS_FLOAT64_ARRAY */
             } u1;
             union {
                 JSValue *values;        /* JS_CLASS_ARRAY, JS_CLASS_ARGUMENTS */
+                JSVarRef **var_refs;    /* JS_CLASS_MAPPED_ARGUMENTS */
                 void *ptr;              /* JS_CLASS_UINT8C_ARRAY..JS_CLASS_FLOAT64_ARRAY */
                 int8_t *int8_ptr;       /* JS_CLASS_INT8_ARRAY */
                 uint8_t *uint8_ptr;     /* JS_CLASS_UINT8_ARRAY, JS_CLASS_UINT8C_ARRAY */
@@ -8253,6 +9880,7 @@ DEF(flags, "flags")
 DEF(global, "global")
 DEF(unicode, "unicode")
 DEF(raw, "raw")
+DEF(rawJSON, "rawJSON")
 DEF(new_target, "new.target")
 DEF(this_active_func, "this.active_func")
 DEF(home_object, "<home_object>")
@@ -8287,6 +9915,8 @@ DEF(timed_out, "timed-out")
 DEF(ok, "ok")
 DEF(toJSON, "toJSON")
 DEF(maxByteLength, "maxByteLength")
+DEF(zip, "zip")
+DEF(zipKeyed, "zipKeyed")
 /* class names */
 DEF(Object, "Object")
 DEF(Array, "Array")
@@ -8527,6 +10157,7 @@ DEF(flags, "flags")
 DEF(global, "global")
 DEF(unicode, "unicode")
 DEF(raw, "raw")
+DEF(rawJSON, "rawJSON")
 DEF(new_target, "new.target")
 DEF(this_active_func, "this.active_func")
 DEF(home_object, "<home_object>")
@@ -8561,6 +10192,8 @@ DEF(timed_out, "timed-out")
 DEF(ok, "ok")
 DEF(toJSON, "toJSON")
 DEF(maxByteLength, "maxByteLength")
+DEF(zip, "zip")
+DEF(zipKeyed, "zipKeyed")
 /* class names */
 DEF(Object, "Object")
 DEF(Array, "Array")
@@ -8777,14 +10410,12 @@ DEF(     apply_eval, 3, 2, 1, u16) /* func array -> ret_eval */
 DEF(         regexp, 1, 2, 1, none) /* create a RegExp object from the pattern and a
                                        bytecode string */
 DEF(      get_super, 1, 1, 1, none)
-DEF(         import, 1, 1, 1, none) /* dynamic module import */
+DEF(         import, 1, 2, 1, none) /* dynamic module import */
 
-DEF(      check_var, 5, 0, 1, atom) /* check if a variable exists */
 DEF(  get_var_undef, 5, 0, 1, atom) /* push undefined if the variable does not exist */
 DEF(        get_var, 5, 0, 1, atom) /* throw an exception if the variable does not exist */
 DEF(        put_var, 5, 1, 0, atom) /* must come after get_var */
 DEF(   put_var_init, 5, 1, 0, atom) /* must come after put_var. Used to initialize a global lexical variable */
-DEF( put_var_strict, 5, 2, 0, atom) /* for strict mode variable write */
 
 DEF(  get_ref_value, 1, 2, 3, none)
 DEF(  put_ref_value, 1, 3, 0, none)
@@ -9157,14 +10788,12 @@ DEF(     apply_eval, 3, 2, 1, u16) /* func array -> ret_eval */
 DEF(         regexp, 1, 2, 1, none) /* create a RegExp object from the pattern and a
                                        bytecode string */
 DEF(      get_super, 1, 1, 1, none)
-DEF(         import, 1, 1, 1, none) /* dynamic module import */
+DEF(         import, 1, 2, 1, none) /* dynamic module import */
 
-DEF(      check_var, 5, 0, 1, atom) /* check if a variable exists */
 DEF(  get_var_undef, 5, 0, 1, atom) /* push undefined if the variable does not exist */
 DEF(        get_var, 5, 0, 1, atom) /* throw an exception if the variable does not exist */
 DEF(        put_var, 5, 1, 0, atom) /* must come after get_var */
 DEF(   put_var_init, 5, 1, 0, atom) /* must come after put_var. Used to initialize a global lexical variable */
-DEF( put_var_strict, 5, 2, 0, atom) /* for strict mode variable write */
 
 DEF(  get_ref_value, 1, 2, 3, none)
 DEF(  put_ref_value, 1, 3, 0, none)
@@ -9539,14 +11168,12 @@ DEF(     apply_eval, 3, 2, 1, u16) /* func array -> ret_eval */
 DEF(         regexp, 1, 2, 1, none) /* create a RegExp object from the pattern and a
                                        bytecode string */
 DEF(      get_super, 1, 1, 1, none)
-DEF(         import, 1, 1, 1, none) /* dynamic module import */
+DEF(         import, 1, 2, 1, none) /* dynamic module import */
 
-DEF(      check_var, 5, 0, 1, atom) /* check if a variable exists */
 DEF(  get_var_undef, 5, 0, 1, atom) /* push undefined if the variable does not exist */
 DEF(        get_var, 5, 0, 1, atom) /* throw an exception if the variable does not exist */
 DEF(        put_var, 5, 1, 0, atom) /* must come after get_var */
 DEF(   put_var_init, 5, 1, 0, atom) /* must come after put_var. Used to initialize a global lexical variable */
-DEF( put_var_strict, 5, 2, 0, atom) /* for strict mode variable write */
 
 DEF(  get_ref_value, 1, 2, 3, none)
 DEF(  put_ref_value, 1, 3, 0, none)
@@ -9832,6 +11459,9 @@ static JSValue js_function_apply(JSContext *ctx, JSValueConst this_val,
 static void js_array_finalizer(JSRuntime *rt, JSValueConst val);
 static void js_array_mark(JSRuntime *rt, JSValueConst val,
                           JS_MarkFunc *mark_func);
+static void js_mapped_arguments_finalizer(JSRuntime *rt, JSValueConst val);
+static void js_mapped_arguments_mark(JSRuntime *rt, JSValueConst val,
+                                     JS_MarkFunc *mark_func);
 static void js_object_data_finalizer(JSRuntime *rt, JSValueConst val);
 static void js_object_data_mark(JSRuntime *rt, JSValueConst val,
                                 JS_MarkFunc *mark_func);
@@ -9922,14 +11552,15 @@ typedef enum JSStrictEqModeEnum {
     JS_EQ_SAME_VALUE_ZERO,
 } JSStrictEqModeEnum;
 
-static bool js_strict_eq2(JSContext *ctx, JSValue op1, JSValue op2,
+static bool js_strict_eq2(JSContext *ctx, JSValueConst op1, JSValueConst op2,
                           JSStrictEqModeEnum eq_mode);
-static bool js_strict_eq(JSContext *ctx, JSValue op1, JSValue op2);
+static bool js_strict_eq(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static bool js_same_value(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static bool js_same_value_zero(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static JSValue JS_ToObjectFree(JSContext *ctx, JSValue val);
 static JSProperty *add_property(JSContext *ctx,
                                 JSObject *p, JSAtom prop, int prop_flags);
+static void free_property(JSRuntime *rt, JSProperty *pr, int prop_flags);
 static int JS_ToBigInt64Free(JSContext *ctx, int64_t *pres, JSValue val);
 static JSValue JS_ThrowStackOverflow(JSContext *ctx);
 static JSValue JS_ThrowTypeErrorRevokedProxy(JSContext *ctx);
@@ -9967,12 +11598,17 @@ static JSValue js_typed_array_constructor_ta(JSContext *ctx,
                                              JSValueConst src_obj,
                                              int classid, uint32_t len);
 static bool is_typed_array(JSClassID class_id);
+static bool typed_array_is_immutable(JSObject *p);
 static bool typed_array_is_oob(JSObject *p);
 static uint32_t typed_array_length(JSObject *p);
+static int typed_array_init(JSContext *ctx, JSValue obj, JSValue buffer,
+                            uint64_t offset, uint64_t len, bool track_rab);
 static JSValue JS_ThrowTypeErrorDetachedArrayBuffer(JSContext *ctx);
+static JSValue JS_ThrowTypeErrorImmutableArrayBuffer(JSContext *ctx);
 static JSValue JS_ThrowTypeErrorArrayBufferOOB(JSContext *ctx);
 static JSVarRef *get_var_ref(JSContext *ctx, JSStackFrame *sf, int var_idx,
                              bool is_arg);
+static JSVarRef *js_create_var_ref(JSContext *ctx, bool is_gc_object);
 static JSValue js_call_generator_function(JSContext *ctx, JSValueConst func_obj,
                                           JSValueConst this_obj,
                                           int argc, JSValueConst *argv,
@@ -9988,7 +11624,8 @@ static void js_free_module_def(JSContext *ctx, JSModuleDef *m);
 static void js_mark_module_def(JSRuntime *rt, JSModuleDef *m,
                                JS_MarkFunc *mark_func);
 static JSValue js_import_meta(JSContext *ctx);
-static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier);
+static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier,
+                                 JSValueConst options);
 static void free_var_ref(JSRuntime *rt, JSVarRef *var_ref);
 static JSValue js_new_promise_capability(JSContext *ctx,
                                          JSValue *resolving_funcs,
@@ -10012,10 +11649,14 @@ static bool JS_NumberIsNegativeOrMinusZero(JSContext *ctx, JSValueConst val);
 static JSValue JS_ToNumberFree(JSContext *ctx, JSValue val);
 static int JS_GetOwnPropertyInternal(JSContext *ctx, JSPropertyDescriptor *desc,
                                      JSObject *p, JSAtom prop);
+static int JS_GetOwnPropertyFlagsInternal(JSContext *ctx, int *pflags,
+                                          JSObject *p, JSAtom prop);
+static JSValue JS_GetOwnPropertyNames2(JSContext *ctx, JSValueConst obj1,
+                                       int flags, int kind);
 static void js_free_desc(JSContext *ctx, JSPropertyDescriptor *desc);
 static void async_func_mark(JSRuntime *rt, JSAsyncFunctionState *s,
                             JS_MarkFunc *mark_func);
-static void JS_AddIntrinsicBasicObjects(JSContext *ctx);
+static int JS_AddIntrinsicBasicObjects(JSContext *ctx);
 static void js_free_shape(JSRuntime *rt, JSShape *sh);
 static void js_free_shape_null(JSRuntime *rt, JSShape *sh);
 static int js_shape_prepare_update(JSContext *ctx, JSObject *p,
@@ -10042,6 +11683,12 @@ static void js_c_function_data_mark(JSRuntime *rt, JSValueConst val,
 static JSValue js_call_c_function_data(JSContext *ctx, JSValueConst func_obj,
                                        JSValueConst this_val,
                                        int argc, JSValueConst *argv, int flags);
+static void js_c_closure_finalizer(JSRuntime *rt, JSValueConst val);
+static JSValue js_call_c_closure(JSContext *ctx, JSValueConst func_obj,
+                                 JSValueConst this_val,
+                                 int argc, JSValueConst *argv, int flags);
+static JSAtom JS_ValueToAtomInternal(JSContext *ctx, JSValueConst val,
+                                     int flags);
 static JSAtom js_symbol_to_atom(JSContext *ctx, JSValueConst val);
 static void add_gc_object(JSRuntime *rt, JSGCObjectHeader *h,
                           JSGCObjectTypeEnum type);
@@ -10052,6 +11699,8 @@ static JSValue js_module_ns_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
                                  void *opaque);
 static JSValue JS_InstantiateFunctionListItem2(JSContext *ctx, JSObject *p,
                                                JSAtom atom, void *opaque);
+static JSValue JS_NewObjectProtoList(JSContext *ctx, JSValueConst proto,
+                                     const JSCFunctionListEntry *fields, int n_fields);
 
 static void js_set_uncatchable_error(JSContext *ctx, JSValueConst val,
                                      bool flag);
@@ -10059,7 +11708,7 @@ static void js_set_uncatchable_error(JSContext *ctx, JSValueConst val,
 static JSValue js_new_callsite(JSContext *ctx, JSCallSiteData *csd);
 static void js_new_callsite_data(JSContext *ctx, JSCallSiteData *csd, JSStackFrame *sf);
 static void js_new_callsite_data2(JSContext *ctx, JSCallSiteData *csd, const char *filename, int line_num, int col_num);
-static void _JS_AddIntrinsicCallSite(JSContext *ctx);
+static int _JS_AddIntrinsicCallSite(JSContext *ctx);
 
 static void JS_SetOpaqueInternal(JSValueConst obj, void *opaque);
 
@@ -10213,7 +11862,8 @@ void *js_malloc_rt(JSRuntime *rt, size_t size)
     JSMallocState *s;
 
     /* Do not allocate zero bytes: behavior is platform dependent */
-    assert(size != 0);
+    if (unlikely(size == 0))
+        return NULL;
 
     s = &rt->malloc_state;
     /* When malloc_limit is 0 (unlimited), malloc_limit - 1 will be SIZE_MAX. */
@@ -10237,8 +11887,13 @@ void js_free_rt(JSRuntime *rt, void *ptr)
         return;
 
     s = &rt->malloc_state;
+    size_t free_size = rt->mf.js_malloc_usable_size(ptr) + MALLOC_OVERHEAD;
+    if (unlikely(free_size > s->malloc_size)) {
+        printf("js_free_rt: malloc_size underflow: freeing %zu but only %zu tracked\n", free_size, s->malloc_size);
+        abort();
+    }
     s->malloc_count--;
-    s->malloc_size -= rt->mf.js_malloc_usable_size(ptr) + MALLOC_OVERHEAD;
+    s->malloc_size -= free_size;
     rt->mf.js_free(s->opaque, ptr);
 }
 
@@ -10438,13 +12093,14 @@ static JSClassShortDef const js_std_class_def[] = {
     { JS_ATOM_Boolean, js_object_data_finalizer, js_object_data_mark }, /* JS_CLASS_BOOLEAN */
     { JS_ATOM_Symbol, js_object_data_finalizer, js_object_data_mark }, /* JS_CLASS_SYMBOL */
     { JS_ATOM_Arguments, js_array_finalizer, js_array_mark },   /* JS_CLASS_ARGUMENTS */
-    { JS_ATOM_Arguments, NULL, NULL },                          /* JS_CLASS_MAPPED_ARGUMENTS */
+    { JS_ATOM_Arguments, js_mapped_arguments_finalizer, js_mapped_arguments_mark }, /* JS_CLASS_MAPPED_ARGUMENTS */
     { JS_ATOM_Date, js_object_data_finalizer, js_object_data_mark }, /* JS_CLASS_DATE */
     { JS_ATOM_Object, NULL, NULL },                             /* JS_CLASS_MODULE_NS */
     { JS_ATOM_Function, js_c_function_finalizer, js_c_function_mark }, /* JS_CLASS_C_FUNCTION */
     { JS_ATOM_Function, js_bytecode_function_finalizer, js_bytecode_function_mark }, /* JS_CLASS_BYTECODE_FUNCTION */
     { JS_ATOM_Function, js_bound_function_finalizer, js_bound_function_mark }, /* JS_CLASS_BOUND_FUNCTION */
     { JS_ATOM_Function, js_c_function_data_finalizer, js_c_function_data_mark }, /* JS_CLASS_C_FUNCTION_DATA */
+    { JS_ATOM_Function, js_c_closure_finalizer, NULL},                           /* JS_CLASS_C_CLOSURE */
     { JS_ATOM_GeneratorFunction, js_bytecode_function_finalizer, js_bytecode_function_mark },  /* JS_CLASS_GENERATOR_FUNCTION */
     { JS_ATOM_ForInIterator, js_for_in_iterator_finalizer, js_for_in_iterator_mark },      /* JS_CLASS_FOR_IN_ITERATOR */
     { JS_ATOM_RegExp, js_regexp_finalizer, NULL },                              /* JS_CLASS_REGEXP */
@@ -10564,11 +12220,13 @@ JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque)
                          countof(js_std_class_def)) < 0)
         goto fail;
     rt->class_array[JS_CLASS_ARGUMENTS].exotic = &js_arguments_exotic_methods;
+    rt->class_array[JS_CLASS_MAPPED_ARGUMENTS].exotic = &js_arguments_exotic_methods;
     rt->class_array[JS_CLASS_STRING].exotic = &js_string_exotic_methods;
     rt->class_array[JS_CLASS_MODULE_NS].exotic = &js_module_ns_exotic_methods;
 
     rt->class_array[JS_CLASS_C_FUNCTION].call = js_call_c_function;
     rt->class_array[JS_CLASS_C_FUNCTION_DATA].call = js_call_c_function_data;
+    rt->class_array[JS_CLASS_C_CLOSURE].call = js_call_c_closure;
     rt->class_array[JS_CLASS_BOUND_FUNCTION].call = js_call_bound_function;
     rt->class_array[JS_CLASS_GENERATOR_FUNCTION].call = js_call_generator_function;
     if (init_shape_hash(rt))
@@ -10727,6 +12385,14 @@ bool JS_IsJobPending(JSRuntime *rt)
     return !list_empty(&rt->job_list);
 }
 
+JSContext *JS_GetPendingJobContext(JSRuntime *rt)
+{
+    if (JS_IsJobPending(rt)) {
+        return list_entry(rt->job_list.next, JSJobEntry, link)->ctx;
+    }
+    return NULL;
+}
+
 /* return < 0 if exception, 0 if no job pending, 1 if a job was
    executed successfully. the context of the job is stored in '*pctx' */
 int JS_ExecutePendingJob(JSRuntime *rt, JSContext **pctx)
@@ -10815,15 +12481,22 @@ static inline void js_free_string(JSRuntime *rt, JSString *str)
 
 static inline void js_free_string0(JSRuntime *rt, JSString *str)
 {
+    JSStringSlice *slice;
+
     if (str->atom_type) {
         JS_FreeAtomStruct(rt, str);
     } else {
 #ifdef ENABLE_DUMPS // JS_DUMP_LEAKS
         list_del(&str->link);
 #endif
-        if (str->kind == JS_STRING_KIND_SLICE) {
-            JSStringSlice *slice = (void *)&str[1];
+        switch (str->kind) {
+        case JS_STRING_KIND_SLICE:
+            slice = (void *)&str[1];
             js_free_string(rt, slice->parent); // safe, recurses only 1 level
+            break;
+        case JS_STRING_KIND_INDIRECT:
+            js_free_rt(rt, strv(str));
+            break;
         }
         js_free_rt(rt, str);
     }
@@ -11063,7 +12736,10 @@ JSContext *JS_NewContextRaw(JSRuntime *rt)
     ctx->error_stack_trace_limit = js_int32(10);
     init_list_head(&ctx->loaded_modules);
 
-    JS_AddIntrinsicBasicObjects(ctx);
+    if (JS_AddIntrinsicBasicObjects(ctx)) {
+        JS_FreeContext(ctx);
+        return NULL;
+    }
     return ctx;
 }
 
@@ -11075,20 +12751,21 @@ JSContext *JS_NewContext(JSRuntime *rt)
     if (!ctx)
         return NULL;
 
-    JS_AddIntrinsicBaseObjects(ctx);
-    JS_AddIntrinsicDate(ctx);
-    JS_AddIntrinsicEval(ctx);
-    JS_AddIntrinsicRegExp(ctx);
-    JS_AddIntrinsicJSON(ctx);
-    JS_AddIntrinsicProxy(ctx);
-    JS_AddIntrinsicMapSet(ctx);
-    JS_AddIntrinsicTypedArrays(ctx);
-    JS_AddIntrinsicPromise(ctx);
-    JS_AddIntrinsicBigInt(ctx);
-    JS_AddIntrinsicWeakRef(ctx);
-    JS_AddIntrinsicDOMException(ctx);
-
-    JS_AddPerformance(ctx);
+    if (JS_AddIntrinsicBaseObjects(ctx) ||
+        JS_AddIntrinsicDate(ctx) ||
+        JS_AddIntrinsicEval(ctx) ||
+        JS_AddIntrinsicRegExp(ctx) ||
+        JS_AddIntrinsicJSON(ctx) ||
+        JS_AddIntrinsicProxy(ctx) ||
+        JS_AddIntrinsicMapSet(ctx) ||
+        JS_AddIntrinsicTypedArrays(ctx) ||
+        JS_AddIntrinsicPromise(ctx) ||
+        JS_AddIntrinsicWeakRef(ctx) ||
+        JS_AddIntrinsicDOMException(ctx) ||
+        JS_AddPerformance(ctx)) {
+        JS_FreeContext(ctx);
+        return NULL;
+    }
 
     return ctx;
 }
@@ -11196,6 +12873,18 @@ static void JS_MarkContext(JSRuntime *rt, JSContext *ctx,
 
     if (ctx->array_shape)
         mark_func(rt, &ctx->array_shape->header);
+
+    if (ctx->arguments_shape)
+        mark_func(rt, &ctx->arguments_shape->header);
+
+    if (ctx->mapped_arguments_shape)
+        mark_func(rt, &ctx->mapped_arguments_shape->header);
+
+    if (ctx->regexp_shape)
+        mark_func(rt, &ctx->regexp_shape->header);
+
+    if (ctx->regexp_result_shape)
+        mark_func(rt, &ctx->regexp_result_shape->header);
 }
 
 void JS_FreeContext(JSContext *ctx)
@@ -11266,6 +12955,10 @@ void JS_FreeContext(JSContext *ctx)
     JS_FreeValue(ctx, ctx->function_proto);
 
     js_free_shape_null(ctx->rt, ctx->array_shape);
+    js_free_shape_null(ctx->rt, ctx->arguments_shape);
+    js_free_shape_null(ctx->rt, ctx->mapped_arguments_shape);
+    js_free_shape_null(ctx->rt, ctx->regexp_shape);
+    js_free_shape_null(ctx->rt, ctx->regexp_result_shape);
 
     list_del(&ctx->link);
     remove_gc_object(&ctx->header);
@@ -11406,6 +13099,17 @@ static uint32_t hash_string(JSString *str, uint32_t h)
     return h;
 }
 
+static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
+{
+    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING) {
+        return hash_string(JS_VALUE_GET_STRING(val), h);
+    } else {
+        JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
+        h = hash_string_rope(r->left, h);
+        return hash_string_rope(r->right, h);
+    }
+}
+
 static __maybe_unused void JS_DumpString(JSRuntime *rt, JSString *p)
 {
     int i, c, sep;
@@ -11512,7 +13216,7 @@ static int JS_InitAtoms(JSRuntime *rt)
     rt->atom_count = 0;
     rt->atom_size = 0;
     rt->atom_free_index = 0;
-    if (JS_ResizeAtomHash(rt, 256))     /* there are at least 195 predefined atoms */
+    if (JS_ResizeAtomHash(rt, 512))     /* there are at least 504 predefined atoms */
         return -1;
 
     p = js_atom_init;
@@ -11531,7 +13235,7 @@ static int JS_InitAtoms(JSRuntime *rt)
     return 0;
 }
 
-static JSAtom JS_DupAtomRT(JSRuntime *rt, JSAtom v)
+JSAtom JS_DupAtomRT(JSRuntime *rt, JSAtom v)
 {
     JSAtomStruct *p;
 
@@ -11654,9 +13358,9 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type)
 
         /* alloc new with size progression 3/2:
            4 6 9 13 19 28 42 63 94 141 211 316 474 711 1066 1599 2398 3597 5395 8092
-           preallocating space for predefined atoms (at least 195).
+           preallocating space for predefined atoms (at least 504).
          */
-        new_size = max_int(211, rt->atom_size * 3 / 2);
+        new_size = max_int(711, rt->atom_size * 3 / 2);
         if (new_size > JS_ATOM_MAX)
             goto fail;
         /* XXX: should use realloc2 to use slack space */
@@ -12309,6 +14013,15 @@ bool JS_IsRegisteredClass(JSRuntime *rt, JSClassID class_id)
             rt->class_array[class_id].class_id != 0);
 }
 
+JSAtom JS_GetClassName(JSRuntime *rt, JSClassID class_id)
+{
+    if (JS_IsRegisteredClass(rt, class_id)) {
+        return JS_DupAtomRT(rt, rt->class_array[class_id].class_id);
+    } else {
+        return JS_ATOM_NULL;
+    }
+}
+
 /* create a new object internal class. Return -1 if error, 0 if
    OK. The finalizer can be NULL if none is needed. */
 static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
@@ -12583,7 +14296,7 @@ static no_inline int string_buffer_realloc(StringBuffer *s, int new_len, int c)
     return 0;
 }
 
-static no_inline int string_buffer_putc_slow(StringBuffer *s, uint32_t c)
+static no_inline int string_buffer_putc16_slow(StringBuffer *s, uint32_t c)
 {
     if (unlikely(s->len >= s->size)) {
         if (string_buffer_realloc(s, s->len + 1, c))
@@ -12628,19 +14341,41 @@ static int string_buffer_putc16(StringBuffer *s, uint32_t c)
             return 0;
         }
     }
-    return string_buffer_putc_slow(s, c);
+    return string_buffer_putc16_slow(s, c);
 }
 
 /* 0 <= c <= 0x10ffff */
-static int string_buffer_putc(StringBuffer *s, uint32_t c)
+static no_inline int string_buffer_putc_slow(StringBuffer *s, uint32_t c)
 {
-    if (unlikely(c >= 0x10000)) {
+    if (c >= 0x10000) {
         /* surrogate pair */
         if (string_buffer_putc16(s, get_hi_surrogate(c)))
             return -1;
         c = get_lo_surrogate(c);
     }
     return string_buffer_putc16(s, c);
+}
+
+/* 0 <= c <= 0x10ffff */
+static inline int string_buffer_putc(StringBuffer *s, uint32_t c)
+{
+    if (likely(s->len < s->size)) {
+        if (s->is_wide_char) {
+            if (c < 0x10000) {
+                str16(s->str)[s->len++] = c;
+                return 0;
+            } else if (s->len + 1 < s->size) {
+                /* surrogate pair */
+                str16(s->str)[s->len++] = get_hi_surrogate(c);
+                str16(s->str)[s->len++] = get_lo_surrogate(c);
+                return 0;
+            }
+        } else if (c < 0x100) {
+            str8(s->str)[s->len++] = c;
+            return 0;
+        }
+    }
+    return string_buffer_putc_slow(s, c);
 }
 
 static int string_getc(JSString *p, int *pidx)
@@ -12731,12 +14466,21 @@ static int string_buffer_concat_value(StringBuffer *s, JSValueConst v)
     JSString *p;
     JSValue v1;
     int res;
+    int tag;
 
     if (s->error_status) {
         /* prevent exception overload */
         return -1;
     }
-    if (unlikely(JS_VALUE_GET_TAG(v) != JS_TAG_STRING)) {
+    tag = JS_VALUE_GET_TAG(v);
+    if (tag == JS_TAG_STRING_ROPE) {
+        /* recursively concatenate rope children */
+        JSStringRope *r = JS_VALUE_GET_STRING_ROPE(v);
+        if (string_buffer_concat_value(s, r->left))
+            return -1;
+        return string_buffer_concat_value(s, r->right);
+    }
+    if (unlikely(tag != JS_TAG_STRING)) {
         v1 = JS_ToString(s->ctx, v);
         if (JS_IsException(v1))
             return string_buffer_set_error(s);
@@ -12753,13 +14497,21 @@ static int string_buffer_concat_value_free(StringBuffer *s, JSValue v)
 {
     JSString *p;
     int res;
+    int tag;
 
     if (s->error_status) {
         /* prevent exception overload */
         JS_FreeValue(s->ctx, v);
         return -1;
     }
-    if (unlikely(JS_VALUE_GET_TAG(v) != JS_TAG_STRING)) {
+    tag = JS_VALUE_GET_TAG(v);
+    if (tag == JS_TAG_STRING_ROPE) {
+        /* concatenate rope (don't free since concat_value doesn't free) */
+        res = string_buffer_concat_value(s, v);
+        JS_FreeValue(s->ctx, v);
+        return res;
+    }
+    if (unlikely(tag != JS_TAG_STRING)) {
         v = JS_ToStringFree(s->ctx, v);
         if (JS_IsException(v))
             return string_buffer_set_error(s);
@@ -12859,7 +14611,7 @@ JSValue JS_NewStringLen(JSContext *ctx, const char *buf, size_t buf_len)
     return JS_MKPTR(JS_TAG_STRING, str);
 }
 
-JSValue JS_NewTwoByteString(JSContext *ctx, const uint16_t *buf, size_t len)
+JSValue JS_NewStringUTF16(JSContext *ctx, const uint16_t *buf, size_t len)
 {
     JSString *str;
 
@@ -12914,6 +14666,33 @@ JSValue JS_NewAtomString(JSContext *ctx, const char *str)
     return val;
 }
 
+static JSValue js_force_tostring(JSContext *ctx, JSValueConst val1)
+{
+    JSObject *p;
+    JSValue val;
+
+    if (JS_VALUE_GET_TAG(val1) == JS_TAG_STRING)
+        return js_dup(val1);
+    val = JS_ToString(ctx, val1);
+    if (!JS_IsException(val))
+        return val;
+    // Stringification can fail when there is an exception pending,
+    // e.g. a stack overflow InternalError. Special-case exception
+    // objects to make debugging easier, look up the .message property
+    // and stringify that.
+    if (JS_VALUE_GET_TAG(val1) != JS_TAG_OBJECT)
+        return JS_EXCEPTION;
+    p = JS_VALUE_GET_OBJ(val1);
+    if (p->class_id != JS_CLASS_ERROR)
+        return JS_EXCEPTION;
+    val = JS_GetProperty(ctx, val1, JS_ATOM_message);
+    if (JS_VALUE_GET_TAG(val) != JS_TAG_STRING) {
+        JS_FreeValue(ctx, val);
+        return JS_EXCEPTION;
+    }
+    return val;
+}
+
 /* return (NULL, 0) if exception. */
 /* return pointer into a JSString with a live ref_count */
 /* cesu8 determines if non-BMP1 codepoints are encoded as 1 or 2 utf-8 sequences */
@@ -12923,36 +14702,11 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1,
     JSValue val;
     JSString *str, *str_new;
     int pos, len, c, c1;
-    JSObject *p;
     uint8_t *q;
 
-    if (JS_VALUE_GET_TAG(val1) == JS_TAG_STRING) {
-        val = js_dup(val1);
-        goto go;
-    }
-
-    val = JS_ToString(ctx, val1);
-    if (!JS_IsException(val))
-        goto go;
-
-    // Stringification can fail when there is an exception pending,
-    // e.g. a stack overflow InternalError. Special-case exception
-    // objects to make debugging easier, look up the .message property
-    // and stringify that.
-    if (JS_VALUE_GET_TAG(val1) != JS_TAG_OBJECT)
+    val = js_force_tostring(ctx, val1);
+    if (JS_IsException(val))
         goto fail;
-
-    p = JS_VALUE_GET_OBJ(val1);
-    if (p->class_id != JS_CLASS_ERROR)
-        goto fail;
-
-    val = JS_GetProperty(ctx, val1, JS_ATOM_message);
-    if (JS_VALUE_GET_TAG(val) != JS_TAG_STRING) {
-        JS_FreeValue(ctx, val);
-        goto fail;
-    }
-
-go:
     str = JS_VALUE_GET_STRING(val);
     len = str->len;
     if (!str->is_wide_char) {
@@ -13028,18 +14782,68 @@ go:
     if (plen)
         *plen = str_new->len;
     return (const char *)str8(str_new);
- fail:
+fail:
     if (plen)
         *plen = 0;
     return NULL;
 }
 
-void JS_FreeCString(JSContext *ctx, const char *ptr)
+const uint16_t *JS_ToCStringLenUTF16(JSContext *ctx, size_t *plen,
+                                     JSValueConst val1)
+{
+    JSString *p, *q;
+    uint32_t i;
+    JSValue v;
+
+    v = js_force_tostring(ctx, val1);
+    if (JS_IsException(v))
+        goto fail;
+    p = JS_VALUE_GET_STRING(v);
+    if (!p->is_wide_char) {
+        q = js_alloc_string(ctx, p->len, /*is_wide_char*/true);
+        if (!q)
+            goto fail;
+        for (i = 0; i < p->len; i++)
+            str16(q)[i] = str8(p)[i];
+        JS_FreeValue(ctx, v);
+        p = q;
+    }
+    if (plen)
+        *plen = p->len;
+    return str16(p);
+fail:
+    JS_FreeValue(ctx, v);
+    if (plen)
+        *plen = 0;
+    return NULL;
+}
+
+static void js_free_cstring(JSRuntime *rt, const void *ptr)
 {
     if (!ptr)
         return;
     /* purposely removing constness */
-    JS_FreeValue(ctx, JS_MKPTR(JS_TAG_STRING, (JSString *)ptr - 1));
+    JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_STRING, (JSString *)ptr - 1));
+}
+
+void JS_FreeCString(JSContext *ctx, const char *ptr)
+{
+    return js_free_cstring(ctx->rt, ptr);
+}
+
+void JS_FreeCStringRT(JSRuntime *rt, const char *ptr)
+{
+    return js_free_cstring(rt, ptr);
+}
+
+void JS_FreeCStringUTF16(JSContext *ctx, const uint16_t *ptr)
+{
+    return js_free_cstring(ctx->rt, ptr);
+}
+
+void JS_FreeCStringRT_UTF16(JSRuntime *rt, const uint16_t *ptr)
+{
+    return js_free_cstring(rt, ptr);
 }
 
 static int memcmp16_8(const uint16_t *src1, const uint8_t *src2, int len)
@@ -13099,6 +14903,352 @@ static int js_string_compare(JSString *p1, JSString *p2)
     return res;
 }
 
+/* Rope string support functions */
+
+static inline bool tag_is_string(int tag)
+{
+    return tag == JS_TAG_STRING || tag == JS_TAG_STRING_ROPE;
+}
+
+static uint32_t string_rope_get_len(JSValueConst val)
+{
+    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING)
+        return JS_VALUE_GET_STRING(val)->len;
+    else
+        return JS_VALUE_GET_STRING_ROPE(val)->len;
+}
+
+static int string_rope_get(JSValueConst val, uint32_t idx)
+{
+    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING) {
+        return string_get(JS_VALUE_GET_STRING(val), idx);
+    } else {
+        JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
+        uint32_t len;
+        if (JS_VALUE_GET_TAG(r->left) == JS_TAG_STRING)
+            len = JS_VALUE_GET_STRING(r->left)->len;
+        else
+            len = JS_VALUE_GET_STRING_ROPE(r->left)->len;
+        if (idx < len)
+            return string_rope_get(r->left, idx);
+        else
+            return string_rope_get(r->right, idx - len);
+    }
+}
+
+typedef struct {
+    JSValueConst stack[JS_STRING_ROPE_MAX_DEPTH];
+    int stack_len;
+} JSStringRopeIter;
+
+static void string_rope_iter_init(JSStringRopeIter *s, JSValueConst val)
+{
+    s->stack_len = 0;
+    s->stack[s->stack_len++] = val;
+}
+
+/* iterate thru a rope and return the strings in order */
+static JSString *string_rope_iter_next(JSStringRopeIter *s)
+{
+    JSValueConst val;
+    JSStringRope *r;
+
+    if (s->stack_len == 0)
+        return NULL;
+    val = s->stack[--s->stack_len];
+    for(;;) {
+        if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING)
+            return JS_VALUE_GET_STRING(val);
+        r = JS_VALUE_GET_STRING_ROPE(val);
+        assert(s->stack_len < JS_STRING_ROPE_MAX_DEPTH);
+        s->stack[s->stack_len++] = r->right;
+        val = r->left;
+    }
+}
+
+/* compare two string values with position offsets */
+static int js_string_memcmp_pos(JSString *p1, uint32_t pos1,
+                                JSString *p2, uint32_t pos2, uint32_t len)
+{
+    int res;
+
+    if (likely(!p1->is_wide_char)) {
+        if (likely(!p2->is_wide_char))
+            res = memcmp(str8(p1) + pos1, str8(p2) + pos2, len);
+        else
+            res = -memcmp16_8(str16(p2) + pos2, str8(p1) + pos1, len);
+    } else {
+        if (!p2->is_wide_char)
+            res = memcmp16_8(str16(p1) + pos1, str8(p2) + pos2, len);
+        else
+            res = memcmp16(str16(p1) + pos1, str16(p2) + pos2, len);
+    }
+    return res;
+}
+
+static int js_string_rope_compare(JSValueConst op1,
+                                  JSValueConst op2, bool eq_only)
+{
+    uint32_t len1, len2, len, pos1, pos2, l;
+    int res;
+    JSStringRopeIter it1, it2;
+    JSString *p1, *p2;
+
+    len1 = string_rope_get_len(op1);
+    len2 = string_rope_get_len(op2);
+    /* no need to go further for equality test if different length */
+    if (eq_only && len1 != len2)
+        return 1;
+    len = min_uint32(len1, len2);
+    string_rope_iter_init(&it1, op1);
+    string_rope_iter_init(&it2, op2);
+    p1 = string_rope_iter_next(&it1);
+    p2 = string_rope_iter_next(&it2);
+    pos1 = 0;
+    pos2 = 0;
+    while (len != 0) {
+        l = min_uint32(p1->len - pos1, p2->len - pos2);
+        l = min_uint32(l, len);
+        res = js_string_memcmp_pos(p1, pos1, p2, pos2, l);
+        if (res != 0)
+            return res;
+        len -= l;
+        pos1 += l;
+        if (pos1 >= p1->len) {
+            p1 = string_rope_iter_next(&it1);
+            pos1 = 0;
+        }
+        pos2 += l;
+        if (pos2 >= p2->len) {
+            p2 = string_rope_iter_next(&it2);
+            pos2 = 0;
+        }
+    }
+
+    if (len1 == len2)
+        res = 0;
+    else if (len1 < len2)
+        res = -1;
+    else
+        res = 1;
+    return res;
+}
+
+/* forward declaration */
+static int string_buffer_concat_value(StringBuffer *s, JSValueConst v);
+static JSValue js_rebalance_string_rope(JSContext *ctx, JSValueConst rope);
+
+/* op1 and op2 must be strings or string ropes */
+static JSValue js_new_string_rope(JSContext *ctx, JSValue op1, JSValue op2)
+{
+    uint32_t len;
+    int is_wide_char, depth;
+    JSStringRope *r;
+    JSValue res;
+
+    if (JS_VALUE_GET_TAG(op1) == JS_TAG_STRING) {
+        JSString *p1 = JS_VALUE_GET_STRING(op1);
+        len = p1->len;
+        is_wide_char = p1->is_wide_char;
+        depth = 0;
+    } else {
+        JSStringRope *r1 = JS_VALUE_GET_STRING_ROPE(op1);
+        len = r1->len;
+        is_wide_char = r1->is_wide_char;
+        depth = r1->depth;
+    }
+
+    if (JS_VALUE_GET_TAG(op2) == JS_TAG_STRING) {
+        JSString *p2 = JS_VALUE_GET_STRING(op2);
+        len += p2->len;
+        is_wide_char |= p2->is_wide_char;
+    } else {
+        JSStringRope *r2 = JS_VALUE_GET_STRING_ROPE(op2);
+        len += r2->len;
+        is_wide_char |= r2->is_wide_char;
+        depth = max_int(depth, r2->depth);
+    }
+    if (len > JS_STRING_LEN_MAX) {
+        JS_ThrowInternalError(ctx, "string too long");
+        goto fail;
+    }
+    r = js_malloc(ctx, sizeof(*r));
+    if (!r)
+        goto fail;
+    r->header.ref_count = 1;
+    r->len = len;
+    r->is_wide_char = is_wide_char;
+    r->depth = depth + 1;
+    r->left = op1;
+    r->right = op2;
+    res = JS_MKPTR(JS_TAG_STRING_ROPE, r);
+    if (r->depth > JS_STRING_ROPE_MAX_DEPTH) {
+        JSValue res2;
+#ifdef DUMP_ROPE_REBALANCE
+        printf("rebalance: initial depth=%d\n", r->depth);
+#endif
+        res2 = js_rebalance_string_rope(ctx, res);
+#ifdef DUMP_ROPE_REBALANCE
+        if (JS_VALUE_GET_TAG(res2) == JS_TAG_STRING_ROPE)
+            printf("rebalance: final depth=%d\n", JS_VALUE_GET_STRING_ROPE(res2)->depth);
+#endif
+        JS_FreeValue(ctx, res);
+        return res2;
+    } else {
+        return res;
+    }
+ fail:
+    JS_FreeValue(ctx, op1);
+    JS_FreeValue(ctx, op2);
+    return JS_EXCEPTION;
+}
+
+#define ROPE_N_BUCKETS 44
+
+/* Fibonacci numbers starting from F_2 */
+static const uint32_t rope_bucket_len[ROPE_N_BUCKETS] = {
+          1,          2,          3,          5,
+          8,         13,         21,         34,
+         55,         89,        144,        233,
+        377,        610,        987,       1597,
+       2584,       4181,       6765,      10946,
+      17711,      28657,      46368,      75025,
+     121393,     196418,     317811,     514229,
+     832040,    1346269,    2178309,    3524578,
+    5702887,    9227465,   14930352,   24157817,
+   39088169,   63245986,  102334155,  165580141,
+  267914296,  433494437,  701408733, 1134903170, /* > JS_STRING_LEN_MAX */
+};
+
+static int js_rebalance_string_rope_rec(JSContext *ctx, JSValue *buckets,
+                                        JSValueConst val)
+{
+    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING) {
+        JSString *p = JS_VALUE_GET_STRING(val);
+        uint32_t len, i;
+        JSValue a, b;
+
+        len = p->len;
+        if (len == 0)
+            return 0; /* nothing to do */
+        /* find the bucket i so that rope_bucket_len[i] <= len <
+           rope_bucket_len[i + 1] and concatenate the ropes in the
+           buckets before */
+        a = JS_NULL;
+        i = 0;
+        while (len >= rope_bucket_len[i + 1]) {
+            b = buckets[i];
+            if (!JS_IsNull(b)) {
+                buckets[i] = JS_NULL;
+                if (JS_IsNull(a)) {
+                    a = b;
+                } else {
+                    a = js_new_string_rope(ctx, b, a);
+                    if (JS_IsException(a))
+                        return -1;
+                }
+            }
+            i++;
+        }
+        if (!JS_IsNull(a)) {
+            a = js_new_string_rope(ctx, a, js_dup(val));
+            if (JS_IsException(a))
+                return -1;
+        } else {
+            a = js_dup(val);
+        }
+        while (!JS_IsNull(buckets[i])) {
+            a = js_new_string_rope(ctx, buckets[i], a);
+            buckets[i] = JS_NULL;
+            if (JS_IsException(a))
+                return -1;
+            i++;
+        }
+        buckets[i] = a;
+    } else {
+        JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
+        if (js_rebalance_string_rope_rec(ctx, buckets, r->left))
+            return -1;
+        if (js_rebalance_string_rope_rec(ctx, buckets, r->right))
+            return -1;
+    }
+    return 0;
+}
+
+/* Return a new rope which is balanced. Algorithm from "Ropes: an
+   Alternative to Strings", Hans-J. Boehm, Russ Atkinson and Michael
+   Plass. */
+static JSValue js_rebalance_string_rope(JSContext *ctx, JSValueConst rope)
+{
+    JSValue buckets[ROPE_N_BUCKETS], a, b;
+    int i;
+
+    for(i = 0; i < ROPE_N_BUCKETS; i++)
+        buckets[i] = JS_NULL;
+    if (js_rebalance_string_rope_rec(ctx, buckets, rope))
+        goto fail;
+    a = JS_NULL;
+    for(i = 0; i < ROPE_N_BUCKETS; i++) {
+        b = buckets[i];
+        if (!JS_IsNull(b)) {
+            buckets[i] = JS_NULL;
+            if (JS_IsNull(a)) {
+                a = b;
+            } else {
+                a = js_new_string_rope(ctx, b, a);
+                if (JS_IsException(a))
+                    goto fail;
+            }
+        }
+    }
+    /* fail safe */
+    if (JS_IsNull(a))
+        return JS_AtomToString(ctx, JS_ATOM_empty_string);
+    else
+        return a;
+ fail:
+    for(i = 0; i < ROPE_N_BUCKETS; i++) {
+        JS_FreeValue(ctx, buckets[i]);
+    }
+    return JS_EXCEPTION;
+}
+
+/* 'rope' must be a rope. return a string and modify the rope so that
+   it won't need to be linearized again. */
+static JSValue js_linearize_string_rope(JSContext *ctx, JSValueConst rope)
+{
+    StringBuffer b_s, *b = &b_s;
+    JSStringRope *r;
+    JSValue ret;
+
+    r = JS_VALUE_GET_STRING_ROPE(rope);
+
+    /* check whether it is already linearized */
+    if (JS_VALUE_GET_TAG(r->right) == JS_TAG_STRING &&
+        JS_VALUE_GET_STRING(r->right)->len == 0) {
+        ret = js_dup(r->left);
+        return ret;
+    }
+    if (string_buffer_init2(ctx, b, r->len, r->is_wide_char))
+        goto fail;
+    if (string_buffer_concat_value(b, rope))
+        goto fail;
+    ret = string_buffer_end(b);
+    if (r->header.ref_count > 1) {
+        /* update the rope so that it won't need to be linearized again */
+        JS_FreeValue(ctx, r->left);
+        JS_FreeValue(ctx, r->right);
+        r->left = js_dup(ret);
+        r->right = JS_AtomToString(ctx, JS_ATOM_empty_string);
+    }
+    return ret;
+ fail:
+    return JS_EXCEPTION;
+}
+
+/* flat string concatenation - used by rope when concatenating short strings */
+static JSValue JS_ConcatString2(JSContext *ctx, JSValue op1, JSValue op2);
+
 static void copy_str16(uint16_t *dst, JSString *p, int offset, int len)
 {
     if (p->is_wide_char) {
@@ -13136,27 +15286,12 @@ static JSValue JS_ConcatString1(JSContext *ctx, JSString *p1, JSString *p2)
     return JS_MKPTR(JS_TAG_STRING, p);
 }
 
-/* op1 and op2 are converted to strings. For convience, op1 or op2 =
-   JS_EXCEPTION are accepted and return JS_EXCEPTION.  */
-static JSValue JS_ConcatString(JSContext *ctx, JSValue op1, JSValue op2)
+/* flat string concatenation - op1 and op2 must be JS_TAG_STRING */
+static JSValue JS_ConcatString2(JSContext *ctx, JSValue op1, JSValue op2)
 {
     JSValue ret;
     JSString *p1, *p2;
 
-    if (unlikely(JS_VALUE_GET_TAG(op1) != JS_TAG_STRING)) {
-        op1 = JS_ToStringFree(ctx, op1);
-        if (JS_IsException(op1)) {
-            JS_FreeValue(ctx, op2);
-            return JS_EXCEPTION;
-        }
-    }
-    if (unlikely(JS_VALUE_GET_TAG(op2) != JS_TAG_STRING)) {
-        op2 = JS_ToStringFree(ctx, op2);
-        if (JS_IsException(op2)) {
-            JS_FreeValue(ctx, op1);
-            return JS_EXCEPTION;
-        }
-    }
     p1 = JS_VALUE_GET_STRING(op1);
     p2 = JS_VALUE_GET_STRING(op2);
 
@@ -13185,6 +15320,83 @@ static JSValue JS_ConcatString(JSContext *ctx, JSValue op1, JSValue op2)
     return ret;
 }
 
+/* op1 and op2 are converted to strings. For convenience, op1 or op2 =
+   JS_EXCEPTION are accepted and return JS_EXCEPTION.  */
+static JSValue JS_ConcatString(JSContext *ctx, JSValue op1, JSValue op2)
+{
+    JSString *p1, *p2;
+
+    if (unlikely(!tag_is_string(JS_VALUE_GET_TAG(op1)))) {
+        op1 = JS_ToStringFree(ctx, op1);
+        if (JS_IsException(op1)) {
+            JS_FreeValue(ctx, op2);
+            return JS_EXCEPTION;
+        }
+    }
+    if (unlikely(!tag_is_string(JS_VALUE_GET_TAG(op2)))) {
+        op2 = JS_ToStringFree(ctx, op2);
+        if (JS_IsException(op2)) {
+            JS_FreeValue(ctx, op1);
+            return JS_EXCEPTION;
+        }
+    }
+
+    /* normal concatenation for short strings */
+    if (JS_VALUE_GET_TAG(op2) == JS_TAG_STRING) {
+        p2 = JS_VALUE_GET_STRING(op2);
+        if (p2->len == 0) {
+            JS_FreeValue(ctx, op2);
+            return op1;
+        }
+        if (p2->len <= JS_STRING_ROPE_SHORT_LEN) {
+            if (JS_VALUE_GET_TAG(op1) == JS_TAG_STRING) {
+                p1 = JS_VALUE_GET_STRING(op1);
+                if (p1->len <= JS_STRING_ROPE_SHORT2_LEN) {
+                    return JS_ConcatString2(ctx, op1, op2);
+                } else {
+                    return js_new_string_rope(ctx, op1, op2);
+                }
+            } else {
+                JSStringRope *r1;
+                r1 = JS_VALUE_GET_STRING_ROPE(op1);
+                if (JS_VALUE_GET_TAG(r1->right) == JS_TAG_STRING &&
+                    JS_VALUE_GET_STRING(r1->right)->len <= JS_STRING_ROPE_SHORT_LEN) {
+                    JSValue val, ret;
+                    val = JS_ConcatString2(ctx, js_dup(r1->right), op2);
+                    if (JS_IsException(val)) {
+                        JS_FreeValue(ctx, op1);
+                        return JS_EXCEPTION;
+                    }
+                    ret = js_new_string_rope(ctx, js_dup(r1->left), val);
+                    JS_FreeValue(ctx, op1);
+                    return ret;
+                }
+            }
+        }
+    } else if (JS_VALUE_GET_TAG(op1) == JS_TAG_STRING) {
+        JSStringRope *r2;
+        p1 = JS_VALUE_GET_STRING(op1);
+        if (p1->len == 0) {
+            JS_FreeValue(ctx, op1);
+            return op2;
+        }
+        r2 = JS_VALUE_GET_STRING_ROPE(op2);
+        if (JS_VALUE_GET_TAG(r2->left) == JS_TAG_STRING &&
+            JS_VALUE_GET_STRING(r2->left)->len <= JS_STRING_ROPE_SHORT_LEN) {
+            JSValue val, ret;
+            val = JS_ConcatString2(ctx, op1, js_dup(r2->left));
+            if (JS_IsException(val)) {
+                JS_FreeValue(ctx, op2);
+                return JS_EXCEPTION;
+            }
+            ret = js_new_string_rope(ctx, val, js_dup(r2->right));
+            JS_FreeValue(ctx, op2);
+            return ret;
+        }
+    }
+    return js_new_string_rope(ctx, op1, op2);
+}
+
 /* Shape support */
 
 static inline size_t get_shape_size(size_t hash_size, size_t prop_size)
@@ -13208,11 +15420,6 @@ static inline void *get_alloc_from_shape(JSShape *sh)
     return prop_hash_end(sh) - ((intptr_t)sh->prop_hash_mask + 1);
 }
 
-static inline JSShapeProperty *get_shape_prop(JSShape *sh)
-{
-    return sh->prop;
-}
-
 static int init_shape_hash(JSRuntime *rt)
 {
     rt->shape_hash_bits = 6;   /* 64 shapes */
@@ -13228,7 +15435,7 @@ static int init_shape_hash(JSRuntime *rt)
 /* same magic hash multiplier as the Linux kernel */
 static uint32_t shape_hash(uint32_t h, uint32_t val)
 {
-    return (h + val) * 0x9e370001;
+    return hash32(h + val);
 }
 
 /* truncate the shape hash to 'hash_bits' bits */
@@ -13294,18 +15501,13 @@ static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
     rt->shape_hash_count--;
 }
 
-/* create a new empty shape with prototype 'proto' */
-static no_inline JSShape *js_new_shape2(JSContext *ctx, JSObject *proto,
-                                        int hash_size, int prop_size)
+/* create a new empty shape with prototype 'proto'. It is not hashed */
+static inline JSShape *js_new_shape_nohash(JSContext *ctx, JSObject *proto,
+                                           int hash_size, int prop_size)
 {
     JSRuntime *rt = ctx->rt;
     void *sh_alloc;
     JSShape *sh;
-
-    /* resize the shape hash table if necessary */
-    if (2 * (rt->shape_hash_count + 1) > rt->shape_hash_size) {
-        resize_shape_hash(rt, rt->shape_hash_bits + 1);
-    }
 
     sh_alloc = js_malloc(ctx, get_shape_size(hash_size, prop_size));
     if (!sh_alloc)
@@ -13322,11 +15524,29 @@ static no_inline JSShape *js_new_shape2(JSContext *ctx, JSObject *proto,
     sh->prop_size = prop_size;
     sh->prop_count = 0;
     sh->deleted_prop_count = 0;
+    sh->is_hashed = false;
+    return sh;
+}
+
+/* create a new empty shape with prototype 'proto' */
+static no_inline JSShape *js_new_shape2(JSContext *ctx, JSObject *proto,
+                                        int hash_size, int prop_size)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShape *sh;
+
+    /* resize the shape hash table if necessary */
+    if (2 * (rt->shape_hash_count + 1) > rt->shape_hash_size) {
+        resize_shape_hash(rt, rt->shape_hash_bits + 1);
+    }
+
+    sh = js_new_shape_nohash(ctx, proto, hash_size, prop_size);
+    if (!sh)
+        return NULL;
 
     /* insert in the hash table */
     sh->hash = shape_initial_hash(proto);
     sh->is_hashed = true;
-    sh->has_small_array_index = false;
     js_shape_hash_link(ctx->rt, sh);
     return sh;
 }
@@ -13335,6 +15555,40 @@ static JSShape *js_new_shape(JSContext *ctx, JSObject *proto)
 {
     return js_new_shape2(ctx, proto, JS_PROP_INITIAL_HASH_SIZE,
                          JS_PROP_INITIAL_SIZE);
+}
+
+static JSObject *object_or_null(JSValueConst val)
+{
+    if (JS_TAG_OBJECT == JS_VALUE_GET_TAG(val))
+        return JS_VALUE_GET_OBJ(val);
+    return NULL;
+}
+
+static int add_shape_property(JSContext *ctx, JSShape **psh,
+                              JSObject *p, JSAtom atom, int prop_flags);
+
+static JSShape *js_new_shape_with2(JSContext *ctx, JSObject *proto,
+                                   int prop_count, const JSShapeProperty props[]) {
+    JSShape *sh;
+    int i;
+
+    sh = js_new_shape2(ctx, proto, JS_PROP_INITIAL_HASH_SIZE, prop_count);
+    if (sh)
+        for (i = 0; i < prop_count; i++)
+            if (add_shape_property(ctx, &sh, NULL, props[i].atom, props[i].flags))
+                goto fail;
+    return sh;
+fail:
+    js_free_shape(ctx->rt, sh);
+    return NULL;
+}
+
+static int js_new_shape_with(JSContext *ctx, JSShape **psh, JSValueConst proto,
+                              int prop_count, const JSShapeProperty props[]) {
+    *psh = js_new_shape_with2(ctx, object_or_null(proto), prop_count, props);
+    if (*psh)
+        return 0;
+    return -1;
 }
 
 /* The shape is cloned. The new shape is not inserted in the shape
@@ -13361,7 +15615,7 @@ static JSShape *js_clone_shape(JSContext *ctx, JSShape *sh1)
     if (sh->proto) {
         js_dup(JS_MKPTR(JS_TAG_OBJECT, sh->proto));
     }
-    for(i = 0, pr = get_shape_prop(sh); i < sh->prop_count; i++, pr++) {
+    for(i = 0, pr = sh->prop; i < sh->prop_count; i++, pr++) {
         JS_DupAtom(ctx, pr->atom);
     }
     return sh;
@@ -13384,7 +15638,7 @@ static void js_free_shape0(JSRuntime *rt, JSShape *sh)
     if (sh->proto != NULL) {
         JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, sh->proto));
     }
-    pr = get_shape_prop(sh);
+    pr = sh->prop;
     for(i = 0; i < sh->prop_count; i++) {
         JS_FreeAtomRT(rt, pr->atom);
         pr++;
@@ -13572,11 +15826,10 @@ static int add_shape_property(JSContext *ctx, JSShape **psh,
     }
     /* Initialize the new shape property.
        The object property at p->prop[sh->prop_count] is uninitialized */
-    prop = get_shape_prop(sh);
+    prop = sh->prop;
     pr = &prop[sh->prop_count++];
     pr->atom = JS_DupAtom(ctx, atom);
     pr->flags = prop_flags;
-    sh->has_small_array_index |= __JS_AtomIsTaggedInt(atom);
     /* add in hash table */
     hash_mask = sh->prop_hash_mask;
     h = atom & hash_mask;
@@ -13682,9 +15935,13 @@ static __maybe_unused void JS_DumpShapes(JSRuntime *rt)
     printf("}\n");
 }
 
-static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID class_id)
+/* 'props[]' is used to initialized the object properties. The number
+   of elements depends on the shape. */
+static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID class_id,
+                                     JSProperty *props)
 {
     JSObject *p;
+    int i;
 
     js_trigger_gc(ctx->rt, sizeof(JSObject));
     p = js_malloc(ctx, sizeof(JSObject));
@@ -13699,6 +15956,7 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     p->is_uncatchable_error = 0;
     p->tmp_mark = 0;
     p->is_HTMLDDA = 0;
+    p->is_prototype = 0;
     p->first_weak_ref = NULL;
     p->u.opaque = NULL;
     p->shape = sh;
@@ -13706,6 +15964,13 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     if (unlikely(!p->prop)) {
         js_free(ctx, p);
     fail:
+        if (props) {
+            JSShapeProperty *prs = sh->prop;
+            for(i = 0; i < sh->prop_count; i++) {
+                free_property(ctx->rt, &props[i], prs->flags);
+                prs++;
+            }
+        }
         js_free_shape(ctx->rt, sh);
         return JS_EXCEPTION;
     }
@@ -13721,22 +15986,26 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
             p->u.array.u.values = NULL;
             p->u.array.count = 0;
             p->u.array.u1.size = 0;
-            /* the length property is always the first one */
-            if (likely(sh == ctx->array_shape)) {
-                pr = &p->prop[0];
-            } else {
-                /* only used for the first array */
-                /* cannot fail */
-                pr = add_property(ctx, p, JS_ATOM_length,
-                                  JS_PROP_WRITABLE | JS_PROP_LENGTH);
+            if (!props) {
+                /* XXX: remove */
+                /* the length property is always the first one */
+                if (likely(sh == ctx->array_shape)) {
+                    pr = &p->prop[0];
+                } else {
+                    /* only used for the first array */
+                    /* cannot fail */
+                    pr = add_property(ctx, p, JS_ATOM_length,
+                                      JS_PROP_WRITABLE | JS_PROP_LENGTH);
+                }
+                pr->u.value = js_int32(0);
             }
-            pr->u.value = js_int32(0);
         }
         break;
     case JS_CLASS_C_FUNCTION:
         p->prop[0].u.value = JS_UNDEFINED;
         break;
     case JS_CLASS_ARGUMENTS:
+    case JS_CLASS_MAPPED_ARGUMENTS:
     case JS_CLASS_UINT8C_ARRAY:
     case JS_CLASS_INT8_ARRAY:
     case JS_CLASS_UINT8_ARRAY:
@@ -13779,15 +16048,11 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     }
     p->header.ref_count = 1;
     add_gc_object(ctx->rt, &p->header, JS_GC_OBJ_TYPE_JS_OBJECT);
+    if (props) {
+        for(i = 0; i < sh->prop_count; i++)
+            p->prop[i] = props[i];
+    }
     return JS_MKPTR(JS_TAG_OBJECT, p);
-}
-
-static JSObject *get_proto_obj(JSValueConst proto_val)
-{
-    if (JS_VALUE_GET_TAG(proto_val) != JS_TAG_OBJECT)
-        return NULL;
-    else
-        return JS_VALUE_GET_OBJ(proto_val);
 }
 
 /* WARNING: proto must be an object or JS_NULL */
@@ -13797,7 +16062,7 @@ JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto_val,
     JSShape *sh;
     JSObject *proto;
 
-    proto = get_proto_obj(proto_val);
+    proto = object_or_null(proto_val);
     sh = find_hashed_shape_proto(ctx->rt, proto);
     if (likely(sh)) {
         sh = js_dup_shape(sh);
@@ -13806,7 +16071,30 @@ JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto_val,
         if (!sh)
             return JS_EXCEPTION;
     }
-    return JS_NewObjectFromShape(ctx, sh, class_id);
+    return JS_NewObjectFromShape(ctx, sh, class_id, NULL);
+}
+
+/* WARNING: the shape is not hashed. It is used for objects where
+   factorizing the shape is not relevant (prototypes, constructors) */
+static JSValue JS_NewObjectProtoClassAlloc(JSContext *ctx, JSValueConst proto_val,
+                                           JSClassID class_id, int n_alloc_props)
+{
+    JSShape *sh;
+    JSObject *proto;
+    int hash_size, hash_bits;
+
+    if (n_alloc_props <= JS_PROP_INITIAL_SIZE) {
+        n_alloc_props = JS_PROP_INITIAL_SIZE;
+        hash_size = JS_PROP_INITIAL_HASH_SIZE;
+    } else {
+        hash_bits = 32 - clz32(n_alloc_props - 1); /* ceil(log2(radix)) */
+        hash_size = 1 << hash_bits;
+    }
+    proto = object_or_null(proto_val);
+    sh = js_new_shape_nohash(ctx, proto, hash_size, n_alloc_props);
+    if (!sh)
+        return JS_EXCEPTION;
+    return JS_NewObjectFromShape(ctx, sh, class_id, NULL);
 }
 
 static int JS_SetObjectData(JSContext *ctx, JSValueConst obj, JSValue val)
@@ -13823,7 +16111,8 @@ static int JS_SetObjectData(JSContext *ctx, JSValueConst obj, JSValue val)
         case JS_CLASS_DATE:
         case JS_CLASS_BIG_INT:
             JS_FreeValue(ctx, p->u.object_data);
-            p->u.object_data = val;
+            p->u.object_data = val; /* for JS_CLASS_STRING, 'val' must
+                                       be JS_TAG_STRING (and not a rope) */
             return 0;
         }
     }
@@ -13876,7 +16165,6 @@ JSValue JS_NewObjectFrom(JSContext *ctx, int count, const JSAtom *props,
             atom = props[i];
             pr = &sh->prop[i];
             sh->hash = shape_hash(shape_hash(sh->hash, atom), JS_PROP_C_W_E);
-            sh->has_small_array_index |= __JS_AtomIsTaggedInt(atom);
             h = atom & sh->prop_hash_mask;
             hash = &prop_hash_end(sh)[-h - 1];
             pr->hash_next = *hash;
@@ -13924,7 +16212,7 @@ out:
 JSValue JS_NewArray(JSContext *ctx)
 {
     return JS_NewObjectFromShape(ctx, js_dup_shape(ctx->array_shape),
-                                 JS_CLASS_ARRAY);
+                                 JS_CLASS_ARRAY, NULL);
 }
 
 // note: takes ownership of |values|, unlike js_create_array
@@ -14055,13 +16343,17 @@ static int js_method_set_properties(JSContext *ctx, JSValue func_obj,
 JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
                          const char *name,
                          int length, JSCFunctionEnum cproto, int magic,
-                         JSValueConst proto_val)
+                         JSValueConst proto_val, int n_fields)
 {
     JSValue func_obj;
     JSObject *p;
     JSAtom name_atom;
 
-    func_obj = JS_NewObjectProtoClass(ctx, proto_val, JS_CLASS_C_FUNCTION);
+    if (n_fields > 0) {
+        func_obj = JS_NewObjectProtoClassAlloc(ctx, proto_val, JS_CLASS_C_FUNCTION, n_fields);
+    } else {
+        func_obj = JS_NewObjectProtoClass(ctx, proto_val, JS_CLASS_C_FUNCTION);
+    }
     if (JS_IsException(func_obj))
         return func_obj;
     p = JS_VALUE_GET_OBJ(func_obj);
@@ -14093,7 +16385,7 @@ JSValue JS_NewCFunction2(JSContext *ctx, JSCFunction *func,
                          int length, JSCFunctionEnum cproto, int magic)
 {
     return JS_NewCFunction3(ctx, func, name, length, cproto, magic,
-                            ctx->function_proto);
+                            ctx->function_proto, 0);
 }
 
 typedef struct JSCFunctionDataRecord {
@@ -14237,6 +16529,101 @@ static void js_autoinit_mark(JSRuntime *rt, JSProperty *pr,
     mark_func(rt, &js_autoinit_get_realm(pr)->header);
 }
 
+typedef struct JSCClosureRecord {
+    JSCClosure *func;
+    uint16_t length;
+    uint16_t magic;
+    void *opaque;
+    void (*opaque_finalize)(void *opaque);
+} JSCClosureRecord;
+
+static void js_c_closure_finalizer(JSRuntime *rt, JSValueConst val)
+{
+    JSCClosureRecord *s = JS_GetOpaque(val, JS_CLASS_C_CLOSURE);
+
+    if (s) {
+        if (s->opaque_finalize)
+           s->opaque_finalize(s->opaque);
+
+        js_free_rt(rt, s);
+    }
+}
+
+static JSValue js_call_c_closure(JSContext *ctx, JSValueConst func_obj,
+                                 JSValueConst this_val,
+                                 int argc, JSValueConst *argv, int flags)
+{
+    JSRuntime *rt = ctx->rt;
+    JSStackFrame sf_s, *sf = &sf_s, *prev_sf;
+    JSCClosureRecord *s = JS_GetOpaque(func_obj, JS_CLASS_C_CLOSURE);
+    JSValueConst *arg_buf;
+    JSValue ret;
+    int arg_count;
+    int i;
+    size_t stack_size;
+
+    arg_buf = argv;
+    arg_count = s->length;
+    if (unlikely(argc < arg_count)) {
+        stack_size = arg_count * sizeof(arg_buf[0]);
+        if (js_check_stack_overflow(rt, stack_size))
+            return JS_ThrowStackOverflow(ctx);
+        arg_buf = alloca(stack_size);
+        for (i = 0; i < argc; i++)
+            arg_buf[i] = argv[i];
+        for (i = argc; i < arg_count; i++)
+            arg_buf[i] = JS_UNDEFINED;
+    }
+
+    prev_sf = rt->current_stack_frame;
+    sf->prev_frame = prev_sf;
+    rt->current_stack_frame = sf;
+    // TODO(bnoordhuis) switch realms like js_call_c_function does
+    sf->is_strict_mode = false;
+    sf->cur_func = unsafe_unconst(func_obj);
+    sf->arg_count = argc;
+    ret = s->func(ctx, this_val, argc, arg_buf, s->magic, s->opaque);
+    rt->current_stack_frame = sf->prev_frame;
+
+    return ret;
+}
+
+JSValue JS_NewCClosure(JSContext *ctx, JSCClosure *func, const char *name,
+                       JSCClosureFinalizerFunc *opaque_finalize,
+                       int length, int magic, void *opaque)
+{
+    JSCClosureRecord *s;
+    JSAtom name_atom;
+    JSValue func_obj;
+
+    func_obj = JS_NewObjectProtoClass(ctx, ctx->function_proto,
+        JS_CLASS_C_CLOSURE);
+    if (JS_IsException(func_obj))
+        return func_obj;
+    s = js_malloc(ctx, sizeof(*s));
+    if (!s) {
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
+    s->func = func;
+    s->length = length;
+    s->magic = magic;
+    s->opaque = opaque;
+    s->opaque_finalize = opaque_finalize;
+    JS_SetOpaqueInternal(func_obj, s);
+    name_atom = JS_ATOM_empty_string;
+    if (name && *name) {
+        name_atom = JS_NewAtom(ctx, name);
+        if (name_atom == JS_ATOM_NULL) {
+            JS_FreeValue(ctx, func_obj);
+            return JS_EXCEPTION;
+        }
+    }
+    js_function_set_properties(ctx, func_obj, name_atom, length);
+    JS_FreeAtom(ctx, name_atom);
+    return func_obj;
+}
+
 static void free_property(JSRuntime *rt, JSProperty *pr, int prop_flags)
 {
     if (unlikely(prop_flags & JS_PROP_TMASK)) {
@@ -14255,8 +16642,7 @@ static void free_property(JSRuntime *rt, JSProperty *pr, int prop_flags)
     }
 }
 
-static force_inline JSShapeProperty *find_own_property1(JSObject *p,
-                                                        JSAtom atom)
+static inline JSShapeProperty *find_own_property1(JSObject *p, JSAtom atom)
 {
     JSShape *sh;
     JSShapeProperty *pr, *prop;
@@ -14264,7 +16650,7 @@ static force_inline JSShapeProperty *find_own_property1(JSObject *p,
     sh = p->shape;
     h = (uintptr_t)atom & sh->prop_hash_mask;
     h = prop_hash_end(sh)[-h - 1];
-    prop = get_shape_prop(sh);
+    prop = sh->prop;
     while (h) {
         pr = &prop[h - 1];
         if (likely(pr->atom == atom)) {
@@ -14275,9 +16661,9 @@ static force_inline JSShapeProperty *find_own_property1(JSObject *p,
     return NULL;
 }
 
-static force_inline JSShapeProperty *find_own_property(JSProperty **ppr,
-                                                       JSObject *p,
-                                                       JSAtom atom)
+static inline JSShapeProperty *find_own_property(JSProperty **ppr,
+                                                 JSObject *p,
+                                                 JSAtom atom)
 {
     JSShape *sh;
     JSShapeProperty *pr, *prop;
@@ -14285,7 +16671,7 @@ static force_inline JSShapeProperty *find_own_property(JSProperty **ppr,
     sh = p->shape;
     h = (uintptr_t)atom & sh->prop_hash_mask;
     h = prop_hash_end(sh)[-h - 1];
-    prop = get_shape_prop(sh);
+    prop = sh->prop;
     while (h) {
         pr = &prop[h - 1];
         if (likely(pr->atom == atom)) {
@@ -14308,7 +16694,9 @@ static void free_var_ref(JSRuntime *rt, JSVarRef *var_ref)
                 JS_FreeValueRT(rt, var_ref->value);
                 remove_gc_object(&var_ref->header);
             } else {
-                list_del(&var_ref->header.link); /* still on the stack */
+                JSStackFrame *sf = var_ref->stack_frame;
+                assert(sf->var_refs[var_ref->var_ref_idx] == var_ref);
+                sf->var_refs[var_ref->var_ref_idx] = NULL;
             }
             js_free_rt(rt, var_ref);
         }
@@ -14472,7 +16860,7 @@ static void free_object(JSRuntime *rt, JSObject *p)
                          freeing cycles */
     /* free all the fields */
     sh = p->shape;
-    pr = get_shape_prop(sh);
+    pr = sh->prop;
     for(i = 0; i < sh->prop_count; i++) {
         free_property(rt, &p->prop[i], pr->flags);
         pr++;
@@ -14563,6 +16951,14 @@ static void js_free_value_rt(JSRuntime *rt, JSValue v)
     switch(tag) {
     case JS_TAG_STRING:
         js_free_string0(rt, JS_VALUE_GET_STRING(v));
+        break;
+    case JS_TAG_STRING_ROPE:
+        {
+            JSStringRope *p = JS_VALUE_GET_STRING_ROPE(v);
+            JS_FreeValueRT(rt, p->left);
+            JS_FreeValueRT(rt, p->right);
+            js_free_rt(rt, p);
+        }
         break;
     case JS_TAG_OBJECT:
     case JS_TAG_FUNCTION_BYTECODE:
@@ -14671,7 +17067,7 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
             sh = p->shape;
             mark_func(rt, &sh->header);
             /* mark all the fields */
-            prs = get_shape_prop(sh);
+            prs = sh->prop;
             for(i = 0; i < sh->prop_count; i++) {
                 JSProperty *pr = &p->prop[i];
                 if (prs->atom != JS_ATOM_NULL) {
@@ -15055,7 +17451,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
             s->memory_used_count++;
             s->prop_size += sh->prop_size * sizeof(*p->prop);
             s->prop_count += sh->prop_count;
-            prs = get_shape_prop(sh);
+            prs = sh->prop;
             for(i = 0; i < sh->prop_count; i++) {
                 JSProperty *pr = &p->prop[i];
                 if (prs->atom != JS_ATOM_NULL && !(prs->flags & JS_PROP_TMASK)) {
@@ -15142,6 +17538,15 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
                     }
                     s->memory_used_count += 1;
                     s->memory_used_size += sizeof(*fd) + fd->data_len * sizeof(*fd->data);
+                }
+            }
+            break;
+        case JS_CLASS_C_CLOSURE:   /* u.c_closure_record */
+            {
+                JSCClosureRecord *c = p->u.c_closure_record;
+                if (c) {
+                    s->memory_used_count += 1;
+                    s->memory_used_size += sizeof(*c);
                 }
             }
             break;
@@ -15257,8 +17662,8 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
 
 void JS_DumpMemoryUsage(FILE *fp, const JSMemoryUsage *s, JSRuntime *rt)
 {
-    fprintf(fp, "QuickJS-ng memory usage -- %s version, %d-bit, %s Endian, malloc limit: %"PRId64"\n\n",
-        JS_GetVersion(), (int)sizeof(void *) * 8, is_be() ? "Big" : "Little", s->malloc_limit);
+    fprintf(fp, "QuickJS-ng memory usage -- %s version, %d-bit, malloc limit: %"PRId64"\n\n",
+        JS_GetVersion(), (int)sizeof(void *) * 8, s->malloc_limit);
     if (rt) {
         static const struct {
             const char *name;
@@ -15883,7 +18288,7 @@ static int JS_PRINTF_FORMAT_ATTR(3, 4) JS_ThrowTypeErrorOrFalse(JSContext *ctx, 
     }
 }
 
-#ifdef __GNUC__
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #endif // __GNUC__
@@ -15900,7 +18305,7 @@ static JSValue JS_ThrowSyntaxErrorAtom(JSContext *ctx, const char *fmt, JSAtom a
     JS_AtomGetStr(ctx, buf, sizeof(buf), atom);
     return JS_ThrowSyntaxError(ctx, fmt, buf);
 }
-#ifdef __GNUC__
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop // ignored "-Wformat-nonliteral"
 #endif // __GNUC__
 
@@ -16105,6 +18510,14 @@ static int JS_SetPrototypeInternal(JSContext *ctx, JSValueConst obj,
     if (sh->proto)
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, sh->proto));
     sh->proto = proto;
+    if (proto)
+        proto->is_prototype = true;
+    if (p->is_prototype) {
+        /* track modification of Array.prototype */
+        if (unlikely(p == JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_ARRAY]))) {
+            ctx->std_array_prototype = false;
+        }
+    }
     return true;
 }
 
@@ -16131,6 +18544,7 @@ static JSValueConst JS_GetPrototypePrimitive(JSContext *ctx, JSValueConst val)
         ret = ctx->class_proto[JS_CLASS_BOOLEAN];
         break;
     case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
         ret = ctx->class_proto[JS_CLASS_STRING];
         break;
     case JS_TAG_SYMBOL:
@@ -16287,116 +18701,856 @@ int JS_IsInstanceOf(JSContext *ctx, JSValueConst val, JSValueConst obj)
 
 #include <inttypes.h>
 
-const uint32_t qjsc_builtin_array_fromasync_size = 826;
+const uint32_t qjsc_builtin_array_fromasync_size = 875;
 
-const uint8_t qjsc_builtin_array_fromasync[826] = {
- 0x15, 0x0d, 0x01, 0x1a, 0x61, 0x73, 0x79, 0x6e,
- 0x63, 0x49, 0x74, 0x65, 0x72, 0x61, 0x74, 0x6f,
- 0x72, 0x01, 0x10, 0x69, 0x74, 0x65, 0x72, 0x61,
- 0x74, 0x6f, 0x72, 0x01, 0x12, 0x61, 0x72, 0x72,
- 0x61, 0x79, 0x4c, 0x69, 0x6b, 0x65, 0x01, 0x0a,
- 0x6d, 0x61, 0x70, 0x46, 0x6e, 0x01, 0x0e, 0x74,
- 0x68, 0x69, 0x73, 0x41, 0x72, 0x67, 0x01, 0x0c,
- 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x01, 0x02,
- 0x69, 0x01, 0x1a, 0x69, 0x73, 0x43, 0x6f, 0x6e,
- 0x73, 0x74, 0x72, 0x75, 0x63, 0x74, 0x6f, 0x72,
- 0x01, 0x08, 0x73, 0x79, 0x6e, 0x63, 0x01, 0x0c,
- 0x6d, 0x65, 0x74, 0x68, 0x6f, 0x64, 0x01, 0x08,
- 0x69, 0x74, 0x65, 0x72, 0x01, 0x1c, 0x6e, 0x6f,
- 0x74, 0x20, 0x61, 0x20, 0x66, 0x75, 0x6e, 0x63,
- 0x74, 0x69, 0x6f, 0x6e, 0x01, 0x08, 0x63, 0x61,
- 0x6c, 0x6c, 0x0c, 0x00, 0x02, 0x00, 0xa2, 0x01,
- 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x04, 0x01,
- 0xa4, 0x01, 0x00, 0x00, 0x00, 0x0c, 0x43, 0x02,
- 0x01, 0x00, 0x05, 0x00, 0x05, 0x01, 0x00, 0x01,
- 0x03, 0x05, 0xaa, 0x02, 0x00, 0x01, 0x40, 0xa0,
- 0x03, 0x00, 0x01, 0x40, 0xc6, 0x03, 0x00, 0x01,
- 0x40, 0xcc, 0x01, 0x00, 0x01, 0x40, 0xc8, 0x03,
- 0x00, 0x01, 0x40, 0x0c, 0x60, 0x02, 0x01, 0xf8,
- 0x01, 0x03, 0x0e, 0x01, 0x06, 0x05, 0x00, 0x86,
- 0x04, 0x11, 0xca, 0x03, 0x00, 0x01, 0x00, 0xcc,
- 0x03, 0x00, 0x01, 0x00, 0xce, 0x03, 0x00, 0x01,
- 0x00, 0xca, 0x03, 0x01, 0xff, 0xff, 0xff, 0xff,
- 0x0f, 0x20, 0xcc, 0x03, 0x01, 0x01, 0x20, 0xce,
- 0x03, 0x01, 0x02, 0x20, 0xd0, 0x03, 0x02, 0x00,
- 0x20, 0xd2, 0x03, 0x02, 0x04, 0x20, 0xd4, 0x03,
- 0x02, 0x05, 0x20, 0xd6, 0x03, 0x02, 0x06, 0x20,
- 0xd8, 0x03, 0x02, 0x07, 0x20, 0x64, 0x06, 0x08,
- 0x20, 0x82, 0x01, 0x07, 0x09, 0x20, 0xda, 0x03,
- 0x0a, 0x08, 0x30, 0x82, 0x01, 0x0d, 0x0b, 0x20,
- 0xd4, 0x01, 0x0d, 0x0c, 0x20, 0x10, 0x00, 0x01,
- 0x00, 0xa0, 0x03, 0x01, 0x03, 0xc6, 0x03, 0x02,
- 0x03, 0xc8, 0x03, 0x04, 0x03, 0xaa, 0x02, 0x00,
- 0x03, 0xcc, 0x01, 0x03, 0x03, 0x08, 0xc4, 0x0d,
- 0x62, 0x02, 0x00, 0x62, 0x01, 0x00, 0x62, 0x00,
- 0x00, 0xd3, 0xcb, 0xd4, 0x11, 0xf4, 0xec, 0x08,
- 0x0e, 0x39, 0x46, 0x00, 0x00, 0x00, 0xdc, 0xcc,
- 0xd5, 0x11, 0xf4, 0xec, 0x08, 0x0e, 0x39, 0x46,
- 0x00, 0x00, 0x00, 0xdd, 0xcd, 0x62, 0x07, 0x00,
- 0x62, 0x06, 0x00, 0x62, 0x05, 0x00, 0x62, 0x04,
- 0x00, 0x62, 0x03, 0x00, 0xd4, 0x39, 0x46, 0x00,
- 0x00, 0x00, 0xb0, 0xec, 0x16, 0xd4, 0x98, 0x04,
- 0x1b, 0x00, 0x00, 0x00, 0xb0, 0xec, 0x0c, 0xdf,
- 0x11, 0x04, 0xee, 0x00, 0x00, 0x00, 0x21, 0x01,
- 0x00, 0x30, 0x06, 0xce, 0xb6, 0xc4, 0x04, 0xc3,
- 0x0d, 0xf7, 0xc4, 0x05, 0x09, 0xc4, 0x06, 0xd3,
- 0xe0, 0x48, 0xc4, 0x07, 0x63, 0x07, 0x00, 0x07,
- 0xad, 0xec, 0x0f, 0x0a, 0x11, 0x64, 0x06, 0x00,
- 0x0e, 0xd3, 0xe1, 0x48, 0x11, 0x64, 0x07, 0x00,
- 0x0e, 0x63, 0x07, 0x00, 0x07, 0xad, 0x6a, 0xa6,
- 0x00, 0x00, 0x00, 0x62, 0x08, 0x00, 0x06, 0x11,
- 0xf4, 0xed, 0x0c, 0x71, 0x43, 0x32, 0x00, 0x00,
- 0x00, 0xc4, 0x08, 0x0e, 0xee, 0x05, 0x0e, 0xd3,
- 0xee, 0xf2, 0x63, 0x08, 0x00, 0x8e, 0x11, 0xed,
- 0x03, 0x0e, 0xb6, 0x11, 0x64, 0x08, 0x00, 0x0e,
- 0x63, 0x05, 0x00, 0xec, 0x0c, 0xc3, 0x0d, 0x11,
- 0x63, 0x08, 0x00, 0x21, 0x01, 0x00, 0xee, 0x06,
- 0xe2, 0x63, 0x08, 0x00, 0xf1, 0x11, 0x64, 0x03,
- 0x00, 0x0e, 0x63, 0x04, 0x00, 0x63, 0x08, 0x00,
- 0xa7, 0x6a, 0x2a, 0x01, 0x00, 0x00, 0x62, 0x09,
- 0x00, 0xd3, 0x63, 0x04, 0x00, 0x48, 0xc4, 0x09,
- 0x63, 0x06, 0x00, 0xec, 0x0a, 0x63, 0x09, 0x00,
- 0x8c, 0x11, 0x64, 0x09, 0x00, 0x0e, 0xd4, 0xec,
- 0x17, 0xd4, 0x43, 0xef, 0x00, 0x00, 0x00, 0xd5,
- 0x63, 0x09, 0x00, 0x63, 0x04, 0x00, 0x24, 0x03,
- 0x00, 0x8c, 0x11, 0x64, 0x09, 0x00, 0x0e, 0x5f,
- 0x04, 0x00, 0x63, 0x03, 0x00, 0x63, 0x04, 0x00,
- 0x92, 0x64, 0x04, 0x00, 0x0b, 0x63, 0x09, 0x00,
- 0x4d, 0x41, 0x00, 0x00, 0x00, 0x0a, 0x4d, 0x3e,
- 0x00, 0x00, 0x00, 0x0a, 0x4d, 0x3f, 0x00, 0x00,
- 0x00, 0xf3, 0x0e, 0xee, 0x9e, 0x62, 0x0a, 0x00,
- 0x63, 0x07, 0x00, 0x43, 0xef, 0x00, 0x00, 0x00,
- 0xd3, 0x24, 0x01, 0x00, 0xc4, 0x0a, 0x63, 0x05,
- 0x00, 0xec, 0x09, 0xc3, 0x0d, 0x11, 0x21, 0x00,
- 0x00, 0xee, 0x03, 0xe2, 0xf0, 0x11, 0x64, 0x03,
- 0x00, 0x0e, 0x6d, 0x8c, 0x00, 0x00, 0x00, 0x62,
- 0x0c, 0x00, 0x62, 0x0b, 0x00, 0x06, 0x11, 0xf4,
- 0xed, 0x13, 0x71, 0x43, 0x41, 0x00, 0x00, 0x00,
- 0xc4, 0x0b, 0x43, 0x6a, 0x00, 0x00, 0x00, 0xc4,
- 0x0c, 0x0e, 0xee, 0x10, 0x0e, 0x63, 0x0a, 0x00,
- 0x43, 0x6b, 0x00, 0x00, 0x00, 0x24, 0x00, 0x00,
- 0x8c, 0xee, 0xe0, 0x63, 0x0c, 0x00, 0xed, 0x4e,
- 0x63, 0x06, 0x00, 0xec, 0x0a, 0x63, 0x0b, 0x00,
- 0x8c, 0x11, 0x64, 0x0b, 0x00, 0x0e, 0xd4, 0xec,
- 0x17, 0xd4, 0x43, 0xef, 0x00, 0x00, 0x00, 0xd5,
- 0x63, 0x0b, 0x00, 0x63, 0x04, 0x00, 0x24, 0x03,
- 0x00, 0x8c, 0x11, 0x64, 0x0b, 0x00, 0x0e, 0x5f,
- 0x04, 0x00, 0x63, 0x03, 0x00, 0x63, 0x04, 0x00,
- 0x92, 0x64, 0x04, 0x00, 0x0b, 0x63, 0x0b, 0x00,
- 0x4d, 0x41, 0x00, 0x00, 0x00, 0x0a, 0x4d, 0x3e,
- 0x00, 0x00, 0x00, 0x0a, 0x4d, 0x3f, 0x00, 0x00,
- 0x00, 0xf3, 0x0e, 0xee, 0x83, 0x0e, 0x06, 0x6e,
- 0x0d, 0x00, 0x00, 0x00, 0x0e, 0xee, 0x1e, 0x6e,
- 0x05, 0x00, 0x00, 0x00, 0x30, 0x63, 0x0a, 0x00,
- 0x42, 0x06, 0x00, 0x00, 0x00, 0xec, 0x0d, 0x63,
- 0x0a, 0x00, 0x43, 0x06, 0x00, 0x00, 0x00, 0x24,
- 0x00, 0x00, 0x0e, 0x6f, 0x63, 0x03, 0x00, 0x63,
- 0x04, 0x00, 0x44, 0x32, 0x00, 0x00, 0x00, 0x63,
- 0x03, 0x00, 0x2f, 0xc1, 0x00, 0x28, 0xc1, 0x00,
- 0xcf, 0x28,
+const uint8_t qjsc_builtin_array_fromasync[875] = {
+ 0x19, 0x26, 0x96, 0xb9, 0xe5, 0x0e, 0x01, 0x28,
+ 0x53, 0x79, 0x6d, 0x62, 0x6f, 0x6c, 0xb7, 0x61,
+ 0x73, 0x79, 0x6e, 0x63, 0x49, 0x74, 0x65, 0x72,
+ 0x61, 0x74, 0x6f, 0x72, 0x01, 0x2a, 0x4f, 0x62,
+ 0x6a, 0x65, 0x63, 0x74, 0xb7, 0x64, 0x65, 0x66,
+ 0x69, 0x6e, 0x65, 0x50, 0x72, 0x6f, 0x70, 0x65,
+ 0x72, 0x74, 0x79, 0x01, 0x1e, 0x53, 0x79, 0x6d,
+ 0x62, 0x6f, 0x6c, 0xb7, 0x69, 0x74, 0x65, 0x72,
+ 0x61, 0x74, 0x6f, 0x72, 0x01, 0x12, 0x61, 0x72,
+ 0x72, 0x61, 0x79, 0x4c, 0x69, 0x6b, 0x65, 0x01,
+ 0x0a, 0x6d, 0x61, 0x70, 0x46, 0x6e, 0x01, 0x0e,
+ 0x74, 0x68, 0x69, 0x73, 0x41, 0x72, 0x67, 0x01,
+ 0x0c, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x01,
+ 0x02, 0x69, 0x01, 0x1a, 0x69, 0x73, 0x43, 0x6f,
+ 0x6e, 0x73, 0x74, 0x72, 0x75, 0x63, 0x74, 0x6f,
+ 0x72, 0x01, 0x08, 0x73, 0x79, 0x6e, 0x63, 0x01,
+ 0x0c, 0x6d, 0x65, 0x74, 0x68, 0x6f, 0x64, 0x01,
+ 0x08, 0x69, 0x74, 0x65, 0x72, 0x01, 0x1c, 0x6e,
+ 0x6f, 0x74, 0x20, 0x61, 0x20, 0x66, 0x75, 0x6e,
+ 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x01, 0x08, 0x63,
+ 0x61, 0x6c, 0x6c, 0x0c, 0x00, 0x02, 0x00, 0xa2,
+ 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01,
+ 0x04, 0x01, 0xa4, 0x01, 0x00, 0x00, 0x00, 0x0c,
+ 0x43, 0x02, 0x01, 0x00, 0x05, 0x00, 0x05, 0x01,
+ 0x05, 0x00, 0x01, 0x03, 0x05, 0xb0, 0x02, 0x00,
+ 0x01, 0x40, 0x03, 0xa6, 0x03, 0x00, 0x01, 0x40,
+ 0x00, 0xcc, 0x03, 0x00, 0x01, 0x40, 0x01, 0xce,
+ 0x03, 0x00, 0x01, 0x40, 0x04, 0xd0, 0x03, 0x00,
+ 0x01, 0x40, 0x02, 0x0c, 0x60, 0x02, 0x01, 0xfa,
+ 0x01, 0x03, 0x0e, 0x01, 0x06, 0x00, 0x05, 0x00,
+ 0x86, 0x04, 0x11, 0xd2, 0x03, 0x00, 0x01, 0x00,
+ 0xd4, 0x03, 0x00, 0x01, 0x00, 0xd6, 0x03, 0x00,
+ 0x01, 0x00, 0xd2, 0x03, 0x01, 0xff, 0xff, 0xff,
+ 0xff, 0x0f, 0x20, 0xd4, 0x03, 0x01, 0x01, 0x20,
+ 0xd6, 0x03, 0x01, 0x02, 0x20, 0xd8, 0x03, 0x02,
+ 0x00, 0x20, 0xda, 0x03, 0x02, 0x04, 0x20, 0xdc,
+ 0x03, 0x02, 0x05, 0x20, 0xde, 0x03, 0x02, 0x06,
+ 0x20, 0xe0, 0x03, 0x02, 0x07, 0x20, 0x64, 0x06,
+ 0x08, 0x20, 0x82, 0x01, 0x07, 0x09, 0x20, 0xe2,
+ 0x03, 0x0a, 0x08, 0x30, 0x82, 0x01, 0x0d, 0x0b,
+ 0x20, 0xd4, 0x01, 0x0d, 0x0c, 0x20, 0x10, 0x00,
+ 0x01, 0x00, 0xa6, 0x03, 0x01, 0x01, 0xcc, 0x03,
+ 0x02, 0x01, 0xd0, 0x03, 0x04, 0x01, 0xb0, 0x02,
+ 0x00, 0x01, 0xce, 0x03, 0x03, 0x01, 0x08, 0xc2,
+ 0x0d, 0x60, 0x02, 0x00, 0x60, 0x01, 0x00, 0x60,
+ 0x00, 0x00, 0xd1, 0xc9, 0xd2, 0x11, 0xf2, 0xea,
+ 0x08, 0x0e, 0x38, 0x46, 0x00, 0x00, 0x00, 0xda,
+ 0xca, 0xd3, 0x11, 0xf2, 0xea, 0x08, 0x0e, 0x38,
+ 0x46, 0x00, 0x00, 0x00, 0xdb, 0xcb, 0x60, 0x07,
+ 0x00, 0x60, 0x06, 0x00, 0x60, 0x05, 0x00, 0x60,
+ 0x04, 0x00, 0x60, 0x03, 0x00, 0xd2, 0x38, 0x46,
+ 0x00, 0x00, 0x00, 0xae, 0xea, 0x16, 0xd2, 0x96,
+ 0x04, 0x1b, 0x00, 0x00, 0x00, 0xae, 0xea, 0x0c,
+ 0xdd, 0x11, 0x04, 0xf2, 0x00, 0x00, 0x00, 0x21,
+ 0x01, 0x00, 0x30, 0x06, 0xcc, 0xb4, 0xc2, 0x04,
+ 0xc1, 0x0d, 0xf5, 0xc2, 0x05, 0x09, 0xc2, 0x06,
+ 0xd1, 0xde, 0x46, 0xc2, 0x07, 0x61, 0x07, 0x00,
+ 0x07, 0xab, 0xea, 0x0f, 0x0a, 0x11, 0x62, 0x06,
+ 0x00, 0x0e, 0xd1, 0xdf, 0x46, 0x11, 0x62, 0x07,
+ 0x00, 0x0e, 0x61, 0x07, 0x00, 0x07, 0xab, 0x68,
+ 0xa6, 0x00, 0x00, 0x00, 0x60, 0x08, 0x00, 0x06,
+ 0x11, 0xf2, 0xeb, 0x0c, 0x6f, 0x41, 0x32, 0x00,
+ 0x00, 0x00, 0xc2, 0x08, 0x0e, 0xec, 0x05, 0x0e,
+ 0xd1, 0xec, 0xf2, 0x61, 0x08, 0x00, 0x8c, 0x11,
+ 0xeb, 0x03, 0x0e, 0xb4, 0x11, 0x62, 0x08, 0x00,
+ 0x0e, 0x61, 0x05, 0x00, 0xea, 0x0c, 0xc1, 0x0d,
+ 0x11, 0x61, 0x08, 0x00, 0x21, 0x01, 0x00, 0xec,
+ 0x06, 0xe0, 0x61, 0x08, 0x00, 0xef, 0x11, 0x62,
+ 0x03, 0x00, 0x0e, 0x61, 0x04, 0x00, 0x61, 0x08,
+ 0x00, 0xa5, 0x68, 0x2a, 0x01, 0x00, 0x00, 0x60,
+ 0x09, 0x00, 0xd1, 0x61, 0x04, 0x00, 0x46, 0xc2,
+ 0x09, 0x61, 0x06, 0x00, 0xea, 0x0a, 0x61, 0x09,
+ 0x00, 0x8a, 0x11, 0x62, 0x09, 0x00, 0x0e, 0xd2,
+ 0xea, 0x17, 0xd2, 0x41, 0xf3, 0x00, 0x00, 0x00,
+ 0xd3, 0x61, 0x09, 0x00, 0x61, 0x04, 0x00, 0x24,
+ 0x03, 0x00, 0x8a, 0x11, 0x62, 0x09, 0x00, 0x0e,
+ 0x5d, 0x04, 0x00, 0x61, 0x03, 0x00, 0x61, 0x04,
+ 0x00, 0x90, 0x62, 0x04, 0x00, 0x0b, 0x61, 0x09,
+ 0x00, 0x4b, 0x41, 0x00, 0x00, 0x00, 0x0a, 0x4b,
+ 0x3e, 0x00, 0x00, 0x00, 0x0a, 0x4b, 0x3f, 0x00,
+ 0x00, 0x00, 0xf1, 0x0e, 0xec, 0x9e, 0x60, 0x0a,
+ 0x00, 0x61, 0x07, 0x00, 0x41, 0xf3, 0x00, 0x00,
+ 0x00, 0xd1, 0x24, 0x01, 0x00, 0xc2, 0x0a, 0x61,
+ 0x05, 0x00, 0xea, 0x09, 0xc1, 0x0d, 0x11, 0x21,
+ 0x00, 0x00, 0xec, 0x03, 0xe0, 0xee, 0x11, 0x62,
+ 0x03, 0x00, 0x0e, 0x6b, 0x8c, 0x00, 0x00, 0x00,
+ 0x60, 0x0c, 0x00, 0x60, 0x0b, 0x00, 0x06, 0x11,
+ 0xf2, 0xeb, 0x13, 0x6f, 0x41, 0x41, 0x00, 0x00,
+ 0x00, 0xc2, 0x0b, 0x41, 0x6a, 0x00, 0x00, 0x00,
+ 0xc2, 0x0c, 0x0e, 0xec, 0x10, 0x0e, 0x61, 0x0a,
+ 0x00, 0x41, 0x6b, 0x00, 0x00, 0x00, 0x24, 0x00,
+ 0x00, 0x8a, 0xec, 0xe0, 0x61, 0x0c, 0x00, 0xeb,
+ 0x4e, 0x61, 0x06, 0x00, 0xea, 0x0a, 0x61, 0x0b,
+ 0x00, 0x8a, 0x11, 0x62, 0x0b, 0x00, 0x0e, 0xd2,
+ 0xea, 0x17, 0xd2, 0x41, 0xf3, 0x00, 0x00, 0x00,
+ 0xd3, 0x61, 0x0b, 0x00, 0x61, 0x04, 0x00, 0x24,
+ 0x03, 0x00, 0x8a, 0x11, 0x62, 0x0b, 0x00, 0x0e,
+ 0x5d, 0x04, 0x00, 0x61, 0x03, 0x00, 0x61, 0x04,
+ 0x00, 0x90, 0x62, 0x04, 0x00, 0x0b, 0x61, 0x0b,
+ 0x00, 0x4b, 0x41, 0x00, 0x00, 0x00, 0x0a, 0x4b,
+ 0x3e, 0x00, 0x00, 0x00, 0x0a, 0x4b, 0x3f, 0x00,
+ 0x00, 0x00, 0xf1, 0x0e, 0xec, 0x83, 0x0e, 0x06,
+ 0x6c, 0x0d, 0x00, 0x00, 0x00, 0x0e, 0xec, 0x1e,
+ 0x6c, 0x05, 0x00, 0x00, 0x00, 0x30, 0x61, 0x0a,
+ 0x00, 0x40, 0x06, 0x00, 0x00, 0x00, 0xea, 0x0d,
+ 0x61, 0x0a, 0x00, 0x41, 0x06, 0x00, 0x00, 0x00,
+ 0x24, 0x00, 0x00, 0x0e, 0x6d, 0x61, 0x03, 0x00,
+ 0x61, 0x04, 0x00, 0x42, 0x32, 0x00, 0x00, 0x00,
+ 0x61, 0x03, 0x00, 0x2f, 0xbf, 0x00, 0x28, 0xbf,
+ 0x00, 0xcd, 0x28,
 };
 
 
+/* File generated automatically by the QuickJS-ng compiler. */
+
+#include <inttypes.h>
+
+const uint32_t qjsc_builtin_iterator_zip_keyed_size = 2582;
+
+const uint8_t qjsc_builtin_iterator_zip_keyed[2582] = {
+ 0x19, 0xcb, 0x4b, 0xae, 0xb1, 0x2b, 0x01, 0x1c,
+ 0x49, 0x74, 0x65, 0x72, 0x61, 0x74, 0x6f, 0x72,
+ 0x48, 0x65, 0x6c, 0x70, 0x65, 0x72, 0x01, 0x08,
+ 0x63, 0x61, 0x6c, 0x6c, 0x01, 0x24, 0x68, 0x61,
+ 0x73, 0x4f, 0x77, 0x6e, 0x45, 0x6e, 0x75, 0x6d,
+ 0x50, 0x72, 0x6f, 0x70, 0x65, 0x72, 0x74, 0x79,
+ 0x01, 0x24, 0x67, 0x65, 0x74, 0x4f, 0x77, 0x6e,
+ 0x50, 0x72, 0x6f, 0x70, 0x65, 0x72, 0x74, 0x79,
+ 0x4b, 0x65, 0x79, 0x73, 0x01, 0x1e, 0x53, 0x79,
+ 0x6d, 0x62, 0x6f, 0x6c, 0xb7, 0x69, 0x74, 0x65,
+ 0x72, 0x61, 0x74, 0x6f, 0x72, 0x01, 0x0a, 0x63,
+ 0x68, 0x65, 0x63, 0x6b, 0x01, 0x0a, 0x63, 0x6c,
+ 0x6f, 0x73, 0x65, 0x01, 0x10, 0x63, 0x6c, 0x6f,
+ 0x73, 0x65, 0x61, 0x6c, 0x6c, 0x01, 0x02, 0x76,
+ 0x01, 0x02, 0x73, 0x01, 0x08, 0x69, 0x74, 0x65,
+ 0x72, 0x01, 0x0c, 0x6d, 0x65, 0x74, 0x68, 0x6f,
+ 0x64, 0x01, 0x02, 0x65, 0x01, 0x0a, 0x69, 0x74,
+ 0x65, 0x72, 0x73, 0x01, 0x0a, 0x63, 0x6f, 0x75,
+ 0x6e, 0x74, 0x01, 0x04, 0x65, 0x78, 0x01, 0x02,
+ 0x69, 0x01, 0x12, 0x69, 0x74, 0x65, 0x72, 0x61,
+ 0x62, 0x6c, 0x65, 0x73, 0x01, 0x0e, 0x6f, 0x70,
+ 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x01, 0x08, 0x6d,
+ 0x6f, 0x64, 0x65, 0x01, 0x0e, 0x70, 0x61, 0x64,
+ 0x64, 0x69, 0x6e, 0x67, 0x01, 0x0a, 0x6e, 0x65,
+ 0x78, 0x74, 0x73, 0x01, 0x08, 0x70, 0x61, 0x64,
+ 0x73, 0x01, 0x06, 0x6b, 0x65, 0x79, 0x01, 0x06,
+ 0x64, 0x65, 0x6c, 0x01, 0x02, 0x6a, 0x01, 0x0a,
+ 0x73, 0x74, 0x61, 0x74, 0x65, 0x01, 0x0a, 0x61,
+ 0x6c, 0x69, 0x76, 0x65, 0x01, 0x0a, 0x64, 0x6f,
+ 0x6e, 0x65, 0x73, 0x01, 0x0e, 0x72, 0x65, 0x73,
+ 0x75, 0x6c, 0x74, 0x73, 0x01, 0x0c, 0x72, 0x65,
+ 0x73, 0x75, 0x6c, 0x74, 0x01, 0x1c, 0x72, 0x75,
+ 0x6e, 0x6e, 0x69, 0x6e, 0x67, 0x20, 0x7a, 0x69,
+ 0x70, 0x70, 0x65, 0x72, 0x01, 0x06, 0x62, 0x75,
+ 0x67, 0x01, 0x0e, 0x6c, 0x6f, 0x6e, 0x67, 0x65,
+ 0x73, 0x74, 0x01, 0x0c, 0x73, 0x74, 0x72, 0x69,
+ 0x63, 0x74, 0x01, 0x22, 0x6d, 0x69, 0x73, 0x6d,
+ 0x61, 0x74, 0x63, 0x68, 0x65, 0x64, 0x20, 0x69,
+ 0x6e, 0x70, 0x75, 0x74, 0x73, 0x01, 0x10, 0x73,
+ 0x68, 0x6f, 0x72, 0x74, 0x65, 0x73, 0x74, 0x01,
+ 0x16, 0x62, 0x75, 0x67, 0x3a, 0x20, 0x73, 0x74,
+ 0x61, 0x74, 0x65, 0x3d, 0x01, 0x1a, 0x62, 0x61,
+ 0x64, 0x20, 0x69, 0x74, 0x65, 0x72, 0x61, 0x62,
+ 0x6c, 0x65, 0x73, 0x01, 0x16, 0x62, 0x61, 0x64,
+ 0x20, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x73,
+ 0x01, 0x10, 0x62, 0x61, 0x64, 0x20, 0x6d, 0x6f,
+ 0x64, 0x65, 0x01, 0x16, 0x62, 0x61, 0x64, 0x20,
+ 0x70, 0x61, 0x64, 0x64, 0x69, 0x6e, 0x67, 0x01,
+ 0x18, 0x62, 0x61, 0x64, 0x20, 0x69, 0x74, 0x65,
+ 0x72, 0x61, 0x74, 0x6f, 0x72, 0x0c, 0x00, 0x02,
+ 0x00, 0xa2, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00,
+ 0x00, 0x01, 0x04, 0x01, 0xa4, 0x01, 0x00, 0x00,
+ 0x00, 0x0c, 0x43, 0x02, 0x00, 0x00, 0x07, 0x03,
+ 0x07, 0x01, 0x0a, 0x00, 0x04, 0x0c, 0x0a, 0xcc,
+ 0x03, 0x00, 0x01, 0x40, 0x09, 0xaa, 0x03, 0x00,
+ 0x01, 0x40, 0x03, 0xa6, 0x03, 0x00, 0x01, 0x40,
+ 0x00, 0xce, 0x03, 0x00, 0x01, 0x40, 0x01, 0xd0,
+ 0x03, 0x00, 0x01, 0x40, 0x07, 0xd2, 0x03, 0x00,
+ 0x01, 0x40, 0x06, 0xd4, 0x03, 0x00, 0x01, 0x40,
+ 0x08, 0xd6, 0x03, 0x00, 0x00, 0x40, 0x05, 0xd8,
+ 0x03, 0x00, 0x01, 0x40, 0x02, 0xda, 0x03, 0x00,
+ 0x02, 0x40, 0x04, 0x0c, 0x43, 0x02, 0x00, 0xd6,
+ 0x03, 0x02, 0x00, 0x02, 0x03, 0x00, 0x01, 0x00,
+ 0x17, 0x02, 0xdc, 0x03, 0x00, 0x01, 0x00, 0xde,
+ 0x03, 0x00, 0x01, 0x00, 0xa6, 0x03, 0x02, 0x01,
+ 0xd1, 0x96, 0x04, 0x4a, 0x00, 0x00, 0x00, 0xad,
+ 0xea, 0x07, 0xd1, 0x07, 0xae, 0xea, 0x02, 0x29,
+ 0xdd, 0x11, 0xd2, 0x21, 0x01, 0x00, 0x30, 0x0c,
+ 0x43, 0x02, 0x00, 0xd8, 0x03, 0x01, 0x02, 0x01,
+ 0x04, 0x00, 0x01, 0x00, 0x2e, 0x03, 0xe0, 0x03,
+ 0x00, 0x01, 0x00, 0xe2, 0x03, 0x02, 0x00, 0x20,
+ 0xe4, 0x03, 0x05, 0x00, 0x03, 0xce, 0x03, 0x03,
+ 0x01, 0x6b, 0x23, 0x00, 0x00, 0x00, 0x60, 0x00,
+ 0x00, 0xd1, 0x95, 0xea, 0x04, 0x06, 0x6e, 0x28,
+ 0xd1, 0x40, 0x06, 0x00, 0x00, 0x00, 0xc9, 0x61,
+ 0x00, 0x00, 0xea, 0x08, 0xdd, 0xd1, 0x61, 0x00,
+ 0x00, 0xf0, 0x0e, 0x0e, 0x29, 0xca, 0x6b, 0x07,
+ 0x00, 0x00, 0x00, 0xc6, 0x6e, 0x28, 0x30, 0x0c,
+ 0x43, 0x02, 0x00, 0xda, 0x03, 0x02, 0x04, 0x02,
+ 0x03, 0x00, 0x01, 0x00, 0x55, 0x06, 0xe6, 0x03,
+ 0x00, 0x01, 0x00, 0xe8, 0x03, 0x00, 0x01, 0x00,
+ 0xea, 0x03, 0x01, 0x00, 0x20, 0xec, 0x03, 0x02,
+ 0x01, 0x20, 0xe0, 0x03, 0x03, 0x02, 0x20, 0xe4,
+ 0x03, 0x03, 0x03, 0x20, 0xd8, 0x03, 0x01, 0x00,
+ 0x60, 0x00, 0x00, 0x38, 0x46, 0x00, 0x00, 0x00,
+ 0xc9, 0x60, 0x01, 0x00, 0xd2, 0xca, 0x61, 0x01,
+ 0x00, 0x8f, 0x62, 0x01, 0x00, 0xb4, 0xa7, 0xea,
+ 0x39, 0x60, 0x03, 0x00, 0x60, 0x02, 0x00, 0xd1,
+ 0x61, 0x01, 0x00, 0x46, 0xcb, 0xd1, 0x61, 0x01,
+ 0x00, 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b, 0x70,
+ 0x1b, 0x1b, 0x38, 0x46, 0x00, 0x00, 0x00, 0x1b,
+ 0x70, 0x1b, 0x48, 0xdd, 0x61, 0x02, 0x00, 0xef,
+ 0xcc, 0x61, 0x00, 0x00, 0x95, 0xea, 0xc8, 0x61,
+ 0x03, 0x00, 0x11, 0x62, 0x00, 0x00, 0x0e, 0xec,
+ 0xbe, 0x61, 0x00, 0x00, 0x28, 0x0c, 0x41, 0x02,
+ 0x00, 0xac, 0x02, 0x02, 0x15, 0x01, 0x06, 0x08,
+ 0x09, 0x02, 0xc9, 0x05, 0x17, 0xee, 0x03, 0x00,
+ 0x01, 0x00, 0xf0, 0x03, 0x00, 0x01, 0x00, 0xee,
+ 0x03, 0x01, 0xff, 0xff, 0xff, 0xff, 0x0f, 0x20,
+ 0xf0, 0x03, 0x01, 0x01, 0x20, 0xf2, 0x03, 0x02,
+ 0x00, 0x60, 0x04, 0xf4, 0x03, 0x02, 0x03, 0x20,
+ 0x60, 0x02, 0x04, 0x60, 0x02, 0xe8, 0x03, 0x02,
+ 0x05, 0x60, 0x01, 0xe6, 0x03, 0x02, 0x06, 0x60,
+ 0x03, 0xf6, 0x03, 0x02, 0x07, 0x60, 0x06, 0xf8,
+ 0x03, 0x02, 0x08, 0x60, 0x05, 0xfa, 0x03, 0x09,
+ 0x15, 0x20, 0xec, 0x03, 0x0b, 0x15, 0x20, 0xfc,
+ 0x03, 0x0c, 0x0b, 0x20, 0xfa, 0x03, 0x0c, 0x0c,
+ 0x20, 0xe0, 0x03, 0x0e, 0x0d, 0x20, 0xe2, 0x03,
+ 0x10, 0x0e, 0x20, 0xfe, 0x03, 0x14, 0x0d, 0x20,
+ 0xec, 0x03, 0x19, 0x15, 0x20, 0xec, 0x03, 0x1b,
+ 0x15, 0x20, 0xe4, 0x03, 0x1c, 0x15, 0x03, 0x80,
+ 0x04, 0x02, 0x09, 0x60, 0x00, 0x82, 0x04, 0x02,
+ 0x14, 0x60, 0x07, 0xa6, 0x03, 0x02, 0x01, 0xaa,
+ 0x03, 0x01, 0x01, 0xce, 0x03, 0x03, 0x01, 0xda,
+ 0x03, 0x02, 0x00, 0xd6, 0x03, 0x00, 0x00, 0xd2,
+ 0x03, 0x05, 0x01, 0xd0, 0x03, 0x04, 0x01, 0xd4,
+ 0x03, 0x06, 0x01, 0xcc, 0x03, 0x00, 0x01, 0x0c,
+ 0x42, 0x03, 0x00, 0x00, 0x00, 0x09, 0x00, 0x05,
+ 0x00, 0x0c, 0x00, 0xf7, 0x04, 0x09, 0x84, 0x04,
+ 0x01, 0x00, 0x20, 0xd8, 0x01, 0x01, 0x01, 0x20,
+ 0x86, 0x04, 0x01, 0x02, 0x20, 0xec, 0x03, 0x03,
+ 0x03, 0x20, 0xfa, 0x03, 0x04, 0x04, 0x20, 0xe0,
+ 0x03, 0x04, 0x05, 0x20, 0x88, 0x04, 0x04, 0x06,
+ 0x20, 0xe4, 0x03, 0x09, 0x07, 0x03, 0xea, 0x03,
+ 0x10, 0x07, 0x20, 0x80, 0x04, 0x13, 0x10, 0xa6,
+ 0x03, 0x00, 0x02, 0xaa, 0x03, 0x01, 0x02, 0xe8,
+ 0x03, 0x05, 0x10, 0x60, 0x04, 0x10, 0xe6, 0x03,
+ 0x06, 0x10, 0xf2, 0x03, 0x02, 0x10, 0xf8, 0x03,
+ 0x08, 0x10, 0xce, 0x03, 0x02, 0x02, 0xf6, 0x03,
+ 0x07, 0x10, 0x82, 0x04, 0x14, 0x10, 0xda, 0x03,
+ 0x03, 0x02, 0x60, 0x02, 0x00, 0x60, 0x01, 0x00,
+ 0x60, 0x00, 0x00, 0x64, 0x00, 0x00, 0x11, 0xb4,
+ 0xad, 0xeb, 0x06, 0x11, 0xb5, 0xad, 0xea, 0x09,
+ 0xb6, 0x11, 0x65, 0x00, 0x00, 0x0e, 0xec, 0x33,
+ 0x11, 0xb6, 0xad, 0xea, 0x0c, 0xde, 0x11, 0x04,
+ 0x05, 0x01, 0x00, 0x00, 0x21, 0x01, 0x00, 0x30,
+ 0x11, 0xb7, 0xad, 0xea, 0x13, 0x0b, 0x38, 0x46,
+ 0x00, 0x00, 0x00, 0x4b, 0x41, 0x00, 0x00, 0x00,
+ 0x0a, 0x4b, 0x6a, 0x00, 0x00, 0x00, 0x28, 0xdf,
+ 0x11, 0x04, 0x06, 0x01, 0x00, 0x00, 0x21, 0x01,
+ 0x00, 0x30, 0x0e, 0xb4, 0xc9, 0xb4, 0xca, 0x0c,
+ 0x07, 0xcb, 0x60, 0x03, 0x00, 0xb4, 0xcc, 0x61,
+ 0x03, 0x00, 0x64, 0x03, 0x00, 0xa5, 0x68, 0xdd,
+ 0x01, 0x00, 0x00, 0x60, 0x06, 0x00, 0x60, 0x05,
+ 0x00, 0x60, 0x04, 0x00, 0x64, 0x04, 0x00, 0x61,
+ 0x03, 0x00, 0x46, 0xc2, 0x04, 0x64, 0x05, 0x00,
+ 0x61, 0x03, 0x00, 0x46, 0xc2, 0x05, 0x61, 0x05,
+ 0x00, 0x95, 0xea, 0x34, 0x64, 0x06, 0x00, 0x04,
+ 0x07, 0x01, 0x00, 0x00, 0xae, 0xea, 0x0c, 0xdf,
+ 0x11, 0x04, 0x06, 0x01, 0x00, 0x00, 0x21, 0x01,
+ 0x00, 0x30, 0x61, 0x02, 0x00, 0x61, 0x04, 0x00,
+ 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b,
+ 0x1b, 0x64, 0x07, 0x00, 0x61, 0x03, 0x00, 0x46,
+ 0x1b, 0x70, 0x1b, 0x48, 0xed, 0x7c, 0x01, 0x06,
+ 0xc2, 0x06, 0x6b, 0x1a, 0x00, 0x00, 0x00, 0x5d,
+ 0x08, 0x00, 0x61, 0x05, 0x00, 0x64, 0x09, 0x00,
+ 0x61, 0x03, 0x00, 0x46, 0xf0, 0x11, 0x62, 0x06,
+ 0x00, 0x0e, 0x0e, 0xec, 0x35, 0xc2, 0x07, 0x6b,
+ 0x30, 0x00, 0x00, 0x00, 0xb4, 0x11, 0x65, 0x0a,
+ 0x00, 0x0e, 0x64, 0x05, 0x00, 0x61, 0x03, 0x00,
+ 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b,
+ 0x1b, 0x38, 0x46, 0x00, 0x00, 0x00, 0x1b, 0x70,
+ 0x1b, 0x48, 0x5d, 0x0b, 0x00, 0x64, 0x05, 0x00,
+ 0x64, 0x03, 0x00, 0xf0, 0x0e, 0xc1, 0x07, 0x30,
+ 0x30, 0x61, 0x06, 0x00, 0x40, 0x6a, 0x00, 0x00,
+ 0x00, 0x95, 0xea, 0x4f, 0x64, 0x06, 0x00, 0x04,
+ 0x08, 0x01, 0x00, 0x00, 0xad, 0xea, 0x1e, 0x61,
+ 0x00, 0x00, 0xb4, 0xa7, 0xea, 0x17, 0x5d, 0x0b,
+ 0x00, 0x64, 0x05, 0x00, 0x64, 0x03, 0x00, 0xf0,
+ 0x0e, 0xde, 0x11, 0x04, 0x09, 0x01, 0x00, 0x00,
+ 0x21, 0x01, 0x00, 0x30, 0x61, 0x02, 0x00, 0x61,
+ 0x04, 0x00, 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b,
+ 0x70, 0x1b, 0x1b, 0x61, 0x06, 0x00, 0x40, 0x41,
+ 0x00, 0x00, 0x00, 0x1b, 0x70, 0x1b, 0x48, 0x61,
+ 0x01, 0x00, 0x90, 0x62, 0x01, 0x00, 0x0e, 0xed,
+ 0xd1, 0x00, 0x64, 0x0a, 0x00, 0x8f, 0x65, 0x0a,
+ 0x00, 0x0e, 0x61, 0x00, 0x00, 0x90, 0x62, 0x00,
+ 0x00, 0x0e, 0x64, 0x05, 0x00, 0x61, 0x03, 0x00,
+ 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b,
+ 0x1b, 0x38, 0x46, 0x00, 0x00, 0x00, 0x1b, 0x70,
+ 0x1b, 0x48, 0x64, 0x06, 0x00, 0x60, 0x08, 0x00,
+ 0x11, 0x04, 0x0a, 0x01, 0x00, 0x00, 0xad, 0xea,
+ 0x2e, 0x5d, 0x0b, 0x00, 0x64, 0x05, 0x00, 0x64,
+ 0x03, 0x00, 0xf0, 0xc2, 0x08, 0x61, 0x08, 0x00,
+ 0xea, 0x05, 0x61, 0x08, 0x00, 0x30, 0xb7, 0x11,
+ 0x65, 0x00, 0x00, 0x0e, 0x0b, 0x38, 0x46, 0x00,
+ 0x00, 0x00, 0x4b, 0x41, 0x00, 0x00, 0x00, 0x0a,
+ 0x4b, 0x6a, 0x00, 0x00, 0x00, 0x28, 0x11, 0x04,
+ 0x07, 0x01, 0x00, 0x00, 0xad, 0xea, 0x3c, 0x64,
+ 0x0a, 0x00, 0xb5, 0xa5, 0xea, 0x19, 0xb7, 0x11,
+ 0x65, 0x00, 0x00, 0x0e, 0x0b, 0x38, 0x46, 0x00,
+ 0x00, 0x00, 0x4b, 0x41, 0x00, 0x00, 0x00, 0x0a,
+ 0x4b, 0x6a, 0x00, 0x00, 0x00, 0x28, 0x61, 0x02,
+ 0x00, 0x61, 0x04, 0x00, 0x1b, 0x11, 0xaf, 0xeb,
+ 0x04, 0x1b, 0x70, 0x1b, 0x1b, 0x64, 0x07, 0x00,
+ 0x61, 0x03, 0x00, 0x46, 0x1b, 0x70, 0x1b, 0x48,
+ 0xec, 0x27, 0x11, 0x04, 0x08, 0x01, 0x00, 0x00,
+ 0xad, 0xea, 0x1e, 0x61, 0x01, 0x00, 0xb4, 0xa7,
+ 0xea, 0x17, 0x5d, 0x0b, 0x00, 0x64, 0x05, 0x00,
+ 0x64, 0x03, 0x00, 0xf0, 0x0e, 0xde, 0x11, 0x04,
+ 0x09, 0x01, 0x00, 0x00, 0x21, 0x01, 0x00, 0x30,
+ 0x0e, 0x61, 0x03, 0x00, 0x90, 0x62, 0x03, 0x00,
+ 0x0e, 0xed, 0x1d, 0xfe, 0x61, 0x01, 0x00, 0xb4,
+ 0xad, 0xea, 0x19, 0xb7, 0x11, 0x65, 0x00, 0x00,
+ 0x0e, 0x0b, 0x38, 0x46, 0x00, 0x00, 0x00, 0x4b,
+ 0x41, 0x00, 0x00, 0x00, 0x0a, 0x4b, 0x6a, 0x00,
+ 0x00, 0x00, 0x28, 0xb5, 0x11, 0x65, 0x00, 0x00,
+ 0x0e, 0x0b, 0x61, 0x02, 0x00, 0x4b, 0x41, 0x00,
+ 0x00, 0x00, 0x09, 0x4b, 0x6a, 0x00, 0x00, 0x00,
+ 0x28, 0x0c, 0x42, 0x03, 0x00, 0x00, 0x00, 0x01,
+ 0x00, 0x06, 0x00, 0x06, 0x00, 0x88, 0x01, 0x01,
+ 0xea, 0x03, 0x01, 0x00, 0x20, 0x80, 0x04, 0x13,
+ 0x10, 0xa6, 0x03, 0x00, 0x02, 0xaa, 0x03, 0x01,
+ 0x02, 0xda, 0x03, 0x03, 0x02, 0xe6, 0x03, 0x06,
+ 0x10, 0xe8, 0x03, 0x05, 0x10, 0x60, 0x00, 0x00,
+ 0x64, 0x00, 0x00, 0x11, 0xb4, 0xad, 0xea, 0x09,
+ 0xb7, 0x11, 0x65, 0x00, 0x00, 0x0e, 0xec, 0x4b,
+ 0x11, 0xb5, 0xad, 0xea, 0x09, 0xb6, 0x11, 0x65,
+ 0x00, 0x00, 0x0e, 0xec, 0x3e, 0x11, 0xb6, 0xad,
+ 0xea, 0x0c, 0xde, 0x11, 0x04, 0x05, 0x01, 0x00,
+ 0x00, 0x21, 0x01, 0x00, 0x30, 0x11, 0xb7, 0xad,
+ 0xea, 0x13, 0x0b, 0x38, 0x46, 0x00, 0x00, 0x00,
+ 0x4b, 0x41, 0x00, 0x00, 0x00, 0x0a, 0x4b, 0x6a,
+ 0x00, 0x00, 0x00, 0x28, 0xdf, 0x11, 0x04, 0x0b,
+ 0x01, 0x00, 0x00, 0x41, 0x5d, 0x00, 0x00, 0x00,
+ 0x64, 0x00, 0x00, 0x24, 0x01, 0x00, 0x21, 0x01,
+ 0x00, 0x30, 0x0e, 0xe0, 0x64, 0x04, 0x00, 0x64,
+ 0x05, 0x00, 0xf0, 0xc9, 0x61, 0x00, 0x00, 0xea,
+ 0x05, 0x61, 0x00, 0x00, 0x30, 0xb7, 0x11, 0x65,
+ 0x00, 0x00, 0x0e, 0x0b, 0x38, 0x46, 0x00, 0x00,
+ 0x00, 0x4b, 0x41, 0x00, 0x00, 0x00, 0x0a, 0x4b,
+ 0x6a, 0x00, 0x00, 0x00, 0x28, 0x60, 0x01, 0x00,
+ 0x60, 0x00, 0x00, 0xd1, 0xc9, 0xd2, 0x11, 0xf2,
+ 0xea, 0x08, 0x0e, 0x38, 0x46, 0x00, 0x00, 0x00,
+ 0xda, 0xca, 0x60, 0x14, 0x00, 0x60, 0x13, 0x00,
+ 0x60, 0x08, 0x00, 0x60, 0x07, 0x00, 0x60, 0x06,
+ 0x00, 0x60, 0x05, 0x00, 0x60, 0x04, 0x00, 0x60,
+ 0x03, 0x00, 0x60, 0x02, 0x00, 0x5d, 0x04, 0x00,
+ 0xd1, 0x04, 0x0c, 0x01, 0x00, 0x00, 0xf0, 0x0e,
+ 0xd2, 0x38, 0x46, 0x00, 0x00, 0x00, 0xad, 0xea,
+ 0x06, 0x0c, 0x07, 0xd6, 0xec, 0x0c, 0x5d, 0x04,
+ 0x00, 0xd2, 0x04, 0x0d, 0x01, 0x00, 0x00, 0xf0,
+ 0x0e, 0xd2, 0x40, 0xf9, 0x00, 0x00, 0x00, 0xcb,
+ 0x61, 0x02, 0x00, 0x38, 0x46, 0x00, 0x00, 0x00,
+ 0xad, 0xea, 0x0b, 0x04, 0x0a, 0x01, 0x00, 0x00,
+ 0x11, 0x62, 0x02, 0x00, 0x0e, 0x61, 0x02, 0x00,
+ 0x04, 0x08, 0x01, 0x00, 0x00, 0xad, 0x11, 0xeb,
+ 0x18, 0x0e, 0x61, 0x02, 0x00, 0x04, 0x07, 0x01,
+ 0x00, 0x00, 0xad, 0x11, 0xeb, 0x0b, 0x0e, 0x61,
+ 0x02, 0x00, 0x04, 0x0a, 0x01, 0x00, 0x00, 0xad,
+ 0x95, 0xea, 0x0c, 0xdd, 0x11, 0x04, 0x0e, 0x01,
+ 0x00, 0x00, 0x21, 0x01, 0x00, 0x30, 0x38, 0x46,
+ 0x00, 0x00, 0x00, 0xcc, 0x61, 0x02, 0x00, 0x04,
+ 0x07, 0x01, 0x00, 0x00, 0xad, 0xea, 0x24, 0xd2,
+ 0x40, 0xfa, 0x00, 0x00, 0x00, 0x11, 0x62, 0x03,
+ 0x00, 0x0e, 0x61, 0x03, 0x00, 0x38, 0x46, 0x00,
+ 0x00, 0x00, 0xae, 0xea, 0x0e, 0x5d, 0x04, 0x00,
+ 0x61, 0x03, 0x00, 0x04, 0x0f, 0x01, 0x00, 0x00,
+ 0xf0, 0x0e, 0x26, 0x00, 0x00, 0xc2, 0x04, 0xb4,
+ 0xc2, 0x05, 0x26, 0x00, 0x00, 0xc2, 0x06, 0x26,
+ 0x00, 0x00, 0xc2, 0x07, 0x26, 0x00, 0x00, 0xc2,
+ 0x08, 0x60, 0x09, 0x00, 0x5d, 0x05, 0x00, 0xd1,
+ 0xef, 0x7d, 0xec, 0x1d, 0xc2, 0x09, 0x61, 0x04,
+ 0x00, 0x61, 0x05, 0x00, 0x90, 0x62, 0x05, 0x00,
+ 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b,
+ 0x1b, 0x61, 0x09, 0x00, 0x1b, 0x70, 0x1b, 0x48,
+ 0x80, 0x00, 0xea, 0xe1, 0x0e, 0x83, 0x6b, 0x7d,
+ 0x01, 0x00, 0x00, 0x60, 0x0a, 0x00, 0xb4, 0xc2,
+ 0x0a, 0x61, 0x0a, 0x00, 0x61, 0x05, 0x00, 0xa5,
+ 0x68, 0xf0, 0x00, 0x00, 0x00, 0x60, 0x0c, 0x00,
+ 0x60, 0x0b, 0x00, 0x0a, 0xc2, 0x0b, 0x61, 0x04,
+ 0x00, 0x61, 0x0a, 0x00, 0x46, 0xc2, 0x0c, 0x5d,
+ 0x06, 0x00, 0xd1, 0x61, 0x0c, 0x00, 0xf0, 0xea,
+ 0x78, 0x60, 0x0d, 0x00, 0xd1, 0x61, 0x0c, 0x00,
+ 0x46, 0xc2, 0x0d, 0x61, 0x0d, 0x00, 0x38, 0x46,
+ 0x00, 0x00, 0x00, 0xae, 0xea, 0x63, 0x60, 0x0e,
+ 0x00, 0x5d, 0x04, 0x00, 0x61, 0x0d, 0x00, 0x04,
+ 0x10, 0x01, 0x00, 0x00, 0xf0, 0x0e, 0x61, 0x0d,
+ 0x00, 0x5d, 0x07, 0x00, 0x46, 0xc2, 0x0e, 0x61,
+ 0x0e, 0x00, 0xea, 0x0e, 0xdf, 0x61, 0x0d, 0x00,
+ 0x61, 0x0e, 0x00, 0xf0, 0x11, 0x62, 0x0d, 0x00,
+ 0x0e, 0x61, 0x06, 0x00, 0x61, 0x0a, 0x00, 0x1b,
+ 0x11, 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b, 0x1b,
+ 0x61, 0x0d, 0x00, 0x1b, 0x70, 0x1b, 0x48, 0x61,
+ 0x07, 0x00, 0x61, 0x0a, 0x00, 0x1b, 0x11, 0xaf,
+ 0xeb, 0x04, 0x1b, 0x70, 0x1b, 0x1b, 0x61, 0x0d,
+ 0x00, 0x40, 0x6b, 0x00, 0x00, 0x00, 0x1b, 0x70,
+ 0x1b, 0x48, 0x09, 0x11, 0x62, 0x0b, 0x00, 0x0e,
+ 0x61, 0x0b, 0x00, 0xea, 0x4a, 0x60, 0x0f, 0x00,
+ 0x61, 0x0a, 0x00, 0xb5, 0x9c, 0xc2, 0x0f, 0x61,
+ 0x0f, 0x00, 0x61, 0x05, 0x00, 0xa5, 0xea, 0x27,
+ 0x61, 0x04, 0x00, 0x61, 0x0f, 0x00, 0xb5, 0x9d,
+ 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b,
+ 0x1b, 0x61, 0x04, 0x00, 0x61, 0x0f, 0x00, 0x46,
+ 0x1b, 0x70, 0x1b, 0x48, 0x61, 0x0f, 0x00, 0x90,
+ 0x62, 0x0f, 0x00, 0x0e, 0xec, 0xd2, 0x61, 0x05,
+ 0x00, 0x8f, 0x62, 0x05, 0x00, 0x0e, 0x61, 0x0a,
+ 0x00, 0x8f, 0x62, 0x0a, 0x00, 0x0e, 0x61, 0x0a,
+ 0x00, 0x90, 0x62, 0x0a, 0x00, 0x0e, 0xed, 0x0a,
+ 0xff, 0x61, 0x02, 0x00, 0x04, 0x07, 0x01, 0x00,
+ 0x00, 0xad, 0xea, 0x6e, 0x61, 0x03, 0x00, 0xea,
+ 0x38, 0x60, 0x10, 0x00, 0xb4, 0xc2, 0x10, 0x61,
+ 0x10, 0x00, 0x61, 0x05, 0x00, 0xa5, 0xea, 0x5a,
+ 0x61, 0x08, 0x00, 0x61, 0x10, 0x00, 0x1b, 0x11,
+ 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b, 0x1b, 0x61,
+ 0x03, 0x00, 0x61, 0x04, 0x00, 0x61, 0x10, 0x00,
+ 0x46, 0x46, 0x1b, 0x70, 0x1b, 0x48, 0x61, 0x10,
+ 0x00, 0x90, 0x62, 0x10, 0x00, 0x0e, 0xec, 0xd0,
+ 0x60, 0x11, 0x00, 0xb4, 0xc2, 0x11, 0x61, 0x11,
+ 0x00, 0x61, 0x05, 0x00, 0xa5, 0xea, 0x23, 0x61,
+ 0x08, 0x00, 0x61, 0x11, 0x00, 0x1b, 0x11, 0xaf,
+ 0xeb, 0x04, 0x1b, 0x70, 0x1b, 0x1b, 0x38, 0x46,
+ 0x00, 0x00, 0x00, 0x1b, 0x70, 0x1b, 0x48, 0x61,
+ 0x11, 0x00, 0x90, 0x62, 0x11, 0x00, 0x0e, 0xec,
+ 0xd6, 0x0e, 0xec, 0x15, 0xc2, 0x12, 0x6b, 0x10,
+ 0x00, 0x00, 0x00, 0xe0, 0x61, 0x06, 0x00, 0x61,
+ 0x05, 0x00, 0xf0, 0x0e, 0xc1, 0x12, 0x30, 0x30,
+ 0xb4, 0xc2, 0x13, 0x61, 0x05, 0x00, 0xc2, 0x14,
+ 0x0b, 0x5d, 0x08, 0x00, 0x4e, 0xbf, 0x00, 0x53,
+ 0x6b, 0x00, 0x00, 0x00, 0x04, 0xbf, 0x01, 0x53,
+ 0x06, 0x00, 0x00, 0x00, 0x04, 0x28, 0xbf, 0x00,
+ 0xc9, 0xbf, 0x01, 0xca, 0xbf, 0x02, 0xcb, 0xbf,
+ 0x03, 0x28, 0xbf, 0x00, 0xcd, 0x28,
+};
+
+
+/* File generated automatically by the QuickJS-ng compiler. */
+
+#include <inttypes.h>
+
+const uint32_t qjsc_builtin_iterator_zip_size = 2621;
+
+const uint8_t qjsc_builtin_iterator_zip[2621] = {
+ 0x19, 0x27, 0x0d, 0xb0, 0x6c, 0x2a, 0x01, 0x1c,
+ 0x49, 0x74, 0x65, 0x72, 0x61, 0x74, 0x6f, 0x72,
+ 0x48, 0x65, 0x6c, 0x70, 0x65, 0x72, 0x01, 0x08,
+ 0x63, 0x61, 0x6c, 0x6c, 0x01, 0x1e, 0x53, 0x79,
+ 0x6d, 0x62, 0x6f, 0x6c, 0xb7, 0x69, 0x74, 0x65,
+ 0x72, 0x61, 0x74, 0x6f, 0x72, 0x01, 0x0a, 0x63,
+ 0x68, 0x65, 0x63, 0x6b, 0x01, 0x0a, 0x63, 0x6c,
+ 0x6f, 0x73, 0x65, 0x01, 0x10, 0x63, 0x6c, 0x6f,
+ 0x73, 0x65, 0x61, 0x6c, 0x6c, 0x01, 0x02, 0x76,
+ 0x01, 0x02, 0x73, 0x01, 0x08, 0x69, 0x74, 0x65,
+ 0x72, 0x01, 0x0c, 0x6d, 0x65, 0x74, 0x68, 0x6f,
+ 0x64, 0x01, 0x02, 0x65, 0x01, 0x0a, 0x69, 0x74,
+ 0x65, 0x72, 0x73, 0x01, 0x0a, 0x63, 0x6f, 0x75,
+ 0x6e, 0x74, 0x01, 0x04, 0x65, 0x78, 0x01, 0x02,
+ 0x69, 0x01, 0x12, 0x69, 0x74, 0x65, 0x72, 0x61,
+ 0x62, 0x6c, 0x65, 0x73, 0x01, 0x0e, 0x6f, 0x70,
+ 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x01, 0x08, 0x6d,
+ 0x6f, 0x64, 0x65, 0x01, 0x0e, 0x70, 0x61, 0x64,
+ 0x64, 0x69, 0x6e, 0x67, 0x01, 0x08, 0x70, 0x61,
+ 0x64, 0x73, 0x01, 0x0a, 0x6e, 0x65, 0x78, 0x74,
+ 0x73, 0x01, 0x16, 0x70, 0x61, 0x64, 0x64, 0x69,
+ 0x6e, 0x67, 0x69, 0x74, 0x65, 0x72, 0x01, 0x1a,
+ 0x69, 0x74, 0x65, 0x72, 0x61, 0x62, 0x6c, 0x65,
+ 0x73, 0x69, 0x74, 0x65, 0x72, 0x01, 0x08, 0x69,
+ 0x74, 0x65, 0x6d, 0x01, 0x02, 0x74, 0x01, 0x0a,
+ 0x73, 0x74, 0x61, 0x74, 0x65, 0x01, 0x0a, 0x61,
+ 0x6c, 0x69, 0x76, 0x65, 0x01, 0x0a, 0x64, 0x6f,
+ 0x6e, 0x65, 0x73, 0x01, 0x0e, 0x72, 0x65, 0x73,
+ 0x75, 0x6c, 0x74, 0x73, 0x01, 0x0c, 0x72, 0x65,
+ 0x73, 0x75, 0x6c, 0x74, 0x01, 0x1c, 0x72, 0x75,
+ 0x6e, 0x6e, 0x69, 0x6e, 0x67, 0x20, 0x7a, 0x69,
+ 0x70, 0x70, 0x65, 0x72, 0x01, 0x06, 0x62, 0x75,
+ 0x67, 0x01, 0x0e, 0x6c, 0x6f, 0x6e, 0x67, 0x65,
+ 0x73, 0x74, 0x01, 0x0c, 0x73, 0x74, 0x72, 0x69,
+ 0x63, 0x74, 0x01, 0x22, 0x6d, 0x69, 0x73, 0x6d,
+ 0x61, 0x74, 0x63, 0x68, 0x65, 0x64, 0x20, 0x69,
+ 0x6e, 0x70, 0x75, 0x74, 0x73, 0x01, 0x10, 0x73,
+ 0x68, 0x6f, 0x72, 0x74, 0x65, 0x73, 0x74, 0x01,
+ 0x16, 0x62, 0x75, 0x67, 0x3a, 0x20, 0x73, 0x74,
+ 0x61, 0x74, 0x65, 0x3d, 0x01, 0x1a, 0x62, 0x61,
+ 0x64, 0x20, 0x69, 0x74, 0x65, 0x72, 0x61, 0x62,
+ 0x6c, 0x65, 0x73, 0x01, 0x16, 0x62, 0x61, 0x64,
+ 0x20, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x73,
+ 0x01, 0x10, 0x62, 0x61, 0x64, 0x20, 0x6d, 0x6f,
+ 0x64, 0x65, 0x01, 0x16, 0x62, 0x61, 0x64, 0x20,
+ 0x70, 0x61, 0x64, 0x64, 0x69, 0x6e, 0x67, 0x01,
+ 0x18, 0x62, 0x61, 0x64, 0x20, 0x69, 0x74, 0x65,
+ 0x72, 0x61, 0x74, 0x6f, 0x72, 0x0c, 0x00, 0x02,
+ 0x00, 0xa2, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00,
+ 0x00, 0x01, 0x04, 0x01, 0xa4, 0x01, 0x00, 0x00,
+ 0x00, 0x0c, 0x43, 0x02, 0x00, 0x00, 0x05, 0x03,
+ 0x05, 0x01, 0x08, 0x00, 0x04, 0x0c, 0x08, 0xcc,
+ 0x03, 0x00, 0x01, 0x40, 0x07, 0xaa, 0x03, 0x00,
+ 0x01, 0x40, 0x03, 0xa6, 0x03, 0x00, 0x01, 0x40,
+ 0x00, 0xce, 0x03, 0x00, 0x01, 0x40, 0x01, 0xd0,
+ 0x03, 0x00, 0x01, 0x40, 0x06, 0xd2, 0x03, 0x00,
+ 0x00, 0x40, 0x05, 0xd4, 0x03, 0x00, 0x01, 0x40,
+ 0x02, 0xd6, 0x03, 0x00, 0x02, 0x40, 0x04, 0x0c,
+ 0x43, 0x02, 0x00, 0xd2, 0x03, 0x02, 0x00, 0x02,
+ 0x03, 0x00, 0x01, 0x00, 0x17, 0x02, 0xd8, 0x03,
+ 0x00, 0x01, 0x00, 0xda, 0x03, 0x00, 0x01, 0x00,
+ 0xa6, 0x03, 0x02, 0x01, 0xd1, 0x96, 0x04, 0x4a,
+ 0x00, 0x00, 0x00, 0xad, 0xea, 0x07, 0xd1, 0x07,
+ 0xae, 0xea, 0x02, 0x29, 0xdd, 0x11, 0xd2, 0x21,
+ 0x01, 0x00, 0x30, 0x0c, 0x43, 0x02, 0x00, 0xd4,
+ 0x03, 0x01, 0x02, 0x01, 0x04, 0x00, 0x01, 0x00,
+ 0x2e, 0x03, 0xdc, 0x03, 0x00, 0x01, 0x00, 0xde,
+ 0x03, 0x02, 0x00, 0x20, 0xe0, 0x03, 0x05, 0x00,
+ 0x03, 0xce, 0x03, 0x03, 0x01, 0x6b, 0x23, 0x00,
+ 0x00, 0x00, 0x60, 0x00, 0x00, 0xd1, 0x95, 0xea,
+ 0x04, 0x06, 0x6e, 0x28, 0xd1, 0x40, 0x06, 0x00,
+ 0x00, 0x00, 0xc9, 0x61, 0x00, 0x00, 0xea, 0x08,
+ 0xdd, 0xd1, 0x61, 0x00, 0x00, 0xf0, 0x0e, 0x0e,
+ 0x29, 0xca, 0x6b, 0x07, 0x00, 0x00, 0x00, 0xc6,
+ 0x6e, 0x28, 0x30, 0x0c, 0x43, 0x02, 0x00, 0xd6,
+ 0x03, 0x02, 0x04, 0x02, 0x03, 0x00, 0x01, 0x00,
+ 0x55, 0x06, 0xe2, 0x03, 0x00, 0x01, 0x00, 0xe4,
+ 0x03, 0x00, 0x01, 0x00, 0xe6, 0x03, 0x01, 0x00,
+ 0x20, 0xe8, 0x03, 0x02, 0x01, 0x20, 0xdc, 0x03,
+ 0x03, 0x02, 0x20, 0xe0, 0x03, 0x03, 0x03, 0x20,
+ 0xd4, 0x03, 0x01, 0x00, 0x60, 0x00, 0x00, 0x38,
+ 0x46, 0x00, 0x00, 0x00, 0xc9, 0x60, 0x01, 0x00,
+ 0xd2, 0xca, 0x61, 0x01, 0x00, 0x8f, 0x62, 0x01,
+ 0x00, 0xb4, 0xa7, 0xea, 0x39, 0x60, 0x03, 0x00,
+ 0x60, 0x02, 0x00, 0xd1, 0x61, 0x01, 0x00, 0x46,
+ 0xcb, 0xd1, 0x61, 0x01, 0x00, 0x1b, 0x11, 0xaf,
+ 0xeb, 0x04, 0x1b, 0x70, 0x1b, 0x1b, 0x38, 0x46,
+ 0x00, 0x00, 0x00, 0x1b, 0x70, 0x1b, 0x48, 0xdd,
+ 0x61, 0x02, 0x00, 0xef, 0xcc, 0x61, 0x00, 0x00,
+ 0x95, 0xea, 0xc8, 0x61, 0x03, 0x00, 0x11, 0x62,
+ 0x00, 0x00, 0x0e, 0xec, 0xbe, 0x61, 0x00, 0x00,
+ 0x28, 0x0c, 0x41, 0x02, 0x00, 0xaa, 0x02, 0x02,
+ 0x1a, 0x01, 0x05, 0x07, 0x08, 0x02, 0x8a, 0x06,
+ 0x1c, 0xea, 0x03, 0x00, 0x01, 0x00, 0xec, 0x03,
+ 0x00, 0x01, 0x00, 0xea, 0x03, 0x01, 0xff, 0xff,
+ 0xff, 0xff, 0x0f, 0x20, 0xec, 0x03, 0x01, 0x01,
+ 0x20, 0xee, 0x03, 0x02, 0x00, 0x60, 0x03, 0xf0,
+ 0x03, 0x02, 0x03, 0x20, 0xf2, 0x03, 0x02, 0x04,
+ 0x60, 0x04, 0xe2, 0x03, 0x02, 0x05, 0x60, 0x02,
+ 0xf4, 0x03, 0x02, 0x06, 0x60, 0x05, 0xe4, 0x03,
+ 0x02, 0x07, 0x60, 0x01, 0xf6, 0x03, 0x02, 0x08,
+ 0x20, 0xf8, 0x03, 0x02, 0x09, 0x20, 0xd6, 0x01,
+ 0x09, 0x1a, 0x20, 0xfa, 0x03, 0x0b, 0x0b, 0x20,
+ 0xe0, 0x03, 0x0d, 0x0f, 0x03, 0xdc, 0x03, 0x0b,
+ 0x0c, 0x20, 0xde, 0x03, 0x0b, 0x0e, 0x20, 0xd6,
+ 0x01, 0x13, 0x0b, 0x20, 0xe8, 0x03, 0x13, 0x10,
+ 0x20, 0xd4, 0x01, 0x13, 0x11, 0x20, 0x82, 0x01,
+ 0x15, 0x16, 0x20, 0xfa, 0x03, 0x16, 0x13, 0x20,
+ 0xe0, 0x03, 0x17, 0x13, 0x03, 0xfc, 0x03, 0x13,
+ 0x12, 0x20, 0xe6, 0x03, 0x1c, 0x16, 0x20, 0xe0,
+ 0x03, 0x1f, 0x1a, 0x03, 0xfe, 0x03, 0x02, 0x0a,
+ 0x60, 0x00, 0x80, 0x04, 0x02, 0x19, 0x60, 0x06,
+ 0xa6, 0x03, 0x02, 0x01, 0xaa, 0x03, 0x01, 0x01,
+ 0xce, 0x03, 0x03, 0x01, 0xd6, 0x03, 0x02, 0x00,
+ 0xd2, 0x03, 0x00, 0x00, 0xd0, 0x03, 0x04, 0x01,
+ 0xd4, 0x03, 0x01, 0x00, 0xcc, 0x03, 0x00, 0x01,
+ 0x0c, 0x42, 0x03, 0x00, 0x00, 0x00, 0x08, 0x00,
+ 0x05, 0x00, 0x0b, 0x00, 0xec, 0x04, 0x08, 0x82,
+ 0x04, 0x01, 0x00, 0x20, 0xd8, 0x01, 0x01, 0x01,
+ 0x20, 0x84, 0x04, 0x01, 0x02, 0x20, 0xe8, 0x03,
+ 0x03, 0x03, 0x20, 0xdc, 0x03, 0x04, 0x04, 0x20,
+ 0x86, 0x04, 0x04, 0x05, 0x20, 0xe0, 0x03, 0x09,
+ 0x06, 0x03, 0xe6, 0x03, 0x10, 0x06, 0x20, 0xfe,
+ 0x03, 0x18, 0x10, 0xa6, 0x03, 0x00, 0x02, 0xaa,
+ 0x03, 0x01, 0x02, 0xe4, 0x03, 0x07, 0x10, 0xe2,
+ 0x03, 0x05, 0x10, 0xee, 0x03, 0x02, 0x10, 0xf2,
+ 0x03, 0x04, 0x10, 0xce, 0x03, 0x02, 0x02, 0xf4,
+ 0x03, 0x06, 0x10, 0x80, 0x04, 0x19, 0x10, 0xd6,
+ 0x03, 0x03, 0x02, 0x60, 0x02, 0x00, 0x60, 0x01,
+ 0x00, 0x60, 0x00, 0x00, 0x64, 0x00, 0x00, 0x11,
+ 0xb4, 0xad, 0xeb, 0x06, 0x11, 0xb5, 0xad, 0xea,
+ 0x09, 0xb6, 0x11, 0x65, 0x00, 0x00, 0x0e, 0xec,
+ 0x33, 0x11, 0xb6, 0xad, 0xea, 0x0c, 0xde, 0x11,
+ 0x04, 0x04, 0x01, 0x00, 0x00, 0x21, 0x01, 0x00,
+ 0x30, 0x11, 0xb7, 0xad, 0xea, 0x13, 0x0b, 0x38,
+ 0x46, 0x00, 0x00, 0x00, 0x4b, 0x41, 0x00, 0x00,
+ 0x00, 0x0a, 0x4b, 0x6a, 0x00, 0x00, 0x00, 0x28,
+ 0xdf, 0x11, 0x04, 0x05, 0x01, 0x00, 0x00, 0x21,
+ 0x01, 0x00, 0x30, 0x0e, 0xb4, 0xc9, 0xb4, 0xca,
+ 0x26, 0x00, 0x00, 0xcb, 0x60, 0x03, 0x00, 0xb4,
+ 0xcc, 0x61, 0x03, 0x00, 0x64, 0x03, 0x00, 0xa5,
+ 0x68, 0xd1, 0x01, 0x00, 0x00, 0x60, 0x05, 0x00,
+ 0x60, 0x04, 0x00, 0x64, 0x04, 0x00, 0x61, 0x03,
+ 0x00, 0x46, 0xc2, 0x04, 0x61, 0x04, 0x00, 0x95,
+ 0xea, 0x34, 0x64, 0x05, 0x00, 0x04, 0x06, 0x01,
+ 0x00, 0x00, 0xae, 0xea, 0x0c, 0xdf, 0x11, 0x04,
+ 0x05, 0x01, 0x00, 0x00, 0x21, 0x01, 0x00, 0x30,
+ 0x61, 0x02, 0x00, 0x61, 0x03, 0x00, 0x1b, 0x11,
+ 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b, 0x1b, 0x64,
+ 0x06, 0x00, 0x61, 0x03, 0x00, 0x46, 0x1b, 0x70,
+ 0x1b, 0x48, 0xed, 0x7c, 0x01, 0x06, 0xc2, 0x05,
+ 0x6b, 0x1a, 0x00, 0x00, 0x00, 0x5d, 0x07, 0x00,
+ 0x61, 0x04, 0x00, 0x64, 0x08, 0x00, 0x61, 0x03,
+ 0x00, 0x46, 0xf0, 0x11, 0x62, 0x05, 0x00, 0x0e,
+ 0x0e, 0xec, 0x35, 0xc2, 0x06, 0x6b, 0x30, 0x00,
+ 0x00, 0x00, 0xb4, 0x11, 0x65, 0x09, 0x00, 0x0e,
+ 0x64, 0x04, 0x00, 0x61, 0x03, 0x00, 0x1b, 0x11,
+ 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b, 0x1b, 0x38,
+ 0x46, 0x00, 0x00, 0x00, 0x1b, 0x70, 0x1b, 0x48,
+ 0x5d, 0x0a, 0x00, 0x64, 0x04, 0x00, 0x64, 0x03,
+ 0x00, 0xf0, 0x0e, 0xc1, 0x06, 0x30, 0x30, 0x61,
+ 0x05, 0x00, 0x40, 0x6a, 0x00, 0x00, 0x00, 0x95,
+ 0xea, 0x4f, 0x64, 0x05, 0x00, 0x04, 0x07, 0x01,
+ 0x00, 0x00, 0xad, 0xea, 0x1e, 0x61, 0x00, 0x00,
+ 0xb4, 0xa7, 0xea, 0x17, 0x5d, 0x0a, 0x00, 0x64,
+ 0x04, 0x00, 0x64, 0x03, 0x00, 0xf0, 0x0e, 0xde,
+ 0x11, 0x04, 0x08, 0x01, 0x00, 0x00, 0x21, 0x01,
+ 0x00, 0x30, 0x61, 0x02, 0x00, 0x61, 0x03, 0x00,
+ 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b,
+ 0x1b, 0x61, 0x05, 0x00, 0x40, 0x41, 0x00, 0x00,
+ 0x00, 0x1b, 0x70, 0x1b, 0x48, 0x61, 0x01, 0x00,
+ 0x90, 0x62, 0x01, 0x00, 0x0e, 0xed, 0xd1, 0x00,
+ 0x64, 0x09, 0x00, 0x8f, 0x65, 0x09, 0x00, 0x0e,
+ 0x61, 0x00, 0x00, 0x90, 0x62, 0x00, 0x00, 0x0e,
+ 0x64, 0x04, 0x00, 0x61, 0x03, 0x00, 0x1b, 0x11,
+ 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b, 0x1b, 0x38,
+ 0x46, 0x00, 0x00, 0x00, 0x1b, 0x70, 0x1b, 0x48,
+ 0x64, 0x05, 0x00, 0x60, 0x07, 0x00, 0x11, 0x04,
+ 0x09, 0x01, 0x00, 0x00, 0xad, 0xea, 0x2e, 0x5d,
+ 0x0a, 0x00, 0x64, 0x04, 0x00, 0x64, 0x03, 0x00,
+ 0xf0, 0xc2, 0x07, 0x61, 0x07, 0x00, 0xea, 0x05,
+ 0x61, 0x07, 0x00, 0x30, 0xb7, 0x11, 0x65, 0x00,
+ 0x00, 0x0e, 0x0b, 0x38, 0x46, 0x00, 0x00, 0x00,
+ 0x4b, 0x41, 0x00, 0x00, 0x00, 0x0a, 0x4b, 0x6a,
+ 0x00, 0x00, 0x00, 0x28, 0x11, 0x04, 0x06, 0x01,
+ 0x00, 0x00, 0xad, 0xea, 0x3c, 0x64, 0x09, 0x00,
+ 0xb5, 0xa5, 0xea, 0x19, 0xb7, 0x11, 0x65, 0x00,
+ 0x00, 0x0e, 0x0b, 0x38, 0x46, 0x00, 0x00, 0x00,
+ 0x4b, 0x41, 0x00, 0x00, 0x00, 0x0a, 0x4b, 0x6a,
+ 0x00, 0x00, 0x00, 0x28, 0x61, 0x02, 0x00, 0x61,
+ 0x03, 0x00, 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b,
+ 0x70, 0x1b, 0x1b, 0x64, 0x06, 0x00, 0x61, 0x03,
+ 0x00, 0x46, 0x1b, 0x70, 0x1b, 0x48, 0xec, 0x27,
+ 0x11, 0x04, 0x07, 0x01, 0x00, 0x00, 0xad, 0xea,
+ 0x1e, 0x61, 0x01, 0x00, 0xb4, 0xa7, 0xea, 0x17,
+ 0x5d, 0x0a, 0x00, 0x64, 0x04, 0x00, 0x64, 0x03,
+ 0x00, 0xf0, 0x0e, 0xde, 0x11, 0x04, 0x08, 0x01,
+ 0x00, 0x00, 0x21, 0x01, 0x00, 0x30, 0x0e, 0x61,
+ 0x03, 0x00, 0x90, 0x62, 0x03, 0x00, 0x0e, 0xed,
+ 0x29, 0xfe, 0x61, 0x01, 0x00, 0xb4, 0xad, 0xea,
+ 0x19, 0xb7, 0x11, 0x65, 0x00, 0x00, 0x0e, 0x0b,
+ 0x38, 0x46, 0x00, 0x00, 0x00, 0x4b, 0x41, 0x00,
+ 0x00, 0x00, 0x0a, 0x4b, 0x6a, 0x00, 0x00, 0x00,
+ 0x28, 0xb5, 0x11, 0x65, 0x00, 0x00, 0x0e, 0x0b,
+ 0x61, 0x02, 0x00, 0x4b, 0x41, 0x00, 0x00, 0x00,
+ 0x09, 0x4b, 0x6a, 0x00, 0x00, 0x00, 0x28, 0x0c,
+ 0x42, 0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x06,
+ 0x00, 0x06, 0x00, 0x88, 0x01, 0x01, 0xe6, 0x03,
+ 0x01, 0x00, 0x20, 0xfe, 0x03, 0x18, 0x10, 0xa6,
+ 0x03, 0x00, 0x02, 0xaa, 0x03, 0x01, 0x02, 0xd6,
+ 0x03, 0x03, 0x02, 0xe2, 0x03, 0x05, 0x10, 0xe4,
+ 0x03, 0x07, 0x10, 0x60, 0x00, 0x00, 0x64, 0x00,
+ 0x00, 0x11, 0xb4, 0xad, 0xea, 0x09, 0xb7, 0x11,
+ 0x65, 0x00, 0x00, 0x0e, 0xec, 0x4b, 0x11, 0xb5,
+ 0xad, 0xea, 0x09, 0xb6, 0x11, 0x65, 0x00, 0x00,
+ 0x0e, 0xec, 0x3e, 0x11, 0xb6, 0xad, 0xea, 0x0c,
+ 0xde, 0x11, 0x04, 0x04, 0x01, 0x00, 0x00, 0x21,
+ 0x01, 0x00, 0x30, 0x11, 0xb7, 0xad, 0xea, 0x13,
+ 0x0b, 0x38, 0x46, 0x00, 0x00, 0x00, 0x4b, 0x41,
+ 0x00, 0x00, 0x00, 0x0a, 0x4b, 0x6a, 0x00, 0x00,
+ 0x00, 0x28, 0xdf, 0x11, 0x04, 0x0a, 0x01, 0x00,
+ 0x00, 0x41, 0x5d, 0x00, 0x00, 0x00, 0x64, 0x00,
+ 0x00, 0x24, 0x01, 0x00, 0x21, 0x01, 0x00, 0x30,
+ 0x0e, 0xe0, 0x64, 0x04, 0x00, 0x64, 0x05, 0x00,
+ 0xf0, 0xc9, 0x61, 0x00, 0x00, 0xea, 0x05, 0x61,
+ 0x00, 0x00, 0x30, 0xb7, 0x11, 0x65, 0x00, 0x00,
+ 0x0e, 0x0b, 0x38, 0x46, 0x00, 0x00, 0x00, 0x4b,
+ 0x41, 0x00, 0x00, 0x00, 0x0a, 0x4b, 0x6a, 0x00,
+ 0x00, 0x00, 0x28, 0x60, 0x01, 0x00, 0x60, 0x00,
+ 0x00, 0xd1, 0xc9, 0xd2, 0x11, 0xf2, 0xea, 0x08,
+ 0x0e, 0x38, 0x46, 0x00, 0x00, 0x00, 0xda, 0xca,
+ 0x60, 0x19, 0x00, 0x60, 0x18, 0x00, 0x60, 0x09,
+ 0x00, 0x60, 0x08, 0x00, 0x60, 0x07, 0x00, 0x60,
+ 0x06, 0x00, 0x60, 0x05, 0x00, 0x60, 0x04, 0x00,
+ 0x60, 0x03, 0x00, 0x60, 0x02, 0x00, 0x5d, 0x04,
+ 0x00, 0xd1, 0x04, 0x0b, 0x01, 0x00, 0x00, 0xf0,
+ 0x0e, 0xd2, 0x38, 0x46, 0x00, 0x00, 0x00, 0xad,
+ 0xea, 0x06, 0x0c, 0x07, 0xd6, 0xec, 0x0c, 0x5d,
+ 0x04, 0x00, 0xd2, 0x04, 0x0c, 0x01, 0x00, 0x00,
+ 0xf0, 0x0e, 0xd2, 0x40, 0xf7, 0x00, 0x00, 0x00,
+ 0xcb, 0x61, 0x02, 0x00, 0x38, 0x46, 0x00, 0x00,
+ 0x00, 0xad, 0xea, 0x0b, 0x04, 0x09, 0x01, 0x00,
+ 0x00, 0x11, 0x62, 0x02, 0x00, 0x0e, 0x61, 0x02,
+ 0x00, 0x04, 0x07, 0x01, 0x00, 0x00, 0xad, 0x11,
+ 0xeb, 0x18, 0x0e, 0x61, 0x02, 0x00, 0x04, 0x06,
+ 0x01, 0x00, 0x00, 0xad, 0x11, 0xeb, 0x0b, 0x0e,
+ 0x61, 0x02, 0x00, 0x04, 0x09, 0x01, 0x00, 0x00,
+ 0xad, 0x95, 0xea, 0x0c, 0xdd, 0x11, 0x04, 0x0d,
+ 0x01, 0x00, 0x00, 0x21, 0x01, 0x00, 0x30, 0x38,
+ 0x46, 0x00, 0x00, 0x00, 0xcc, 0x61, 0x02, 0x00,
+ 0x04, 0x06, 0x01, 0x00, 0x00, 0xad, 0xea, 0x24,
+ 0xd2, 0x40, 0xf8, 0x00, 0x00, 0x00, 0x11, 0x62,
+ 0x03, 0x00, 0x0e, 0x61, 0x03, 0x00, 0x38, 0x46,
+ 0x00, 0x00, 0x00, 0xae, 0xea, 0x0e, 0x5d, 0x04,
+ 0x00, 0x61, 0x03, 0x00, 0x04, 0x0e, 0x01, 0x00,
+ 0x00, 0xf0, 0x0e, 0x26, 0x00, 0x00, 0xc2, 0x04,
+ 0x26, 0x00, 0x00, 0xc2, 0x05, 0x26, 0x00, 0x00,
+ 0xc2, 0x06, 0xb4, 0xc2, 0x07, 0x38, 0x46, 0x00,
+ 0x00, 0x00, 0xc2, 0x08, 0xd1, 0x5d, 0x05, 0x00,
+ 0x47, 0x24, 0x00, 0x00, 0xc2, 0x09, 0x6b, 0xcc,
+ 0x01, 0x00, 0x00, 0x60, 0x0a, 0x00, 0x61, 0x09,
+ 0x00, 0x40, 0x6b, 0x00, 0x00, 0x00, 0xc2, 0x0a,
+ 0x60, 0x0e, 0x00, 0x60, 0x0d, 0x00, 0x60, 0x0b,
+ 0x00, 0x06, 0xc2, 0x0b, 0x6b, 0x14, 0x00, 0x00,
+ 0x00, 0xdf, 0x61, 0x09, 0x00, 0x61, 0x0a, 0x00,
+ 0xf0, 0x11, 0x62, 0x0b, 0x00, 0x0e, 0x0e, 0xec,
+ 0x16, 0xc2, 0x0c, 0x6b, 0x11, 0x00, 0x00, 0x00,
+ 0x38, 0x46, 0x00, 0x00, 0x00, 0x11, 0x62, 0x09,
+ 0x00, 0x0e, 0xc1, 0x0c, 0x30, 0x30, 0x61, 0x0b,
+ 0x00, 0x40, 0x6a, 0x00, 0x00, 0x00, 0xeb, 0x6f,
+ 0x61, 0x0b, 0x00, 0x40, 0x41, 0x00, 0x00, 0x00,
+ 0xc2, 0x0d, 0x5d, 0x04, 0x00, 0x61, 0x0d, 0x00,
+ 0x04, 0x0f, 0x01, 0x00, 0x00, 0xf0, 0x0e, 0x61,
+ 0x0d, 0x00, 0x5d, 0x05, 0x00, 0x46, 0xc2, 0x0e,
+ 0x61, 0x0e, 0x00, 0xea, 0x0e, 0xdf, 0x61, 0x0d,
+ 0x00, 0x61, 0x0e, 0x00, 0xf0, 0x11, 0x62, 0x0d,
+ 0x00, 0x0e, 0x61, 0x05, 0x00, 0x61, 0x07, 0x00,
+ 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b,
+ 0x1b, 0x61, 0x0d, 0x00, 0x1b, 0x70, 0x1b, 0x48,
+ 0x61, 0x06, 0x00, 0x61, 0x07, 0x00, 0x1b, 0x11,
+ 0xaf, 0xeb, 0x04, 0x1b, 0x70, 0x1b, 0x1b, 0x61,
+ 0x0d, 0x00, 0x40, 0x6b, 0x00, 0x00, 0x00, 0x1b,
+ 0x70, 0x1b, 0x48, 0x61, 0x07, 0x00, 0x90, 0x62,
+ 0x07, 0x00, 0x0e, 0xed, 0x54, 0xff, 0x38, 0x46,
+ 0x00, 0x00, 0x00, 0x11, 0x62, 0x09, 0x00, 0x0e,
+ 0x61, 0x03, 0x00, 0x68, 0xfc, 0x00, 0x00, 0x00,
+ 0x60, 0x15, 0x00, 0x60, 0x11, 0x00, 0x60, 0x10,
+ 0x00, 0x60, 0x0f, 0x00, 0x61, 0x03, 0x00, 0x5d,
+ 0x05, 0x00, 0x47, 0x24, 0x00, 0x00, 0x11, 0x62,
+ 0x08, 0x00, 0x0e, 0x61, 0x08, 0x00, 0x40, 0x6b,
+ 0x00, 0x00, 0x00, 0xc2, 0x0f, 0xb4, 0xc2, 0x10,
+ 0x09, 0xc2, 0x11, 0x61, 0x10, 0x00, 0x61, 0x07,
+ 0x00, 0xa5, 0xea, 0x70, 0x60, 0x12, 0x00, 0x06,
+ 0xc2, 0x12, 0x6b, 0x2e, 0x00, 0x00, 0x00, 0x60,
+ 0x13, 0x00, 0xdf, 0x61, 0x08, 0x00, 0x61, 0x0f,
+ 0x00, 0xf0, 0xc2, 0x13, 0x61, 0x13, 0x00, 0x40,
+ 0x6a, 0x00, 0x00, 0x00, 0x11, 0x62, 0x11, 0x00,
+ 0x0e, 0x61, 0x13, 0x00, 0x40, 0x41, 0x00, 0x00,
+ 0x00, 0x11, 0x62, 0x12, 0x00, 0x0e, 0x0e, 0xec,
+ 0x16, 0xc2, 0x14, 0x6b, 0x11, 0x00, 0x00, 0x00,
+ 0x38, 0x46, 0x00, 0x00, 0x00, 0x11, 0x62, 0x08,
+ 0x00, 0x0e, 0xc1, 0x14, 0x30, 0x30, 0x61, 0x11,
+ 0x00, 0xeb, 0x21, 0x61, 0x04, 0x00, 0x61, 0x10,
+ 0x00, 0x1b, 0x11, 0xaf, 0xeb, 0x04, 0x1b, 0x70,
+ 0x1b, 0x1b, 0x61, 0x12, 0x00, 0x1b, 0x70, 0x1b,
+ 0x48, 0x61, 0x10, 0x00, 0x90, 0x62, 0x10, 0x00,
+ 0x0e, 0xec, 0x89, 0x61, 0x08, 0x00, 0xc2, 0x15,
+ 0x38, 0x46, 0x00, 0x00, 0x00, 0x11, 0x62, 0x08,
+ 0x00, 0x0e, 0x61, 0x11, 0x00, 0x95, 0xea, 0x16,
+ 0x60, 0x16, 0x00, 0x5d, 0x06, 0x00, 0x61, 0x15,
+ 0x00, 0xef, 0xc2, 0x16, 0x61, 0x16, 0x00, 0xea,
+ 0x05, 0x61, 0x16, 0x00, 0x30, 0x61, 0x10, 0x00,
+ 0x61, 0x07, 0x00, 0xa5, 0xea, 0x23, 0x61, 0x04,
+ 0x00, 0x61, 0x10, 0x00, 0x1b, 0x11, 0xaf, 0xeb,
+ 0x04, 0x1b, 0x70, 0x1b, 0x1b, 0x38, 0x46, 0x00,
+ 0x00, 0x00, 0x1b, 0x70, 0x1b, 0x48, 0x61, 0x10,
+ 0x00, 0x90, 0x62, 0x10, 0x00, 0x0e, 0xec, 0xd6,
+ 0x0e, 0xec, 0x25, 0xc2, 0x17, 0x6b, 0x20, 0x00,
+ 0x00, 0x00, 0xe0, 0x61, 0x05, 0x00, 0x61, 0x07,
+ 0x00, 0xf0, 0x0e, 0x5d, 0x06, 0x00, 0x61, 0x09,
+ 0x00, 0xef, 0x0e, 0x5d, 0x06, 0x00, 0x61, 0x08,
+ 0x00, 0xef, 0x0e, 0xc1, 0x17, 0x30, 0x30, 0xb4,
+ 0xc2, 0x18, 0x61, 0x07, 0x00, 0xc2, 0x19, 0x0b,
+ 0x5d, 0x07, 0x00, 0x4e, 0xbf, 0x00, 0x53, 0x6b,
+ 0x00, 0x00, 0x00, 0x04, 0xbf, 0x01, 0x53, 0x06,
+ 0x00, 0x00, 0x00, 0x04, 0x28, 0xbf, 0x00, 0xc9,
+ 0xbf, 0x01, 0xca, 0xbf, 0x02, 0xcb, 0xbf, 0x03,
+ 0x28, 0xbf, 0x00, 0xcd, 0x28,
+};
+
+
+
+// like Function.prototype.call but monkey patch-proof
+static JSValue js_call_function(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv)
+{
+    return JS_Call(ctx, argv[1], argv[0], argc-2, argv+2);
+}
+
+// returns enumerable and non-enumerable strings *and* symbols
+static JSValue js_getOwnPropertyKeys(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv)
+{
+    int flags = JS_GPN_STRING_MASK|JS_GPN_SYMBOL_MASK;
+    return JS_GetOwnPropertyNames2(ctx, argv[0], flags, JS_ITERATOR_KIND_KEY);
+}
+
+static JSValue js_hasOwnEnumProperty(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv)
+{
+    JSObject *p;
+    JSAtom key;
+    int flags, res;
+
+    if (JS_TAG_OBJECT != JS_VALUE_GET_TAG(argv[0]))
+        return JS_ThrowTypeErrorNotAnObject(ctx);
+    p = JS_VALUE_GET_OBJ(argv[0]);
+    key = JS_ValueToAtomInternal(ctx, argv[1], JS_TO_STRING_NO_SIDE_EFFECTS);
+    if (key == JS_ATOM_NULL)
+        return JS_EXCEPTION;
+    res = JS_GetOwnPropertyFlagsInternal(ctx, &flags, p, key);
+    JS_FreeAtom(ctx, key);
+    if (res < 0)
+        return JS_EXCEPTION;
+    if (res > 0 && (flags & JS_PROP_ENUMERABLE))
+        return JS_TRUE;
+    return JS_FALSE;
+}
+
+// note: takes ownership of |argv|
+static JSValue js_bytecode_eval(JSContext *ctx, const uint8_t *bytecode,
+                                size_t len, int argc, JSValue *argv)
+{
+    JSValue obj, fun, result;
+    int i;
+
+    obj = JS_ReadObject(ctx, bytecode, len, JS_READ_OBJ_BYTECODE);
+    if (JS_IsException(obj))
+        return JS_EXCEPTION;
+    fun = JS_EvalFunction(ctx, obj);
+    if (JS_IsException(fun))
+        return JS_EXCEPTION;
+    assert(JS_IsFunction(ctx, fun));
+    result = JS_Call(ctx, fun, JS_UNDEFINED, argc, vc(argv));
+    for (i = 0; i < argc; i++)
+        JS_FreeValue(ctx, argv[i]);
+    JS_FreeValue(ctx, fun);
+    if (JS_SetPrototypeInternal(ctx, result, ctx->function_proto,
+                                /*throw_flag*/true) < 0) {
+        JS_FreeValue(ctx, result);
+        return JS_EXCEPTION;
+    }
+    return result;
+}
 
 static JSValue js_bytecode_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
                                     void *opaque)
@@ -16406,19 +19560,10 @@ static JSValue js_bytecode_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
         abort();
     case JS_BUILTIN_ARRAY_FROMASYNC:
         {
-            JSValue obj = JS_ReadObject(ctx, qjsc_builtin_array_fromasync,
-                                        sizeof(qjsc_builtin_array_fromasync),
-                                        JS_READ_OBJ_BYTECODE);
-            if (JS_IsException(obj))
-                return JS_EXCEPTION;
-            JSValue fun = JS_EvalFunction(ctx, obj);
-            if (JS_IsException(fun))
-                return JS_EXCEPTION;
-            assert(JS_IsFunction(ctx, fun));
-            JSValue args[] = {
+            JSValue argv[] = {
                 JS_NewCFunction(ctx, js_array_constructor, "Array", 0),
-                JS_NewCFunctionMagic(ctx, js_error_constructor, "TypeError", 1,
-                                     JS_CFUNC_constructor_or_func_magic,
+                JS_NewCFunctionMagic(ctx, js_error_constructor, "TypeError",
+                                     1, JS_CFUNC_constructor_or_func_magic,
                                      JS_TYPE_ERROR),
                 JS_AtomToValue(ctx, JS_ATOM_Symbol_asyncIterator),
                 JS_NewCFunctionMagic(ctx, js_object_defineProperty,
@@ -16426,16 +19571,50 @@ static JSValue js_bytecode_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
                                      JS_CFUNC_generic_magic, 0),
                 JS_AtomToValue(ctx, JS_ATOM_Symbol_iterator),
             };
-            JSValue result = JS_Call(ctx, fun, JS_UNDEFINED,
-                                     countof(args), vc(args));
-            for (size_t i = 0; i < countof(args); i++)
-                JS_FreeValue(ctx, args[i]);
-            JS_FreeValue(ctx, fun);
-            if (JS_SetPrototypeInternal(ctx, result, ctx->function_proto,
-                                        /*throw_flag*/true) < 0) {
-                JS_FreeValue(ctx, result);
-                return JS_EXCEPTION;
-            }
+            return js_bytecode_eval(ctx, qjsc_builtin_array_fromasync,
+                                    sizeof(qjsc_builtin_array_fromasync),
+                                    countof(argv), argv);
+        }
+    case JS_BUILTIN_ITERATOR_ZIP:
+        {
+            JSValue argv[] = {
+                js_dup(ctx->class_proto[JS_CLASS_ITERATOR_HELPER]),
+                JS_NewCFunctionMagic(ctx, js_error_constructor, "InternalError",
+                                     1, JS_CFUNC_constructor_or_func_magic,
+                                     JS_INTERNAL_ERROR),
+                JS_NewCFunctionMagic(ctx, js_error_constructor, "TypeError",
+                                     1, JS_CFUNC_constructor_or_func_magic,
+                                     JS_TYPE_ERROR),
+                JS_NewCFunction(ctx, js_call_function, "call", 2),
+                JS_AtomToValue(ctx, JS_ATOM_Symbol_iterator),
+            };
+            JSValue result = js_bytecode_eval(ctx, qjsc_builtin_iterator_zip,
+                                              sizeof(qjsc_builtin_iterator_zip),
+                                              countof(argv), argv);
+            JS_SetConstructorBit(ctx, result, false);
+            return result;
+        }
+    case JS_BUILTIN_ITERATOR_ZIP_KEYED:
+        {
+            JSValue argv[] = {
+                js_dup(ctx->class_proto[JS_CLASS_ITERATOR_HELPER]),
+                JS_NewCFunctionMagic(ctx, js_error_constructor, "InternalError",
+                                     1, JS_CFUNC_constructor_or_func_magic,
+                                     JS_INTERNAL_ERROR),
+                JS_NewCFunctionMagic(ctx, js_error_constructor, "TypeError",
+                                     1, JS_CFUNC_constructor_or_func_magic,
+                                     JS_TYPE_ERROR),
+                JS_NewCFunction(ctx, js_call_function, "call", 2),
+                JS_NewCFunction(ctx, js_hasOwnEnumProperty,
+                                "hasOwnEnumProperty", 2),
+                JS_NewCFunction(ctx, js_getOwnPropertyKeys,
+                                "getOwnPropertyKeys", 1),
+                JS_AtomToValue(ctx, JS_ATOM_Symbol_iterator),
+            };
+            JSValue result = js_bytecode_eval(ctx, qjsc_builtin_iterator_zip_keyed,
+                                              sizeof(qjsc_builtin_iterator_zip_keyed),
+                                              countof(argv), argv);
+            JS_SetConstructorBit(ctx, result, false);
             return result;
         }
     }
@@ -16506,6 +19685,21 @@ static JSValue JS_GetPropertyInternal(JSContext *ctx, JSValueConst obj,
                     }
                 } else if (prop == JS_ATOM_length) {
                     return js_int32(p1->len);
+                }
+            }
+            break;
+        case JS_TAG_STRING_ROPE:
+            {
+                JSStringRope *r = JS_VALUE_GET_STRING_ROPE(obj);
+                if (__JS_AtomIsTaggedInt(prop)) {
+                    uint32_t idx, ch;
+                    idx = __JS_AtomToUInt32(prop);
+                    if (idx < r->len) {
+                        ch = string_rope_get(obj, idx);
+                        return js_new_string_char(ctx, ch);
+                    }
+                } else if (prop == JS_ATOM_length) {
+                    return js_int32(r->len);
                 }
             }
             break;
@@ -16883,7 +20077,7 @@ static int __exception JS_GetOwnPropertyNamesInternal(JSContext *ctx,
     exotic_count = 0;
     tab_exotic = NULL;
     sh = p->shape;
-    for(i = 0, prs = get_shape_prop(sh); i < sh->prop_count; i++, prs++) {
+    for(i = 0, prs = sh->prop; i < sh->prop_count; i++, prs++) {
         atom = prs->atom;
         if (atom != JS_ATOM_NULL) {
             is_enumerable = ((prs->flags & JS_PROP_ENUMERABLE) != 0);
@@ -16932,18 +20126,16 @@ static int __exception JS_GetOwnPropertyNamesInternal(JSContext *ctx,
                     if (((flags >> kind) & 1) != 0) {
                         is_enumerable = false;
                         if (flags & (JS_GPN_SET_ENUM | JS_GPN_ENUM_ONLY)) {
-                            JSPropertyDescriptor desc;
-                            int res;
+                            int desc_flags, res;
                             /* set the "is_enumerable" field if necessary */
-                            res = JS_GetOwnPropertyInternal(ctx, &desc, p, atom);
+                            res = JS_GetOwnPropertyFlagsInternal(ctx, &desc_flags, p, atom);
                             if (res < 0) {
                                 js_free_prop_enum(ctx, tab_exotic, exotic_count);
                                 return -1;
                             }
                             if (res) {
                                 is_enumerable =
-                                    ((desc.flags & JS_PROP_ENUMERABLE) != 0);
-                                js_free_desc(ctx, &desc);
+                                    ((desc_flags & JS_PROP_ENUMERABLE) != 0);
                             }
                             tab_exotic[i].is_enumerable = is_enumerable;
                         }
@@ -16972,7 +20164,7 @@ static int __exception JS_GetOwnPropertyNamesInternal(JSContext *ctx,
 
     num_sorted = true;
     sh = p->shape;
-    for(i = 0, prs = get_shape_prop(sh); i < sh->prop_count; i++, prs++) {
+    for(i = 0, prs = sh->prop; i < sh->prop_count; i++, prs++) {
         atom = prs->atom;
         if (atom != JS_ATOM_NULL) {
             is_enumerable = ((prs->flags & JS_PROP_ENUMERABLE) != 0);
@@ -17060,11 +20252,12 @@ int JS_GetOwnPropertyNames(JSContext *ctx, JSPropertyEnum **ptab,
 /* Return -1 if exception,
    false if the property does not exist, true if it exists. If true is
    returned, the property descriptor 'desc' is filled present. */
-static int JS_GetOwnPropertyInternal(JSContext *ctx, JSPropertyDescriptor *desc,
-                                     JSObject *p, JSAtom prop)
+static int JS_GetOwnPropertyInternal2(JSContext *ctx, JSPropertyDescriptor *desc,
+                                      JSObject *p, JSAtom prop, int *pflags)
 {
     JSShapeProperty *prs;
     JSProperty *pr;
+    int flags_only = (desc == NULL && pflags != NULL);
 
 retry:
     prs = find_own_property(&pr, p, prop);
@@ -17098,6 +20291,11 @@ retry:
                 desc->value = js_dup(pr->u.value);
             }
         } else {
+            if (pflags) {
+                *pflags = prs->flags & JS_PROP_C_W_E;
+                if ((prs->flags & JS_PROP_TMASK) == JS_PROP_GETSET)
+                    *pflags |= JS_PROP_GETSET;
+            }
             /* for consistency, send the exception even if desc is NULL */
             if (unlikely((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF)) {
                 if (unlikely(JS_IsUninitialized(*pr->u.var_ref->pvalue))) {
@@ -17120,9 +20318,20 @@ retry:
                     if (desc) {
                         desc->flags = JS_PROP_WRITABLE | JS_PROP_ENUMERABLE |
                             JS_PROP_CONFIGURABLE;
+                        if (is_typed_array(p->class_id) && typed_array_is_immutable(p)) {
+                            desc->flags &= ~JS_PROP_WRITABLE;
+                            desc->flags &= ~JS_PROP_CONFIGURABLE;
+                        }
                         desc->getter = JS_UNDEFINED;
                         desc->setter = JS_UNDEFINED;
                         desc->value = JS_GetPropertyUint32(ctx, JS_MKPTR(JS_TAG_OBJECT, p), idx);
+                    } else if (flags_only) {
+                        *pflags = JS_PROP_WRITABLE | JS_PROP_ENUMERABLE |
+                            JS_PROP_CONFIGURABLE;
+                        if (is_typed_array(p->class_id) && typed_array_is_immutable(p)) {
+                            *pflags &= ~JS_PROP_WRITABLE;
+                            *pflags &= ~JS_PROP_CONFIGURABLE;
+                        }
                     }
                     return true;
                 }
@@ -17130,12 +20339,41 @@ retry:
         } else {
             const JSClassExoticMethods *em = ctx->rt->class_array[p->class_id].exotic;
             if (em && em->get_own_property) {
+                if (flags_only) {
+                    /* Call the exotic handler with a temporary desc,
+                       extract flags, and free the values. For Proxy
+                       objects, the JS trap runs regardless, so the
+                       dup+free overhead is negligible. */
+                    JSPropertyDescriptor d;
+                    int ret = em->get_own_property(ctx, &d,
+                                                   JS_MKPTR(JS_TAG_OBJECT, p), prop);
+                    if (ret > 0) {
+                        *pflags = d.flags;
+                        js_free_desc(ctx, &d);
+                    }
+                    return ret;
+                }
                 return em->get_own_property(ctx, desc,
                                             JS_MKPTR(JS_TAG_OBJECT, p), prop);
             }
         }
     }
     return false;
+}
+
+static int JS_GetOwnPropertyInternal(JSContext *ctx, JSPropertyDescriptor *desc,
+                                     JSObject *p, JSAtom prop)
+{
+    return JS_GetOwnPropertyInternal2(ctx, desc, p, prop, NULL);
+}
+
+/* Same as JS_GetOwnPropertyInternal but only returns flags, not
+   value/getter/setter. Avoids unnecessary js_dup() for callers that
+   only need the property flags. */
+static int JS_GetOwnPropertyFlagsInternal(JSContext *ctx, int *pflags,
+                                          JSObject *p, JSAtom prop)
+{
+    return JS_GetOwnPropertyInternal2(ctx, NULL, p, prop, pflags);
 }
 
 int JS_GetOwnProperty(JSContext *ctx, JSPropertyDescriptor *desc,
@@ -17272,6 +20510,10 @@ static bool js_get_fast_array_element(JSContext *ctx, JSObject *p,
     case JS_CLASS_ARGUMENTS:
         if (unlikely(idx >= p->u.array.count)) return false;
         *pval = js_dup(p->u.array.u.values[idx]);
+        return true;
+    case JS_CLASS_MAPPED_ARGUMENTS:
+        if (unlikely(idx >= p->u.array.count)) return false;
+        *pval = js_dup(*p->u.array.u.var_refs[idx]->pvalue);
         return true;
     case JS_CLASS_INT8_ARRAY:
         if (unlikely(idx >= p->u.array.count)) return false;
@@ -17449,6 +20691,15 @@ static JSProperty *add_property(JSContext *ctx,
 {
     JSShape *sh, *new_sh;
 
+    if (unlikely(p->is_prototype)) {
+        /* track addition of small integer properties to
+           Array.prototype and Object.prototype */
+        if (unlikely((p == JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_ARRAY]) ||
+                      p == JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT])) &&
+                     __JS_AtomIsTaggedInt(prop))) {
+            ctx->std_array_prototype = false;
+        }
+    }
     sh = p->shape;
     if (sh->is_hashed) {
         /* try to find an existing shape */
@@ -17485,16 +20736,20 @@ static JSProperty *add_property(JSContext *ctx,
     return &p->prop[p->shape->prop_count - 1];
 }
 
-/* can be called on Array or Arguments objects. return < 0 if
-   memory alloc error. */
+/* can be called on JS_CLASS_ARRAY, JS_CLASS_ARGUMENTS or
+   JS_CLASS_MAPPED_ARGUMENTS objects. return < 0 if memory alloc
+   error. */
 static no_inline __exception int convert_fast_array_to_array(JSContext *ctx,
                                                              JSObject *p)
 {
     JSProperty *pr;
     JSShape *sh;
-    JSValue *tab;
     uint32_t i, len, new_count;
 
+    /* track modification of Array.prototype */
+    if (unlikely(p == JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_ARRAY]))) {
+        ctx->std_array_prototype = false;
+    }
     if (js_shape_prepare_update(ctx, p, NULL))
         return -1;
     len = p->u.array.count;
@@ -17506,12 +20761,22 @@ static no_inline __exception int convert_fast_array_to_array(JSContext *ctx,
             return -1;
     }
 
-    tab = p->u.array.u.values;
-    for(i = 0; i < len; i++) {
-        /* add_property cannot fail here but
-           __JS_AtomFromUInt32(i) fails for i > INT32_MAX */
-        pr = add_property(ctx, p, __JS_AtomFromUInt32(i), JS_PROP_C_W_E);
-        pr->u.value = *tab++;
+    if (p->class_id == JS_CLASS_MAPPED_ARGUMENTS) {
+        JSVarRef **tab = p->u.array.u.var_refs;
+        for(i = 0; i < len; i++) {
+            /* add_property cannot fail here but
+               __JS_AtomFromUInt32(i) fails for i > INT32_MAX */
+            pr = add_property(ctx, p, __JS_AtomFromUInt32(i), JS_PROP_C_W_E | JS_PROP_VARREF);
+            pr->u.var_ref = *tab++;
+        }
+    } else {
+        JSValue *tab = p->u.array.u.values;
+        for(i = 0; i < len; i++) {
+            /* add_property cannot fail here but
+               __JS_AtomFromUInt32(i) fails for i > INT32_MAX */
+            pr = add_property(ctx, p, __JS_AtomFromUInt32(i), JS_PROP_C_W_E);
+            pr->u.value = *tab++;
+        }
     }
     js_free(ctx, p->u.array.u.values);
     p->u.array.count = 0;
@@ -17533,7 +20798,7 @@ static int delete_property(JSContext *ctx, JSObject *p, JSAtom atom)
     sh = p->shape;
     h1 = atom & sh->prop_hash_mask;
     h = prop_hash_end(sh)[-h1 - 1];
-    prop = get_shape_prop(sh);
+    prop = sh->prop;
     lpr = NULL;
     lpr_idx = 0;   /* prevent warning */
     while (h != 0) {
@@ -17544,13 +20809,13 @@ static int delete_property(JSContext *ctx, JSObject *p, JSAtom atom)
                 return false;
             /* realloc the shape if needed */
             if (lpr)
-                lpr_idx = lpr - get_shape_prop(sh);
+                lpr_idx = lpr - sh->prop;
             if (js_shape_prepare_update(ctx, p, &pr))
                 return -1;
             sh = p->shape;
             /* remove property */
             if (lpr) {
-                lpr = get_shape_prop(sh) + lpr_idx;
+                lpr = &sh->prop[lpr_idx];
                 lpr->hash_next = pr->hash_next;
             } else {
                 prop_hash_end(sh)[-h1 - 1] = pr->hash_next;
@@ -17582,13 +20847,8 @@ static int delete_property(JSContext *ctx, JSObject *p, JSAtom atom)
             if (JS_AtomIsArrayIndex(ctx, &idx, atom) &&
                 idx < p->u.array.count) {
                 if (p->class_id == JS_CLASS_ARRAY ||
-                    p->class_id == JS_CLASS_ARGUMENTS) {
-                    /* Special case deleting the last element of a fast Array */
-                    if (idx == p->u.array.count - 1) {
-                        JS_FreeValue(ctx, p->u.array.u.values[idx]);
-                        p->u.array.count = idx;
-                        return true;
-                    }
+                    p->class_id == JS_CLASS_ARGUMENTS ||
+                    p->class_id == JS_CLASS_MAPPED_ARGUMENTS) {
                     if (convert_fast_array_to_array(ctx, p))
                         return -1;
                     goto redo;
@@ -17687,7 +20947,7 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
                    passes in case one of the property is not
                    configurable */
                 cur_len = len;
-                for(i = 0, pr = get_shape_prop(sh); i < sh->prop_count;
+                for(i = 0, pr = sh->prop; i < sh->prop_count;
                     i++, pr++) {
                     if (pr->atom != JS_ATOM_NULL &&
                         JS_AtomIsArrayIndex(ctx, &idx, pr->atom)) {
@@ -17698,7 +20958,7 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
                     }
                 }
 
-                for(i = 0, pr = get_shape_prop(sh); i < sh->prop_count;
+                for(i = 0, pr = sh->prop; i < sh->prop_count;
                     i++, pr++) {
                     if (pr->atom != JS_ATOM_NULL &&
                         JS_AtomIsArrayIndex(ctx, &idx, pr->atom)) {
@@ -17707,7 +20967,7 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
                             delete_property(ctx, p, pr->atom);
                             /* WARNING: the shape may have been modified */
                             sh = p->shape;
-                            pr = get_shape_prop(sh) + i;
+                            pr = &sh->prop[i];
                         }
                     }
                 }
@@ -17726,11 +20986,17 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
 /* return -1 if exception */
 static int expand_fast_array(JSContext *ctx, JSObject *p, uint32_t new_len)
 {
-    uint32_t new_size;
+    uint32_t old_size, new_size;
     size_t slack;
     JSValue *new_array_prop;
-    /* XXX: potential arithmetic overflow */
-    new_size = max_int(new_len, p->u.array.u1.size * 3 / 2);
+
+    old_size = p->u.array.u1.size;
+    new_size = old_size + old_size/2;   // grow by 50%
+    if (new_size < old_size) {          // integer overflow
+        JS_ThrowOutOfMemory(ctx);
+        return -1;
+    }
+    new_size = max_int(new_len, new_size);
     new_array_prop = js_realloc2(ctx, p->u.array.u.values, sizeof(JSValue) * new_size, &slack);
     if (!new_array_prop)
         return -1;
@@ -17754,7 +21020,7 @@ static int add_fast_array_element(JSContext *ctx, JSObject *p,
     if (likely(JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT)) {
         array_len = JS_VALUE_GET_INT(p->prop[0].u.value);
         if (new_len > array_len) {
-            if (unlikely(!(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE))) {
+            if (unlikely(!(p->shape->prop->flags & JS_PROP_WRITABLE))) {
                 JS_FreeValue(ctx, val);
                 return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
             }
@@ -17792,6 +21058,7 @@ static int JS_SetPropertyInternal2(JSContext *ctx, JSValueConst obj, JSAtom prop
     JSShapeProperty *prs;
     JSProperty *pr;
     JSPropertyDescriptor desc;
+    int desc_flags;
     int ret;
 
     switch(JS_VALUE_GET_TAG(this_obj)) {
@@ -17993,18 +21260,15 @@ retry:
     // TODO(bnoordhuis) return JSProperty slot and update in place
     // when plain property (not is_exotic/setter/etc.) to avoid
     // calling find_own_property() thrice?
-    ret = JS_GetOwnPropertyInternal(ctx, &desc, p, prop);
+    ret = JS_GetOwnPropertyFlagsInternal(ctx, &desc_flags, p, prop);
     if (ret < 0)
         goto fail;
 
     if (ret) {
-        JS_FreeValue(ctx, desc.value);
-        if (desc.flags & JS_PROP_GETSET) {
-            JS_FreeValue(ctx, desc.getter);
-            JS_FreeValue(ctx, desc.setter);
+        if (desc_flags & JS_PROP_GETSET) {
             ret = JS_ThrowTypeErrorOrFalse(ctx, flags, "setter is forbidden");
             goto done;
-        } else if (!(desc.flags & JS_PROP_WRITABLE) ||
+        } else if (!(desc_flags & JS_PROP_WRITABLE) ||
                    p->class_id == JS_CLASS_MODULE_NS) {
         read_only_prop:
             ret = JS_ThrowTypeErrorReadOnly(ctx, flags, prop);
@@ -18060,27 +21324,13 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
         switch(p->class_id) {
         case JS_CLASS_ARRAY:
             if (unlikely(idx >= (uint32_t)p->u.array.count)) {
-                JSObject *p1;
-                JSShape *sh1;
-
                 /* fast path to add an element to the array */
-                if (idx != (uint32_t)p->u.array.count ||
-                    !p->fast_array || !p->extensible)
+                if (unlikely(idx != (uint32_t)p->u.array.count ||
+                             !p->fast_array ||
+                             !p->extensible ||
+                             p->shape->proto != JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_ARRAY]) ||
+                             !ctx->std_array_prototype)) {
                     goto slow_path;
-                /* check if prototype chain has a numeric property */
-                p1 = p->shape->proto;
-                while (p1 != NULL) {
-                    sh1 = p1->shape;
-                    if (p1->class_id == JS_CLASS_ARRAY) {
-                        if (unlikely(!p1->fast_array))
-                            goto slow_path;
-                    } else if (p1->class_id == JS_CLASS_OBJECT) {
-                        if (unlikely(sh1->has_small_array_index))
-                            goto slow_path;
-                    } else {
-                        goto slow_path;
-                    }
-                    p1 = sh1->proto;
                 }
                 /* add element */
                 return add_fast_array_element(ctx, p, val, flags);
@@ -18092,9 +21342,16 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
                 goto slow_path;
             set_value(ctx, &p->u.array.u.values[idx], val);
             break;
+        case JS_CLASS_MAPPED_ARGUMENTS:
+            if (unlikely(idx >= (uint32_t)p->u.array.count))
+                goto slow_path;
+            set_value(ctx, p->u.array.u.var_refs[idx]->pvalue, val);
+            break;
         case JS_CLASS_UINT8C_ARRAY:
             if (JS_ToUint8ClampFree(ctx, &v, val))
                 goto ta_cvt_fail;
+            if (typed_array_is_immutable(p))
+                goto ta_immutable;
             /* Note: the conversion can detach the typed array, so the
                array bound check must be done after */
             if (unlikely(idx >= (uint32_t)p->u.array.count))
@@ -18105,6 +21362,8 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
         case JS_CLASS_UINT8_ARRAY:
             if (JS_ToInt32Free(ctx, &v, val))
                 goto ta_cvt_fail;
+            if (typed_array_is_immutable(p))
+                goto ta_immutable;
             if (unlikely(idx >= (uint32_t)p->u.array.count))
                 goto ta_out_of_bound;
             p->u.array.u.uint8_ptr[idx] = v;
@@ -18113,6 +21372,8 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
         case JS_CLASS_UINT16_ARRAY:
             if (JS_ToInt32Free(ctx, &v, val))
                 goto ta_cvt_fail;
+            if (typed_array_is_immutable(p))
+                goto ta_immutable;
             if (unlikely(idx >= (uint32_t)p->u.array.count))
                 goto ta_out_of_bound;
             p->u.array.u.uint16_ptr[idx] = v;
@@ -18121,6 +21382,8 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
         case JS_CLASS_UINT32_ARRAY:
             if (JS_ToInt32Free(ctx, &v, val))
                 goto ta_cvt_fail;
+            if (typed_array_is_immutable(p))
+                goto ta_immutable;
             if (unlikely(idx >= (uint32_t)p->u.array.count))
                 goto ta_out_of_bound;
             p->u.array.u.uint32_ptr[idx] = v;
@@ -18132,6 +21395,8 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
                 int64_t v;
                 if (JS_ToBigInt64Free(ctx, &v, val))
                     goto ta_cvt_fail;
+                if (typed_array_is_immutable(p))
+                    goto ta_immutable;
                 if (unlikely(idx >= (uint32_t)p->u.array.count))
                     goto ta_out_of_bound;
                 p->u.array.u.uint64_ptr[idx] = v;
@@ -18140,6 +21405,8 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
         case JS_CLASS_FLOAT16_ARRAY:
             if (JS_ToFloat64Free(ctx, &d, val))
                 goto ta_cvt_fail;
+            if (typed_array_is_immutable(p))
+                goto ta_immutable;
             if (unlikely(idx >= (uint32_t)p->u.array.count))
                 goto ta_out_of_bound;
             p->u.array.u.fp16_ptr[idx] = tofp16(d);
@@ -18147,6 +21414,8 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
         case JS_CLASS_FLOAT32_ARRAY:
             if (JS_ToFloat64Free(ctx, &d, val))
                 goto ta_cvt_fail;
+            if (typed_array_is_immutable(p))
+                goto ta_immutable;
             if (unlikely(idx >= (uint32_t)p->u.array.count))
                 goto ta_out_of_bound;
             p->u.array.u.float_ptr[idx] = d;
@@ -18159,6 +21428,10 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
                     return false;
                 }
                 return -1;
+            }
+            if (typed_array_is_immutable(p)) {
+            ta_immutable:
+                return false;
             }
             if (unlikely(idx >= (uint32_t)p->u.array.count)) {
             ta_out_of_bound:
@@ -18288,7 +21561,7 @@ static int JS_CreateProperty(JSContext *ctx, JSObject *p,
                 plen = &p->prop[0];
                 JS_ToUint32(ctx, &len, plen->u.value);
                 if ((idx + 1) > len) {
-                    pslen = get_shape_prop(p->shape);
+                    pslen = p->shape->prop;
                     if (unlikely(!(pslen->flags & JS_PROP_WRITABLE)))
                         return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
                     /* XXX: should update the length after defining
@@ -18398,7 +21671,7 @@ static int js_shape_prepare_update(JSContext *ctx, JSObject *p,
     if (sh->is_hashed) {
         if (sh->header.ref_count != 1) {
             if (pprs)
-                idx = *pprs - get_shape_prop(sh);
+                idx = *pprs - sh->prop;
             /* clone the shape (the resulting one is no longer hashed) */
             sh = js_clone_shape(ctx, sh);
             if (!sh)
@@ -18406,7 +21679,7 @@ static int js_shape_prepare_update(JSContext *ctx, JSObject *p,
             js_free_shape(ctx->rt, p->shape);
             p->shape = sh;
             if (pprs)
-                *pprs = get_shape_prop(sh) + idx;
+                *pprs = &sh->prop[idx];
         } else {
             js_shape_hash_unlink(ctx->rt, sh);
             sh->is_hashed = false;
@@ -18596,7 +21869,7 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                        property is read-only. */
                     if ((flags & (JS_PROP_HAS_WRITABLE | JS_PROP_WRITABLE)) ==
                         JS_PROP_HAS_WRITABLE) {
-                        prs = get_shape_prop(p->shape);
+                        prs = p->shape->prop;
                         if (js_update_property_flags(ctx, p, &prs,
                                                      prs->flags & ~JS_PROP_WRITABLE))
                             return -1;
@@ -18731,13 +22004,21 @@ static int JS_DefineAutoInitProperty(JSContext *ctx, JSValueConst this_obj,
     return true;
 }
 
+/* Like JS_DefinePropertyValue but borrows val (does not free it) */
+static int JS_DefinePropertyValueConst(JSContext *ctx, JSValueConst this_obj,
+                                       JSAtom prop, JSValueConst val, int flags)
+{
+    return JS_DefineProperty(ctx, this_obj, prop, val, JS_UNDEFINED, JS_UNDEFINED,
+                             flags | JS_PROP_HAS_VALUE | JS_PROP_HAS_CONFIGURABLE |
+                             JS_PROP_HAS_WRITABLE | JS_PROP_HAS_ENUMERABLE);
+}
+
 /* shortcut to add or redefine a new property value */
 int JS_DefinePropertyValue(JSContext *ctx, JSValueConst this_obj,
                            JSAtom prop, JSValue val, int flags)
 {
     int ret;
-    ret = JS_DefineProperty(ctx, this_obj, prop, val, JS_UNDEFINED, JS_UNDEFINED,
-                            flags | JS_PROP_HAS_VALUE | JS_PROP_HAS_CONFIGURABLE | JS_PROP_HAS_WRITABLE | JS_PROP_HAS_ENUMERABLE);
+    ret = JS_DefinePropertyValueConst(ctx, this_obj, prop, val, flags);
     JS_FreeValue(ctx, val);
     return ret;
 }
@@ -18808,6 +22089,29 @@ static int JS_CreateDataPropertyUint32(JSContext *ctx, JSValueConst this_obj,
     return JS_DefinePropertyValueValue(ctx, this_obj, js_int64(idx),
                                        val, flags | JS_PROP_CONFIGURABLE |
                                        JS_PROP_ENUMERABLE | JS_PROP_WRITABLE);
+}
+
+/* Like JS_DefinePropertyValueInt64 but borrows val (does not free it) */
+static int JS_DefinePropertyValueInt64Const(JSContext *ctx, JSValueConst this_obj,
+                                            int64_t idx, JSValueConst val, int flags)
+{
+    JSAtom atom;
+    int ret;
+    atom = JS_ValueToAtom(ctx, js_int64(idx));
+    if (unlikely(atom == JS_ATOM_NULL))
+        return -1;
+    ret = JS_DefinePropertyValueConst(ctx, this_obj, atom, val, flags);
+    JS_FreeAtom(ctx, atom);
+    return ret;
+}
+
+/* Like JS_CreateDataPropertyUint32 but borrows val (does not free it) */
+static int JS_CreateDataPropertyUint32Const(JSContext *ctx, JSValueConst this_obj,
+                                            int64_t idx, JSValueConst val, int flags)
+{
+    return JS_DefinePropertyValueInt64Const(ctx, this_obj, idx, val,
+                                            flags | JS_PROP_CONFIGURABLE |
+                                            JS_PROP_ENUMERABLE | JS_PROP_WRITABLE);
 }
 
 
@@ -18985,6 +22289,14 @@ static JSValue JS_GetGlobalVar(JSContext *ctx, JSAtom prop,
             return JS_ThrowReferenceErrorUninitialized(ctx, prs->atom);
         return js_dup(pr->u.value);
     }
+
+    /* fast path */
+    p = JS_VALUE_GET_OBJ(ctx->global_obj);
+    prs = find_own_property(&pr, p, prop);
+    if (prs) {
+        if (likely((prs->flags & JS_PROP_TMASK) == 0))
+            return js_dup(pr->u.value);
+    }
     return JS_GetPropertyInternal(ctx, ctx->global_obj, prop,
                                  ctx->global_obj, throw_ref_error);
 }
@@ -19026,37 +22338,16 @@ static int JS_GetGlobalVarRef(JSContext *ctx, JSAtom prop, JSValue *sp)
     return 0;
 }
 
-/* use for strict variable access: test if the variable exists */
-static int JS_CheckGlobalVar(JSContext *ctx, JSAtom prop)
-{
-    JSObject *p;
-    JSShapeProperty *prs;
-    int ret;
-
-    /* no exotic behavior is possible in global_var_obj */
-    p = JS_VALUE_GET_OBJ(ctx->global_var_obj);
-    prs = find_own_property1(p, prop);
-    if (prs) {
-        ret = true;
-    } else {
-        ret = JS_HasProperty(ctx, ctx->global_obj, prop);
-        if (ret < 0)
-            return -1;
-    }
-    return ret;
-}
-
 /* flag = 0: normal variable write
    flag = 1: initialize lexical variable
-   flag = 2: normal variable write, strict check was done before
 */
-static int JS_SetGlobalVar(JSContext *ctx, JSAtom prop, JSValue val,
-                           int flag)
+static inline int JS_SetGlobalVar(JSContext *ctx, JSAtom prop, JSValue val,
+                                  int flag)
 {
     JSObject *p;
     JSShapeProperty *prs;
     JSProperty *pr;
-    int flags;
+    int ret;
 
     /* no exotic behavior is possible in global_var_obj */
     p = JS_VALUE_GET_OBJ(ctx->global_var_obj);
@@ -19077,10 +22368,30 @@ static int JS_SetGlobalVar(JSContext *ctx, JSAtom prop, JSValue val,
         set_value(ctx, &pr->u.value, val);
         return 0;
     }
-    flags = JS_PROP_THROW_STRICT;
-    if (is_strict_mode(ctx))
-        flags |= JS_PROP_NO_ADD;
-    return JS_SetPropertyInternal(ctx, ctx->global_obj, prop, val, flags);
+
+    p = JS_VALUE_GET_OBJ(ctx->global_obj);
+    prs = find_own_property(&pr, p, prop);
+    if (prs) {
+        if (likely((prs->flags & (JS_PROP_TMASK | JS_PROP_WRITABLE |
+                                  JS_PROP_LENGTH)) == JS_PROP_WRITABLE)) {
+            /* fast path */
+            set_value(ctx, &pr->u.value, val);
+            return 0;
+        }
+    }
+    /* slow path */
+    ret = JS_HasProperty(ctx, ctx->global_obj, prop);
+    if (ret < 0) {
+        JS_FreeValue(ctx, val);
+        return -1;
+    }
+    if (ret == 0 && is_strict_mode(ctx)) {
+        JS_FreeValue(ctx, val);
+        JS_ThrowReferenceErrorNotDefined(ctx, prop);
+        return -1;
+    }
+    return JS_SetPropertyInternal(ctx, ctx->global_obj, prop, val,
+                                  JS_PROP_THROW_STRICT);
 }
 
 /* return -1, false or true */
@@ -19162,6 +22473,11 @@ bool JS_IsFunction(JSContext *ctx, JSValueConst val)
     default:
         return (ctx->rt->class_array[p->class_id].call != NULL);
     }
+}
+
+bool JS_IsAsyncFunction(JSValueConst val)
+{
+    return JS_CLASS_ASYNC_FUNCTION == JS_GetClassID(val);
 }
 
 static bool JS_IsCFunction(JSContext *ctx, JSValueConst val, JSCFunction *func,
@@ -19441,6 +22757,12 @@ static int JS_ToBoolFree(JSContext *ctx, JSValue val)
     case JS_TAG_STRING:
         {
             bool ret = JS_VALUE_GET_STRING(val)->len != 0;
+            JS_FreeValue(ctx, val);
+            return ret;
+        }
+    case JS_TAG_STRING_ROPE:
+        {
+            bool ret = JS_VALUE_GET_STRING_ROPE(val)->len != 0;
             JS_FreeValue(ctx, val);
             return ret;
         }
@@ -21005,7 +24327,7 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
         if (!(flags & ATOD_INT_ONLY) &&
             (atod_type == ATOD_TYPE_FLOAT64) &&
             js__strstart(p, "Infinity", &p)) {
-            double d = INF;
+            double d = INFINITY;
             if (is_neg)
                 d = -d;
             val = js_float64(d);
@@ -21157,6 +24479,7 @@ static JSValue JS_ToNumberHintFree(JSContext *ctx, JSValue val,
             return JS_EXCEPTION;
         goto redo;
     case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
         {
             const char *str;
             const char *p;
@@ -21778,6 +25101,8 @@ static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val,
     switch(tag) {
     case JS_TAG_STRING:
         return js_dup(val);
+    case JS_TAG_STRING_ROPE:
+        return js_linearize_string_rope(ctx, val);
     case JS_TAG_INT:
         len = i32toa(buf, JS_VALUE_GET_INT(val));
         return js_new_string8_len(ctx, buf, len);
@@ -21831,8 +25156,9 @@ JSValue JS_ToString(JSContext *ctx, JSValueConst val)
 
 static JSValue JS_ToStringFree(JSContext *ctx, JSValue val)
 {
-    JSValue ret;
-    ret = JS_ToString(ctx, val);
+    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING)
+        return val;
+    JSValue ret = JS_ToString(ctx, val);
     JS_FreeValue(ctx, val);
     return ret;
 }
@@ -21997,7 +25323,7 @@ static __maybe_unused void JS_DumpObject(JSRuntime *rt, JSObject *p)
 
     if (sh) {
         printf("{ ");
-        for(i = 0, prs = get_shape_prop(sh); i < sh->prop_count; i++, prs++) {
+        for(i = 0, prs = sh->prop; i < sh->prop_count; i++, prs++) {
             if (prs->atom != JS_ATOM_NULL) {
                 pr = &p->prop[i];
                 if (!is_first)
@@ -22135,6 +25461,12 @@ static __maybe_unused void JS_DumpValue(JSRuntime *rt, JSValueConst val)
             JS_DumpString(rt, p);
         }
         break;
+    case JS_TAG_STRING_ROPE:
+        {
+            JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
+            printf("[rope len=%d depth=%d]", r->len, r->depth);
+        }
+        break;
     case JS_TAG_FUNCTION_BYTECODE:
         {
             JSFunctionBytecode *b = JS_VALUE_GET_PTR(val);
@@ -22198,12 +25530,17 @@ static int js_is_array(JSContext *ctx, JSValueConst val)
 
 static double js_math_pow(double a, double b)
 {
+    double d;
+
     if (unlikely(!isfinite(b)) && fabs(a) == 1) {
         /* not compatible with IEEE 754 */
-        return NAN;
+        d = NAN;
     } else {
-        return pow(a, b);
+        JS_X87_FPCW_SAVE_AND_ADJUST(fpcw);
+        d = pow(a, b);
+        JS_X87_FPCW_RESTORE(fpcw);
     }
+    return d;
 }
 
 JSValue JS_NewBigInt64(JSContext *ctx, int64_t v)
@@ -22290,6 +25627,7 @@ static JSValue JS_ToBigIntFree(JSContext *ctx, JSValue val)
         val = __JS_NewShortBigInt(ctx, JS_VALUE_GET_INT(val));
         break;
     case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
         val = JS_StringToBigIntErr(ctx, val);
         if (JS_IsException(val))
             return val;
@@ -22623,11 +25961,17 @@ static no_inline __exception int js_binary_arith_slow(JSContext *ctx, JSValue *s
             }
             break;
         case OP_div:
-            sp[-2] = js_number((double)v1 / (double)v2);
+            {
+                JS_X87_FPCW_SAVE_AND_ADJUST(fpcw);
+                sp[-2] = js_number((double)v1 / (double)v2);
+                JS_X87_FPCW_RESTORE(fpcw);
+            }
             return 0;
         case OP_mod:
             if (v1 < 0 || v2 <= 0) {
+                JS_X87_FPCW_SAVE_AND_ADJUST(fpcw);
                 sp[-2] = js_number(fmod(v1, v2));
+                JS_X87_FPCW_RESTORE(fpcw);
                 return 0;
             } else {
                 v = (int64_t)v1 % (int64_t)v2;
@@ -22691,6 +26035,7 @@ static no_inline __exception int js_binary_arith_slow(JSContext *ctx, JSValue *s
         if (JS_ToFloat64Free(ctx, &d2, op2))
             goto exception;
     handle_float64:
+        JS_X87_FPCW_SAVE_AND_ADJUST(fpcw);
         switch(op) {
         case OP_sub:
             dr = d1 - d2;
@@ -22710,6 +26055,7 @@ static no_inline __exception int js_binary_arith_slow(JSContext *ctx, JSValue *s
         default:
             abort();
         }
+        JS_X87_FPCW_RESTORE(fpcw);
         sp[-2] = js_float64(dr);
     }
     return 0;
@@ -22771,7 +26117,7 @@ static no_inline __exception int js_add_slow(JSContext *ctx, JSValue *sp)
         tag2 = JS_VALUE_GET_NORM_TAG(op2);
     }
 
-    if (tag1 == JS_TAG_STRING || tag2 == JS_TAG_STRING) {
+    if (tag_is_string(tag1) || tag_is_string(tag2)) {
         sp[-2] = JS_ConcatString(ctx, op1, op2);
         if (JS_IsException(sp[-2]))
             goto exception;
@@ -22826,7 +26172,9 @@ static no_inline __exception int js_add_slow(JSContext *ctx, JSValue *sp)
         }
         if (JS_ToFloat64Free(ctx, &d2, op2))
             goto exception;
+        JS_X87_FPCW_SAVE_AND_ADJUST(fpcw);
         sp[-2] = js_float64(d1 + d2);
+        JS_X87_FPCW_RESTORE(fpcw);
     }
     return 0;
  exception:
@@ -23114,11 +26462,13 @@ static no_inline int js_relational_slow(JSContext *ctx, JSValue *sp,
     tag1 = JS_VALUE_GET_NORM_TAG(op1);
     tag2 = JS_VALUE_GET_NORM_TAG(op2);
 
-    if (tag1 == JS_TAG_STRING && tag2 == JS_TAG_STRING) {
-        JSString *p1, *p2;
-        p1 = JS_VALUE_GET_STRING(op1);
-        p2 = JS_VALUE_GET_STRING(op2);
-        res = js_string_compare(p1, p2);
+    if (tag_is_string(tag1) && tag_is_string(tag2)) {
+        if (tag1 == JS_TAG_STRING && tag2 == JS_TAG_STRING) {
+            res = js_string_compare(JS_VALUE_GET_STRING(op1),
+                                    JS_VALUE_GET_STRING(op2));
+        } else {
+            res = js_string_rope_compare(op1, op2, false);
+        }
         switch(op) {
         case OP_lt:
             res = (res < 0);
@@ -23267,21 +26617,23 @@ static no_inline __exception int js_eq_slow(JSContext *ctx, JSValue *sp,
         }
     } else if (tag1 == tag2) {
         res = js_strict_eq2(ctx, op1, op2, JS_EQ_STRICT);
+        JS_FreeValue(ctx, op1);
+        JS_FreeValue(ctx, op2);
     } else if ((tag1 == JS_TAG_NULL && tag2 == JS_TAG_UNDEFINED) ||
                (tag2 == JS_TAG_NULL && tag1 == JS_TAG_UNDEFINED)) {
         res = true;
-    } else if ((tag1 == JS_TAG_STRING && tag_is_number(tag2)) ||
-               (tag2 == JS_TAG_STRING && tag_is_number(tag1))) {
+    } else if ((tag_is_string(tag1) && tag_is_number(tag2)) ||
+               (tag_is_string(tag2) && tag_is_number(tag1))) {
 
         if (tag1 == JS_TAG_BIG_INT || tag1 == JS_TAG_SHORT_BIG_INT ||
             tag2 == JS_TAG_BIG_INT || tag2 == JS_TAG_SHORT_BIG_INT) {
-            if (tag1 == JS_TAG_STRING) {
+            if (tag_is_string(tag1)) {
                 op1 = JS_StringToBigInt(ctx, op1);
                 if (JS_VALUE_GET_TAG(op1) != JS_TAG_BIG_INT &&
                     JS_VALUE_GET_TAG(op1) != JS_TAG_SHORT_BIG_INT)
                     goto invalid_bigint_string;
             }
-            if (tag2 == JS_TAG_STRING) {
+            if (tag_is_string(tag2)) {
                 op2 = JS_StringToBigInt(ctx, op2);
                 if (JS_VALUE_GET_TAG(op2) != JS_TAG_BIG_INT &&
                     JS_VALUE_GET_TAG(op2) != JS_TAG_SHORT_BIG_INT ) {
@@ -23305,6 +26657,8 @@ static no_inline __exception int js_eq_slow(JSContext *ctx, JSValue *sp,
             }
         }
         res = js_strict_eq(ctx, op1, op2);
+        JS_FreeValue(ctx, op1);
+        JS_FreeValue(ctx, op2);
     } else if (tag1 == JS_TAG_BOOL) {
         op1 = js_int32(JS_VALUE_GET_INT(op1));
         goto redo;
@@ -23312,9 +26666,9 @@ static no_inline __exception int js_eq_slow(JSContext *ctx, JSValue *sp,
         op2 = js_int32(JS_VALUE_GET_INT(op2));
         goto redo;
     } else if ((tag1 == JS_TAG_OBJECT &&
-                (tag_is_number(tag2) || tag2 == JS_TAG_STRING || tag2 == JS_TAG_SYMBOL)) ||
+                (tag_is_number(tag2) || tag_is_string(tag2) || tag2 == JS_TAG_SYMBOL)) ||
                (tag2 == JS_TAG_OBJECT &&
-                (tag_is_number(tag1) || tag1 == JS_TAG_STRING || tag1 == JS_TAG_SYMBOL))) {
+                (tag_is_number(tag1) || tag_is_string(tag1) || tag1 == JS_TAG_SYMBOL))) {
         op1 = JS_ToPrimitiveFree(ctx, op1, HINT_NONE);
         if (JS_IsException(op1)) {
             JS_FreeValue(ctx, op2);
@@ -23387,7 +26741,7 @@ static no_inline int js_shr_slow(JSContext *ctx, JSValue *sp)
     return -1;
 }
 
-static bool js_strict_eq2(JSContext *ctx, JSValue op1, JSValue op2,
+static bool js_strict_eq2(JSContext *ctx, JSValueConst op1, JSValueConst op2,
                           JSStrictEqModeEnum eq_mode)
 {
     bool res;
@@ -23402,7 +26756,6 @@ static bool js_strict_eq2(JSContext *ctx, JSValue op1, JSValue op2,
             res = false;
         } else {
             res = JS_VALUE_GET_INT(op1) == JS_VALUE_GET_INT(op2);
-            goto done_no_free;
         }
         break;
     case JS_TAG_NULL:
@@ -23410,14 +26763,15 @@ static bool js_strict_eq2(JSContext *ctx, JSValue op1, JSValue op2,
         res = (tag1 == tag2);
         break;
     case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
         {
-            JSString *p1, *p2;
-            if (tag1 != tag2) {
+            if (!tag_is_string(tag2)) {
                 res = false;
+            } else if (tag1 == JS_TAG_STRING && tag2 == JS_TAG_STRING) {
+                res = js_string_eq(JS_VALUE_GET_STRING(op1),
+                                   JS_VALUE_GET_STRING(op2));
             } else {
-                p1 = JS_VALUE_GET_STRING(op1);
-                p2 = JS_VALUE_GET_STRING(op2);
-                res = js_string_eq(p1, p2);
+                res = (js_string_rope_compare(op1, op2, true) == 0);
             }
         }
         break;
@@ -23477,7 +26831,7 @@ static bool js_strict_eq2(JSContext *ctx, JSValue op1, JSValue op2,
         } else {
             res = (d1 == d2); /* if NaN return false and +0 == -0 */
         }
-        goto done_no_free;
+        break;
     case JS_TAG_SHORT_BIG_INT:
     case JS_TAG_BIG_INT:
         {
@@ -23505,25 +26859,22 @@ static bool js_strict_eq2(JSContext *ctx, JSValue op1, JSValue op2,
         res = false;
         break;
     }
-    JS_FreeValue(ctx, op1);
-    JS_FreeValue(ctx, op2);
- done_no_free:
     return res;
 }
 
-static bool js_strict_eq(JSContext *ctx, JSValue op1, JSValue op2)
+static bool js_strict_eq(JSContext *ctx, JSValueConst op1, JSValueConst op2)
 {
     return js_strict_eq2(ctx, op1, op2, JS_EQ_STRICT);
 }
 
 static bool js_same_value(JSContext *ctx, JSValueConst op1, JSValueConst op2)
 {
-    return js_strict_eq2(ctx, js_dup(op1), js_dup(op2), JS_EQ_SAME_VALUE);
+    return js_strict_eq2(ctx, op1, op2, JS_EQ_SAME_VALUE);
 }
 
 static bool js_same_value_zero(JSContext *ctx, JSValueConst op1, JSValueConst op2)
 {
-    return js_strict_eq2(ctx, js_dup(op1), js_dup(op2), JS_EQ_SAME_VALUE_ZERO);
+    return js_strict_eq2(ctx, op1, op2, JS_EQ_SAME_VALUE_ZERO);
 }
 
 static no_inline int js_strict_eq_slow(JSContext *ctx, JSValue *sp,
@@ -23531,6 +26882,8 @@ static no_inline int js_strict_eq_slow(JSContext *ctx, JSValue *sp,
 {
     bool res;
     res = js_strict_eq(ctx, sp[-2], sp[-1]);
+    JS_FreeValue(ctx, sp[-2]);
+    JS_FreeValue(ctx, sp[-1]);
     sp[-2] = js_bool(res ^ is_neq);
     return 0;
 }
@@ -23652,6 +27005,7 @@ static __exception int js_operator_typeof(JSContext *ctx, JSValue op1)
         atom = JS_ATOM_boolean;
         break;
     case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
         atom = JS_ATOM_string;
         break;
     case JS_TAG_OBJECT:
@@ -23760,33 +27114,27 @@ static const JSClassExoticMethods js_arguments_exotic_methods = {
 static JSValue js_build_arguments(JSContext *ctx, int argc, JSValueConst *argv)
 {
     JSValue val, *tab;
-    JSProperty *pr;
+    JSProperty props[3];
     JSObject *p;
     int i;
 
-    val = JS_NewObjectProtoClass(ctx, ctx->class_proto[JS_CLASS_OBJECT],
-                                 JS_CLASS_ARGUMENTS);
+    props[0].u.value = js_int32(argc); /* length */
+    props[1].u.value = js_dup(ctx->array_proto_values); /* Symbol.iterator */
+    props[2].u.getset.getter = JS_VALUE_GET_OBJ(js_dup(ctx->throw_type_error)); /* callee */
+    props[2].u.getset.setter = JS_VALUE_GET_OBJ(js_dup(ctx->throw_type_error)); /* callee */
+
+    val = JS_NewObjectFromShape(ctx, js_dup_shape(ctx->arguments_shape),
+                                JS_CLASS_ARGUMENTS, props);
     if (JS_IsException(val))
         return val;
     p = JS_VALUE_GET_OBJ(val);
-
-    /* add the length field (cannot fail) */
-    pr = add_property(ctx, p, JS_ATOM_length,
-                      JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
-    if (!pr) {
-        JS_FreeValue(ctx, val);
-        return JS_EXCEPTION;
-    }
-    pr->u.value = js_int32(argc);
 
     /* initialize the fast array part */
     tab = NULL;
     if (argc > 0) {
         tab = js_malloc(ctx, sizeof(tab[0]) * argc);
-        if (!tab) {
-            JS_FreeValue(ctx, val);
-            return JS_EXCEPTION;
-        }
+        if (!tab)
+            goto fail;
         for(i = 0; i < argc; i++) {
             tab[i] = js_dup(argv[i]);
         }
@@ -23794,18 +27142,46 @@ static JSValue js_build_arguments(JSContext *ctx, int argc, JSValueConst *argv)
     p->u.array.u.values = tab;
     p->u.array.count = argc;
 
-    JS_DefinePropertyValue(ctx, val, JS_ATOM_Symbol_iterator,
-                           js_dup(ctx->array_proto_values),
-                           JS_PROP_CONFIGURABLE | JS_PROP_WRITABLE);
-    /* add callee property to throw a TypeError in strict mode */
-    JS_DefineProperty(ctx, val, JS_ATOM_callee, JS_UNDEFINED,
-                      ctx->throw_type_error, ctx->throw_type_error,
-                      JS_PROP_HAS_GET | JS_PROP_HAS_SET);
     return val;
+ fail:
+    JS_FreeValue(ctx, val);
+    return JS_EXCEPTION;
 }
 
 #define GLOBAL_VAR_OFFSET 0x40000000
 #define ARGUMENT_VAR_OFFSET 0x20000000
+
+static void js_mapped_arguments_finalizer(JSRuntime *rt, JSValueConst val)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(val);
+    if (p->fast_array) {
+        JSVarRef **var_refs = p->u.array.u.var_refs;
+        int i;
+        if (var_refs) {
+            for(i = 0; i < p->u.array.count; i++) {
+                if (var_refs[i])
+                    free_var_ref(rt, var_refs[i]);
+            }
+            js_free_rt(rt, var_refs);
+        }
+    }
+}
+
+static void js_mapped_arguments_mark(JSRuntime *rt, JSValueConst val,
+                                     JS_MarkFunc *mark_func)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(val);
+    if (p->fast_array) {
+        JSVarRef **var_refs = p->u.array.u.var_refs;
+        int i;
+        if (var_refs) {
+            for(i = 0; i < p->u.array.count; i++) {
+                if (var_refs[i] && var_refs[i]->is_detached)
+                    mark_func(rt, &var_refs[i]->header);
+            }
+        }
+    }
+}
 
 /* legacy arguments object: add references to the function arguments */
 static JSValue js_build_mapped_arguments(JSContext *ctx, int argc,
@@ -23813,52 +27189,48 @@ static JSValue js_build_mapped_arguments(JSContext *ctx, int argc,
                                          JSStackFrame *sf, int arg_count)
 {
     JSValue val;
-    JSProperty *pr;
+    JSProperty props[3];
+    JSVarRef **tab, *var_ref;
     JSObject *p;
-    int i;
+    int i, j;
 
-    val = JS_NewObjectProtoClass(ctx, ctx->class_proto[JS_CLASS_OBJECT],
-                                 JS_CLASS_MAPPED_ARGUMENTS);
+    props[0].u.value = js_int32(argc); /* length */
+    props[1].u.value = js_dup(ctx->array_proto_values); /* Symbol.iterator */
+    props[2].u.value = js_dup(ctx->rt->current_stack_frame->cur_func); /* callee */
+
+    val = JS_NewObjectFromShape(ctx, js_dup_shape(ctx->mapped_arguments_shape),
+                                JS_CLASS_MAPPED_ARGUMENTS, props);
     if (JS_IsException(val))
         return val;
     p = JS_VALUE_GET_OBJ(val);
 
-    /* add the length field (cannot fail) */
-    pr = add_property(ctx, p, JS_ATOM_length,
-                      JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
-    if (!pr)
-        goto fail;
-    pr->u.value = js_int32(argc);
-
-    for(i = 0; i < arg_count; i++) {
-        JSVarRef *var_ref;
-        var_ref = get_var_ref(ctx, sf, i, true);
-        if (!var_ref)
+    /* initialize the fast array part */
+    tab = NULL;
+    if (argc > 0) {
+        tab = js_malloc(ctx, sizeof(tab[0]) * argc);
+        if (!tab)
             goto fail;
-        pr = add_property(ctx, p, __JS_AtomFromUInt32(i), JS_PROP_C_W_E | JS_PROP_VARREF);
-        if (!pr) {
-            free_var_ref(ctx->rt, var_ref);
-            goto fail;
+        for(i = 0; i < arg_count; i++) {
+            var_ref = get_var_ref(ctx, sf, i, true);
+            if (!var_ref)
+                goto fail1;
+            tab[i] = var_ref;
         }
-        pr->u.var_ref = var_ref;
+        for(i = arg_count; i < argc; i++) {
+            var_ref = js_create_var_ref(ctx, true);
+            if (!var_ref) {
+            fail1:
+                for(j = 0; j < i; j++)
+                    free_var_ref(ctx->rt, tab[j]);
+                js_free(ctx, tab);
+                goto fail;
+            }
+            var_ref->value = js_dup(argv[i]);
+            tab[i] = var_ref;
+        }
     }
-
-    /* the arguments not mapped to the arguments of the function can
-       be normal properties */
-    for(i = arg_count; i < argc; i++) {
-        if (JS_DefinePropertyValueUint32(ctx, val, i,
-                                         js_dup(argv[i]),
-                                         JS_PROP_C_W_E) < 0)
-            goto fail;
-    }
-
-    JS_DefinePropertyValue(ctx, val, JS_ATOM_Symbol_iterator,
-                           js_dup(ctx->array_proto_values),
-                           JS_PROP_CONFIGURABLE | JS_PROP_WRITABLE);
-    /* callee returns this function in non strict mode */
-    JS_DefinePropertyValue(ctx, val, JS_ATOM_callee,
-                           js_dup(ctx->rt->current_stack_frame->cur_func),
-                           JS_PROP_CONFIGURABLE | JS_PROP_WRITABLE);
+    p->u.array.u.var_refs = tab;
+    p->u.array.count = argc;
     return val;
  fail:
     JS_FreeValue(ctx, val);
@@ -23932,7 +27304,7 @@ static JSValue build_for_in_iterator(JSContext *ctx, JSValue obj)
         JSShapeProperty *prs;
         /* check that there are no enumerable normal fields */
         sh = p->shape;
-        for(i = 0, prs = get_shape_prop(sh); i < sh->prop_count; i++, prs++) {
+        for(i = 0, prs = sh->prop; i < sh->prop_count; i++, prs++) {
             if (prs->flags & JS_PROP_ENUMERABLE)
                 goto normal_case;
         }
@@ -24024,7 +27396,7 @@ static __exception int js_for_in_next(JSContext *ctx, JSValue *sp)
             JSShapeProperty *prs;
             if (it->idx >= sh->prop_count)
                 goto done;
-            prs = get_shape_prop(sh) + it->idx;
+            prs = &sh->prop[it->idx];
             prop = prs->atom;
             it->idx++;
             if (prop == JS_ATOM_NULL || !(prs->flags & JS_PROP_ENUMERABLE))
@@ -24459,7 +27831,7 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
     JSObject *p;
     JSObject *pexcl = NULL;
     int ret, gpn_flags;
-    JSPropertyDescriptor desc;
+    int desc_flags;
     bool is_enumerable;
 
     if (JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT)
@@ -24494,13 +27866,12 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
         }
         if (!(gpn_flags & JS_GPN_ENUM_ONLY)) {
             /* test if the property is enumerable */
-            ret = JS_GetOwnPropertyInternal(ctx, &desc, p, tab_atom[i].atom);
+            ret = JS_GetOwnPropertyFlagsInternal(ctx, &desc_flags, p, tab_atom[i].atom);
             if (ret < 0)
                 goto exception;
             if (!ret)
                 continue;
-            is_enumerable = (desc.flags & JS_PROP_ENUMERABLE) != 0;
-            js_free_desc(ctx, &desc);
+            is_enumerable = (desc_flags & JS_PROP_ENUMERABLE) != 0;
             if (!is_enumerable)
                 continue;
         }
@@ -24528,35 +27899,79 @@ static JSValueConst JS_GetActiveFunction(JSContext *ctx)
     return ctx->rt->current_stack_frame->cur_func;
 }
 
-static JSVarRef *get_var_ref(JSContext *ctx, JSStackFrame *sf,
-                             int var_idx, bool is_arg)
+/* create a detached var ref */
+static JSVarRef *js_create_var_ref(JSContext *ctx, bool is_gc_object)
 {
     JSVarRef *var_ref;
-    struct list_head *el;
-    JSValue *pvalue;
-
-    if (is_arg)
-        pvalue = &sf->arg_buf[var_idx];
-    else
-        pvalue = &sf->var_buf[var_idx];
-
-    list_for_each(el, &sf->var_ref_list) {
-        var_ref = list_entry(el, JSVarRef, header.link);
-        if (var_ref->pvalue == pvalue) {
-            var_ref->header.ref_count++;
-            return var_ref;
-        }
-    }
-    /* create a new one */
     var_ref = js_malloc(ctx, sizeof(JSVarRef));
     if (!var_ref)
         return NULL;
     var_ref->header.ref_count = 1;
-    var_ref->is_detached = false;
-    list_add_tail(&var_ref->header.link, &sf->var_ref_list);
-    var_ref->pvalue = pvalue;
+    var_ref->is_detached = true;
     var_ref->value = JS_UNDEFINED;
+    var_ref->pvalue = &var_ref->value;
+    if (is_gc_object)
+        add_gc_object(ctx->rt, &var_ref->header, JS_GC_OBJ_TYPE_VAR_REF);
     return var_ref;
+}
+
+static JSVarRef *get_var_ref(JSContext *ctx, JSStackFrame *sf, int var_idx,
+                             bool is_arg)
+{
+    JSObject *p;
+    JSFunctionBytecode *b;
+    JSVarRef *var_ref;
+    JSValue *pvalue;
+    int var_ref_idx;
+    JSVarDef *vd;
+
+    p = JS_VALUE_GET_OBJ(sf->cur_func);
+    b = p->u.func.function_bytecode;
+
+    if (is_arg) {
+        vd = &b->vardefs[var_idx];
+        pvalue = &sf->arg_buf[var_idx];
+    } else {
+        vd = &b->vardefs[b->arg_count + var_idx];
+        pvalue = &sf->var_buf[var_idx];
+    }
+
+    /* If the variable is captured, use the pre-computed index for O(1) lookup */
+    if (vd->is_captured) {
+        var_ref_idx = vd->var_ref_idx;
+        var_ref = sf->var_refs[var_ref_idx];
+        if (var_ref) {
+            /* reference to the already created local variable */
+            var_ref->header.ref_count++;
+            return var_ref;
+        }
+
+        /* create a new one */
+        var_ref = js_malloc(ctx, sizeof(JSVarRef));
+        if (!var_ref)
+            return NULL;
+        var_ref->header.ref_count = 1;
+        var_ref->is_detached = false;
+        var_ref->is_lexical = false;
+        var_ref->is_const = false;
+        var_ref->var_ref_idx = var_ref_idx;
+        var_ref->stack_frame = sf;
+        sf->var_refs[var_ref_idx] = var_ref;
+        var_ref->pvalue = pvalue;
+        return var_ref;
+    } else {
+        /* Variable is not captured (e.g., from eval closures on uncaptured vars).
+           Create a detached var_ref that holds a copy of the value. */
+        var_ref = js_malloc(ctx, sizeof(JSVarRef));
+        if (!var_ref)
+            return NULL;
+        var_ref->header.ref_count = 1;
+        var_ref->is_detached = true;
+        var_ref->value = js_dup(*pvalue);
+        var_ref->pvalue = &var_ref->value;
+        add_gc_object(ctx->rt, &var_ref->header, JS_GC_OBJ_TYPE_VAR_REF);
+        return var_ref;
+    }
 }
 
 static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
@@ -24580,15 +27995,25 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
         for(i = 0; i < b->closure_var_count; i++) {
             JSClosureVar *cv = &b->closure_var[i];
             JSVarRef *var_ref;
-            if (cv->is_local) {
+            switch(cv->closure_type) {
+            case JS_CLOSURE_LOCAL:
                 /* reuse the existing variable reference if it already exists */
-                var_ref = get_var_ref(ctx, sf, cv->var_idx, cv->is_arg);
-                if (!var_ref)
-                    goto fail;
-            } else {
+                var_ref = get_var_ref(ctx, sf, cv->var_idx, false);
+                break;
+            case JS_CLOSURE_ARG:
+                /* reuse the existing variable reference if it already exists */
+                var_ref = get_var_ref(ctx, sf, cv->var_idx, true);
+                break;
+            case JS_CLOSURE_REF:
+            case JS_CLOSURE_GLOBAL_REF:
                 var_ref = cur_var_refs[cv->var_idx];
                 var_ref->header.ref_count++;
+                break;
+            default:
+                abort();
             }
+            if (!var_ref)
+                goto fail;
             var_refs[i] = var_ref;
         }
     }
@@ -24775,38 +28200,38 @@ static int js_op_define_class(JSContext *ctx, JSValue *sp,
     return -1;
 }
 
+static void close_var_ref(JSRuntime *rt, JSVarRef *var_ref)
+{
+    var_ref->value = js_dup(*var_ref->pvalue);
+    var_ref->pvalue = &var_ref->value;
+    /* the reference is no longer to a local variable */
+    var_ref->is_detached = true;
+    add_gc_object(rt, &var_ref->header, JS_GC_OBJ_TYPE_VAR_REF);
+}
+
 static void close_var_refs(JSRuntime *rt, JSStackFrame *sf)
 {
-    struct list_head *el, *el1;
     JSVarRef *var_ref;
+    int i;
 
-    list_for_each_safe(el, el1, &sf->var_ref_list) {
-        var_ref = list_entry(el, JSVarRef, header.link);
-        var_ref->value = js_dup(*var_ref->pvalue);
-        var_ref->pvalue = &var_ref->value;
-        /* the reference is no longer to a local variable */
-        var_ref->is_detached = true;
-        add_gc_object(rt, &var_ref->header, JS_GC_OBJ_TYPE_VAR_REF);
+    for (i = 0; i < sf->var_ref_count; i++) {
+        var_ref = sf->var_refs[i];
+        if (var_ref)
+            close_var_ref(rt, var_ref);
     }
 }
 
-static void close_lexical_var(JSContext *ctx, JSStackFrame *sf, int var_idx)
+static void close_lexical_var(JSContext *ctx, JSFunctionBytecode *b,
+                              JSStackFrame *sf, int var_idx)
 {
-    JSValue *pvalue;
-    struct list_head *el, *el1;
     JSVarRef *var_ref;
+    int var_ref_idx;
 
-    pvalue = &sf->var_buf[var_idx];
-    list_for_each_safe(el, el1, &sf->var_ref_list) {
-        var_ref = list_entry(el, JSVarRef, header.link);
-        if (var_ref->pvalue == pvalue) {
-            var_ref->value = js_dup(*var_ref->pvalue);
-            var_ref->pvalue = &var_ref->value;
-            list_del(&var_ref->header.link);
-            /* the reference is no longer to a local variable */
-            var_ref->is_detached = true;
-            add_gc_object(ctx->rt, &var_ref->header, JS_GC_OBJ_TYPE_VAR_REF);
-        }
+    var_ref_idx = b->vardefs[b->arg_count + var_idx].var_ref_idx;
+    var_ref = sf->var_refs[var_ref_idx];
+    if (var_ref) {
+        close_var_ref(ctx->rt, var_ref);
+        sf->var_refs[var_ref_idx] = NULL;
     }
 }
 
@@ -25166,14 +28591,12 @@ DEF(     apply_eval, 3, 2, 1, u16) /* func array -> ret_eval */
 DEF(         regexp, 1, 2, 1, none) /* create a RegExp object from the pattern and a
                                        bytecode string */
 DEF(      get_super, 1, 1, 1, none)
-DEF(         import, 1, 1, 1, none) /* dynamic module import */
+DEF(         import, 1, 2, 1, none) /* dynamic module import */
 
-DEF(      check_var, 5, 0, 1, atom) /* check if a variable exists */
 DEF(  get_var_undef, 5, 0, 1, atom) /* push undefined if the variable does not exist */
 DEF(        get_var, 5, 0, 1, atom) /* throw an exception if the variable does not exist */
 DEF(        put_var, 5, 1, 0, atom) /* must come after get_var */
 DEF(   put_var_init, 5, 1, 0, atom) /* must come after put_var. Used to initialize a global lexical variable */
-DEF( put_var_strict, 5, 2, 0, atom) /* for strict mode variable write */
 
 DEF(  get_ref_value, 1, 2, 3, none)
 DEF(  put_ref_value, 1, 3, 0, none)
@@ -25470,7 +28893,8 @@ DEF( typeof_is_function, 1, 1, 1, none)
     }
 
     alloca_size = sizeof(JSValue) * (arg_allocated_size + b->var_count +
-                                     b->stack_size);
+                                     b->stack_size) +
+        sizeof(JSVarRef *) * b->var_ref_count;
     if (js_check_stack_overflow(rt, alloca_size))
         return JS_ThrowStackOverflow(caller_ctx);
 
@@ -25478,7 +28902,6 @@ DEF( typeof_is_function, 1, 1, 1, none)
     arg_buf = (JSValue *)argv;
     sf->arg_count = argc;
     sf->cur_func = unsafe_unconst(func_obj);
-    init_list_head(&sf->var_ref_list);
     var_refs = p->u.func.var_refs;
 
     local_buf = alloca(alloca_size);
@@ -25499,6 +28922,10 @@ DEF( typeof_is_function, 1, 1, 1, none)
         var_buf[i] = JS_UNDEFINED;
 
     stack_buf = var_buf + b->var_count;
+    sf->var_refs = (JSVarRef **)(stack_buf + b->stack_size);
+    sf->var_ref_count = b->var_ref_count;
+    for(i = 0; i < b->var_ref_count; i++)
+        sf->var_refs[i] = NULL;
     sp = stack_buf;
     pc = b->byte_code_buf;
     /* sf->cur_pc must we set to pc before any recursive calls to JS_CallInternal. */
@@ -25562,12 +28989,43 @@ DEF( typeof_is_function, 1, 1, 1, none)
             BREAK;
         CASE(OP_get_length):
             {
-                JSValue val;
+                JSValue val, obj;
+                JSAtom atom;
+                JSObject *p;
+                JSProperty *pr;
+                JSShapeProperty *prs;
 
-                sf->cur_pc = pc;
-                val = JS_GetProperty(ctx, sp[-1], JS_ATOM_length);
-                if (unlikely(JS_IsException(val)))
-                    goto exception;
+                atom = JS_ATOM_length;
+
+                obj = sp[-1];
+                if (likely(JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT)) {
+                    p = JS_VALUE_GET_OBJ(obj);
+                    for(;;) {
+                        prs = find_own_property(&pr, p, atom);
+                        if (prs) {
+                            /* found */
+                            if (unlikely(prs->flags & JS_PROP_TMASK))
+                                goto get_length_slow_path;
+                            val = js_dup(pr->u.value);
+                            break;
+                        }
+                        if (unlikely(p->is_exotic)) {
+                            obj = JS_MKPTR(JS_TAG_OBJECT, p);
+                            goto get_length_slow_path;
+                        }
+                        p = p->shape->proto;
+                        if (!p) {
+                            val = JS_UNDEFINED;
+                            break;
+                        }
+                    }
+                } else {
+                get_length_slow_path:
+                    sf->cur_pc = pc;
+                    val = JS_GetPropertyInternal(ctx, obj, atom, sp[-1], false);
+                    if (unlikely(JS_IsException(val)))
+                        goto exception;
+                }
                 JS_FreeValue(ctx, sp[-1]);
                 sp[-1] = val;
             }
@@ -25672,7 +29130,7 @@ DEF( typeof_is_function, 1, 1, 1, none)
                 pc += 2;
                 i = min_int(first, argc);
                 n = argc - i;
-                *sp++ = js_create_array(ctx, n, &argv[i]);
+                *sp++ = js_create_array(ctx, n, n ? &argv[i] : NULL);
                 if (unlikely(JS_IsException(sp[-1])))
                     goto exception;
             }
@@ -26089,6 +29547,8 @@ DEF( typeof_is_function, 1, 1, 1, none)
                 sp[-2] = js_regexp_constructor_internal(ctx, JS_UNDEFINED,
                                                         sp[-2], sp[-1]);
                 sp--;
+                if (JS_IsException(sp[-1]))
+                    goto exception;
             }
             BREAK;
 
@@ -26107,25 +29567,13 @@ DEF( typeof_is_function, 1, 1, 1, none)
             {
                 JSValue val;
                 sf->cur_pc = pc;
-                val = js_dynamic_import(ctx, sp[-1]);
+                val = js_dynamic_import(ctx, sp[-2], sp[-1]);
                 if (JS_IsException(val))
                     goto exception;
+                JS_FreeValue(ctx, sp[-2]);
                 JS_FreeValue(ctx, sp[-1]);
+                sp--;
                 sp[-1] = val;
-            }
-            BREAK;
-
-        CASE(OP_check_var):
-            {
-                int ret;
-                JSAtom atom;
-                atom = get_u32(pc);
-                pc += 4;
-
-                ret = JS_CheckGlobalVar(ctx, atom);
-                if (ret < 0)
-                    goto exception;
-                *sp++ = js_bool(ret);
             }
             BREAK;
 
@@ -26156,26 +29604,6 @@ DEF( typeof_is_function, 1, 1, 1, none)
 
                 ret = JS_SetGlobalVar(ctx, atom, sp[-1], opcode - OP_put_var);
                 sp--;
-                if (unlikely(ret < 0))
-                    goto exception;
-            }
-            BREAK;
-
-        CASE(OP_put_var_strict):
-            {
-                int ret;
-                JSAtom atom;
-                atom = get_u32(pc);
-                pc += 4;
-                sf->cur_pc = pc;
-
-                /* sp[-2] is JS_TRUE or JS_FALSE */
-                if (unlikely(!JS_VALUE_GET_INT(sp[-2]))) {
-                    JS_ThrowReferenceErrorNotDefined(ctx, atom);
-                    goto exception;
-                }
-                ret = JS_SetGlobalVar(ctx, atom, sp[-1], 2);
-                sp -= 2;
                 if (unlikely(ret < 0))
                     goto exception;
             }
@@ -26443,7 +29871,7 @@ DEF( typeof_is_function, 1, 1, 1, none)
                 int idx;
                 idx = get_u16(pc);
                 pc += 2;
-                close_lexical_var(ctx, sf, idx);
+                close_lexical_var(ctx, b, sf, idx);
             }
             BREAK;
 
@@ -26766,14 +30194,47 @@ DEF( typeof_is_function, 1, 1, 1, none)
 
         CASE(OP_get_field):
             {
-                JSValue val;
+                JSValue val, obj;
                 JSAtom atom;
+                JSObject *p;
+                JSProperty *pr;
+                JSShapeProperty *prs;
+
                 atom = get_u32(pc);
                 pc += 4;
-                sf->cur_pc = pc;
-                val = JS_GetPropertyInternal(ctx, sp[-1], atom, sp[-1], false);
-                if (unlikely(JS_IsException(val)))
-                    goto exception;
+
+                obj = sp[-1];
+                if (likely(JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT)) {
+                    p = JS_VALUE_GET_OBJ(obj);
+                    for(;;) {
+                        prs = find_own_property(&pr, p, atom);
+                        if (prs) {
+                            /* found */
+                            if (unlikely(prs->flags & JS_PROP_TMASK))
+                                goto get_field_slow_path;
+                            val = js_dup(pr->u.value);
+                            break;
+                        }
+                        if (unlikely(p->is_exotic)) {
+                            /* XXX: should avoid the slow path for arrays
+                               and typed arrays by ensuring that 'prop' is
+                               not numeric */
+                            obj = JS_MKPTR(JS_TAG_OBJECT, p);
+                            goto get_field_slow_path;
+                        }
+                        p = p->shape->proto;
+                        if (!p) {
+                            val = JS_UNDEFINED;
+                            break;
+                        }
+                    }
+                } else {
+                get_field_slow_path:
+                    sf->cur_pc = pc;
+                    val = JS_GetPropertyInternal(ctx, obj, atom, sp[-1], false);
+                    if (unlikely(JS_IsException(val)))
+                        goto exception;
+                }
                 JS_FreeValue(ctx, sp[-1]);
                 sp[-1] = val;
             }
@@ -26781,33 +30242,88 @@ DEF( typeof_is_function, 1, 1, 1, none)
 
         CASE(OP_get_field2):
             {
-                JSValue val;
+                JSValue val, obj;
                 JSAtom atom;
+                JSObject *p;
+                JSProperty *pr;
+                JSShapeProperty *prs;
+
                 atom = get_u32(pc);
                 pc += 4;
-                sf->cur_pc = pc;
-                val = JS_GetPropertyInternal(ctx, sp[-1], atom, sp[-1], false);
-                if (unlikely(JS_IsException(val)))
-                    goto exception;
+
+                obj = sp[-1];
+                if (likely(JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT)) {
+                    p = JS_VALUE_GET_OBJ(obj);
+                    for(;;) {
+                        prs = find_own_property(&pr, p, atom);
+                        if (prs) {
+                            /* found */
+                            if (unlikely(prs->flags & JS_PROP_TMASK))
+                                goto get_field2_slow_path;
+                            val = js_dup(pr->u.value);
+                            break;
+                        }
+                        if (unlikely(p->is_exotic)) {
+                            /* XXX: should avoid the slow path for arrays
+                               and typed arrays by ensuring that 'prop' is
+                               not numeric */
+                            obj = JS_MKPTR(JS_TAG_OBJECT, p);
+                            goto get_field2_slow_path;
+                        }
+                        p = p->shape->proto;
+                        if (!p) {
+                            val = JS_UNDEFINED;
+                            break;
+                        }
+                    }
+                } else {
+                get_field2_slow_path:
+                    sf->cur_pc = pc;
+                    val = JS_GetPropertyInternal(ctx, obj, atom, sp[-1], false);
+                    if (unlikely(JS_IsException(val)))
+                        goto exception;
+                }
                 *sp++ = val;
-          }
-          BREAK;
+            }
+            BREAK;
 
         CASE(OP_put_field):
             {
                 int ret;
+                JSValue obj;
                 JSAtom atom;
+                JSObject *p;
+                JSProperty *pr;
+                JSShapeProperty *prs;
+
                 atom = get_u32(pc);
                 pc += 4;
-                sf->cur_pc = pc;
-                ret = JS_SetPropertyInternal2(ctx,
-                                              sp[-2], atom,
-                                              sp[-1], sp[-2],
-                                              JS_PROP_THROW_STRICT);
-                JS_FreeValue(ctx, sp[-2]);
-                sp -= 2;
-                if (unlikely(ret < 0))
-                    goto exception;
+
+                obj = sp[-2];
+                if (likely(JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT)) {
+                    p = JS_VALUE_GET_OBJ(obj);
+                    prs = find_own_property(&pr, p, atom);
+                    if (!prs)
+                        goto put_field_slow_path;
+                    if (likely((prs->flags & (JS_PROP_TMASK | JS_PROP_WRITABLE |
+                                              JS_PROP_LENGTH)) == JS_PROP_WRITABLE)) {
+                        /* fast path */
+                        set_value(ctx, &pr->u.value, sp[-1]);
+                    } else {
+                        goto put_field_slow_path;
+                    }
+                    JS_FreeValue(ctx, obj);
+                    sp -= 2;
+                } else {
+                put_field_slow_path:
+                    sf->cur_pc = pc;
+                    ret = JS_SetPropertyInternal2(ctx, obj, atom, sp[-1], obj,
+                                                  JS_PROP_THROW_STRICT);
+                    JS_FreeValue(ctx, obj);
+                    sp -= 2;
+                    if (unlikely(ret < 0))
+                        goto exception;
+                }
             }
             BREAK;
 
@@ -27059,6 +30575,46 @@ DEF( typeof_is_function, 1, 1, 1, none)
         CASE(OP_put_array_el):
             {
                 int ret;
+                JSValue val;
+                uint32_t idx;
+                JSObject *p;
+
+                val = sp[-1];
+                if (likely(JS_VALUE_GET_TAG(sp[-2]) == JS_TAG_INT)) {
+                    idx = JS_VALUE_GET_INT(sp[-2]);
+                    if (likely(JS_VALUE_GET_TAG(sp[-3]) == JS_TAG_OBJECT)) {
+                        p = JS_VALUE_GET_OBJ(sp[-3]);
+                        if (likely(p->class_id == JS_CLASS_ARRAY &&
+                                   idx < (uint32_t)p->u.array.count)) {
+                            set_value(ctx, &p->u.array.u.values[idx], val);
+                            JS_FreeValue(ctx, sp[-3]);
+                            sp -= 3;
+                            BREAK;
+                        }
+                        if (likely(p->class_id == JS_CLASS_ARRAY &&
+                                   idx == (uint32_t)p->u.array.count &&
+                                   p->fast_array &&
+                                   p->extensible &&
+                                   p->shape->proto == JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_ARRAY]) &&
+                                   ctx->std_array_prototype)) {
+                            /* fast path to add an element */
+                            uint32_t array_len;
+                            if (likely(JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT)) {
+                                uint32_t new_len = idx + 1;
+                                array_len = JS_VALUE_GET_INT(p->prop[0].u.value);
+                                if (likely(new_len <= p->u.array.u1.size)) {
+                                    p->u.array.u.values[idx] = val;
+                                    p->u.array.count = new_len;
+                                    if (new_len > array_len)
+                                        p->prop[0].u.value = js_int32(new_len);
+                                    JS_FreeValue(ctx, sp[-3]);
+                                    sp -= 3;
+                                    BREAK;
+                                }
+                            }
+                        }
+                    }
+                }
                 sf->cur_pc = pc;
                 ret = JS_SetPropertyValue(ctx, sp[-3], sp[-2], sp[-1], JS_PROP_THROW_STRICT);
                 JS_FreeValue(ctx, sp[-3]);
@@ -27167,16 +30723,18 @@ DEF( typeof_is_function, 1, 1, 1, none)
                 if (likely(JS_VALUE_IS_BOTH_INT(op1, op2))) {
                     int64_t r;
                     r = (int64_t)JS_VALUE_GET_INT(op1) + JS_VALUE_GET_INT(op2);
-                    if (unlikely((int)r != r))
-                        goto add_slow;
-                    sp[-2] = js_int32(r);
+                    if (unlikely(r < INT32_MIN || r > INT32_MAX))
+                        sp[-2] = js_float64(r);
+                    else
+                        sp[-2] = js_int32(r);
                     sp--;
                 } else if (JS_VALUE_IS_BOTH_FLOAT(op1, op2)) {
+                    JS_X87_FPCW_SAVE_AND_ADJUST(fpcw);
                     sp[-2] = js_float64(JS_VALUE_GET_FLOAT64(op1) +
                                         JS_VALUE_GET_FLOAT64(op2));
+                    JS_X87_FPCW_RESTORE(fpcw);
                     sp--;
                 } else {
-                add_slow:
                     sf->cur_pc = pc;
                     if (js_add_slow(ctx, sp))
                         goto exception;
@@ -27197,8 +30755,9 @@ DEF( typeof_is_function, 1, 1, 1, none)
                     r = (int64_t)JS_VALUE_GET_INT(*pv) +
                         JS_VALUE_GET_INT(sp[-1]);
                     if (unlikely((int)r != r))
-                        goto add_loc_slow;
-                    *pv = js_int32(r);
+                        *pv = __JS_NewFloat64((double)r);
+                    else
+                        *pv = js_int32(r);
                     sp--;
                 } else if (JS_VALUE_GET_TAG(*pv) == JS_TAG_STRING) {
                     JSValue op1;
@@ -27214,7 +30773,6 @@ DEF( typeof_is_function, 1, 1, 1, none)
                     set_value(ctx, pv, op1);
                 } else {
                     JSValue ops[2];
-                add_loc_slow:
                     /* In case of exception, js_add_slow frees ops[0]
                        and ops[1], so we must duplicate *pv */
                     sf->cur_pc = pc;
@@ -27236,12 +30794,15 @@ DEF( typeof_is_function, 1, 1, 1, none)
                     int64_t r;
                     r = (int64_t)JS_VALUE_GET_INT(op1) - JS_VALUE_GET_INT(op2);
                     if (unlikely((int)r != r))
-                        goto binary_arith_slow;
-                    sp[-2] = js_int32(r);
+                        sp[-2] = __JS_NewFloat64((double)r);
+                    else
+                        sp[-2] = js_int32(r);
                     sp--;
                 } else if (JS_VALUE_IS_BOTH_FLOAT(op1, op2)) {
+                    JS_X87_FPCW_SAVE_AND_ADJUST(fpcw);
                     sp[-2] = js_float64(JS_VALUE_GET_FLOAT64(op1) -
                                         JS_VALUE_GET_FLOAT64(op2));
+                    JS_X87_FPCW_RESTORE(fpcw);
                     sp--;
                 } else {
                     goto binary_arith_slow;
@@ -27272,7 +30833,9 @@ DEF( typeof_is_function, 1, 1, 1, none)
                     sp[-2] = js_int32(r);
                     sp--;
                 } else if (JS_VALUE_IS_BOTH_FLOAT(op1, op2)) {
+                    JS_X87_FPCW_SAVE_AND_ADJUST(fpcw);
                     d = JS_VALUE_GET_FLOAT64(op1) * JS_VALUE_GET_FLOAT64(op2);
+                    JS_X87_FPCW_RESTORE(fpcw);
                 mul_fp_res:
                     sp[-2] = js_float64(d);
                     sp--;
@@ -27408,11 +30971,42 @@ DEF( typeof_is_function, 1, 1, 1, none)
             }
             BREAK;
         CASE(OP_post_inc):
+            {
+                JSValue op1;
+                int val;
+                op1 = sp[-1];
+                if (JS_VALUE_GET_TAG(op1) == JS_TAG_INT) {
+                    val = JS_VALUE_GET_INT(op1);
+                    if (unlikely(val == INT32_MAX))
+                        goto post_inc_slow;
+                    sp[0] = js_int32(val + 1);
+                } else {
+                post_inc_slow:
+                    sf->cur_pc = pc;
+                    if (js_post_inc_slow(ctx, sp, opcode))
+                        goto exception;
+                }
+                sp++;
+            }
+            BREAK;
         CASE(OP_post_dec):
-            sf->cur_pc = pc;
-            if (js_post_inc_slow(ctx, sp, opcode))
-                goto exception;
-            sp++;
+            {
+                JSValue op1;
+                int val;
+                op1 = sp[-1];
+                if (JS_VALUE_GET_TAG(op1) == JS_TAG_INT) {
+                    val = JS_VALUE_GET_INT(op1);
+                    if (unlikely(val == INT32_MIN))
+                        goto post_dec_slow;
+                    sp[0] = js_int32(val - 1);
+                } else {
+                post_dec_slow:
+                    sf->cur_pc = pc;
+                    if (js_post_inc_slow(ctx, sp, opcode))
+                        goto exception;
+                }
+                sp++;
+            }
             BREAK;
         CASE(OP_inc_loc):
             {
@@ -27903,7 +31497,7 @@ DEF( typeof_is_function, 1, 1, 1, none)
         sf->cur_sp = sp;
     } else {
     done:
-        if (unlikely(!list_empty(&sf->var_ref_list))) {
+        if (unlikely(sf->var_ref_count != 0)) {
             /* variable references reference the stack: must close them */
             close_var_refs(rt, sf);
         }
@@ -28102,16 +31696,18 @@ static __exception int async_func_init(JSContext *ctx, JSAsyncFunctionState *s,
     JSFunctionBytecode *b;
     JSStackFrame *sf;
     int local_count, i, arg_buf_len, n;
+    size_t alloc_size;
 
     sf = &s->frame;
-    init_list_head(&sf->var_ref_list);
     p = JS_VALUE_GET_OBJ(func_obj);
     b = p->u.func.function_bytecode;
     sf->is_strict_mode = b->is_strict_mode;
     sf->cur_pc = b->byte_code_buf;
     arg_buf_len = max_int(b->arg_count, argc);
     local_count = arg_buf_len + b->var_count + b->stack_size;
-    sf->arg_buf = js_malloc(ctx, sizeof(JSValue) * max_int(local_count, 1));
+    alloc_size = sizeof(JSValue) * max_int(local_count, 1) +
+        sizeof(JSVarRef *) * b->var_ref_count;
+    sf->arg_buf = js_malloc(ctx, alloc_size);
     if (!sf->arg_buf)
         return -1;
     sf->cur_func = js_dup(func_obj);
@@ -28120,6 +31716,10 @@ static __exception int async_func_init(JSContext *ctx, JSAsyncFunctionState *s,
     sf->arg_count = arg_buf_len;
     sf->var_buf = sf->arg_buf + arg_buf_len;
     sf->cur_sp = sf->var_buf + b->var_count;
+    sf->var_refs = (JSVarRef **)(sf->cur_sp + b->stack_size);
+    sf->var_ref_count = b->var_ref_count;
+    for(i = 0; i < b->var_ref_count; i++)
+        sf->var_refs[i] = NULL;
     for(i = 0; i < argc; i++)
         sf->arg_buf[i] = js_dup(argv[i]);
     n = arg_buf_len + b->var_count;
@@ -28154,10 +31754,11 @@ static void async_func_free(JSRuntime *rt, JSAsyncFunctionState *s)
 
     sf = &s->frame;
 
-    /* close the closure variables. */
-    close_var_refs(rt, sf);
-
     if (sf->arg_buf) {
+        /* close the closure variables. */
+        if (sf->var_ref_count != 0)
+            close_var_refs(rt, sf);
+
         /* cannot free the function if it is running */
         assert(sf->cur_sp != NULL);
         for(sp = sf->arg_buf; sp < sf->cur_sp; sp++) {
@@ -28909,9 +32510,8 @@ static JSValue js_async_generator_resolve_function(JSContext *ctx,
         } else {
             js_async_generator_resolve(ctx, s, arg, true);
         }
-    } else {
+    } else if (s->state == JS_ASYNC_GENERATOR_STATE_EXECUTING) {
         /* restart function execution after await() */
-        assert(s->state == JS_ASYNC_GENERATOR_STATE_EXECUTING);
         s->func_state.throw_flag = is_reject;
         if (is_reject) {
             JS_Throw(ctx, js_dup(arg));
@@ -29191,29 +32791,36 @@ typedef struct JSFunctionDef {
     struct list_head child_list; /* list of JSFunctionDef.link */
     struct list_head link;
 
-    bool is_eval; /* true if eval code */
     int eval_type; /* only valid if is_eval = true */
-    bool is_global_var; /* true if variables are not defined locally:
+
+    /* Pack all boolean flags together as 1-bit fields to reduce struct size
+    while avoiding padding and compiler deoptimization. */
+    bool is_eval : 1; /* true if eval code */
+    bool is_global_var : 1; /* true if variables are not defined locally:
                            eval global, eval module or non strict eval */
-    bool is_func_expr; /* true if function expression */
-    bool has_home_object; /* true if the home object is available */
-    bool has_prototype; /* true if a prototype field is necessary */
-    bool has_simple_parameter_list;
-    bool has_parameter_expressions; /* if true, an argument scope is created */
-    bool has_use_strict; /* to reject directive in special cases */
-    bool has_eval_call; /* true if the function contains a call to eval() */
-    bool has_arguments_binding; /* true if the 'arguments' binding is
+    bool is_func_expr : 1; /* true if function expression */
+    bool has_home_object : 1; /* true if the home object is available */
+    bool has_prototype : 1; /* true if a prototype field is necessary */
+    bool has_simple_parameter_list : 1;
+    bool has_parameter_expressions : 1; /* if true, an argument scope is created */
+    bool has_use_strict : 1; /* to reject directive in special cases */
+    bool has_eval_call : 1; /* true if the function contains a call to eval() */
+    bool has_arguments_binding : 1; /* true if the 'arguments' binding is
                                    available in the function */
-    bool has_this_binding; /* true if the 'this' and new.target binding are
+    bool has_this_binding : 1; /* true if the 'this' and new.target binding are
                               available in the function */
-    bool new_target_allowed; /* true if the 'new.target' does not
+    bool new_target_allowed : 1; /* true if the 'new.target' does not
                                 throw a syntax error */
-    bool super_call_allowed; /* true if super() is allowed */
-    bool super_allowed; /* true if super. or super[] is allowed */
-    bool arguments_allowed; /* true if the 'arguments' identifier is allowed */
-    bool is_derived_class_constructor;
-    bool in_function_body;
-    bool backtrace_barrier;
+    bool super_call_allowed : 1; /* true if super() is allowed */
+    bool super_allowed : 1; /* true if super. or super[] is allowed */
+    bool arguments_allowed : 1; /* true if the 'arguments' identifier is allowed */
+    bool is_derived_class_constructor : 1;
+    bool in_function_body : 1;
+    bool backtrace_barrier : 1;
+    bool need_home_object : 1;
+    bool use_short_opcodes : 1; /* true if short opcodes are used in byte_code */
+    bool has_await : 1; /* true if await is used (used in module eval) */
+
     JSFunctionKindEnum func_kind : 8;
     JSParseFunctionEnum func_type : 7;
     uint8_t is_strict_mode : 1;
@@ -29227,6 +32834,7 @@ typedef struct JSFunctionDef {
     int arg_size; /* allocated size for args[] */
     int arg_count; /* number of arguments */
     int defined_arg_count;
+    int var_ref_count; /* number of local/arg variable references */
     int var_object_idx; /* -1 if none */
     int arg_var_object_idx; /* -1 if none (var object for the argument scope) */
     int arguments_var_idx; /* -1 if none */
@@ -29239,7 +32847,6 @@ typedef struct JSFunctionDef {
     int new_target_var_idx; /* variable containg the 'new.target' value, -1 if none */
     int this_active_func_var_idx; /* variable containg the 'this.active_func' value, -1 if none */
     int home_object_var_idx;
-    bool need_home_object;
 
     int scope_level;    /* index into fd->scopes if the current lexical scope */
     int scope_first;    /* index into vd->vars of first lexically scoped variable */
@@ -29255,7 +32862,6 @@ typedef struct JSFunctionDef {
 
     DynBuf byte_code;
     int last_opcode_pos; /* -1 if no last opcode */
-    bool use_short_opcodes; /* true if short opcodes are used in byte_code */
 
     LabelSlot *label_slots;
     int label_size; /* allocated size for label_slots[] */
@@ -29293,7 +32899,6 @@ typedef struct JSFunctionDef {
     int source_len;
 
     JSModuleDef *module; /* != NULL when parsing a module */
-    bool has_await; /* true if await is used (used in module eval) */
 } JSFunctionDef;
 
 typedef struct JSToken {
@@ -29486,14 +33091,12 @@ DEF(     apply_eval, 3, 2, 1, u16) /* func array -> ret_eval */
 DEF(         regexp, 1, 2, 1, none) /* create a RegExp object from the pattern and a
                                        bytecode string */
 DEF(      get_super, 1, 1, 1, none)
-DEF(         import, 1, 1, 1, none) /* dynamic module import */
+DEF(         import, 1, 2, 1, none) /* dynamic module import */
 
-DEF(      check_var, 5, 0, 1, atom) /* check if a variable exists */
 DEF(  get_var_undef, 5, 0, 1, atom) /* push undefined if the variable does not exist */
 DEF(        get_var, 5, 0, 1, atom) /* throw an exception if the variable does not exist */
 DEF(        put_var, 5, 1, 0, atom) /* must come after get_var */
 DEF(   put_var_init, 5, 1, 0, atom) /* must come after put_var. Used to initialize a global lexical variable */
-DEF( put_var_strict, 5, 2, 0, atom) /* for strict mode variable write */
 
 DEF(  get_ref_value, 1, 2, 3, none)
 DEF(  put_ref_value, 1, 3, 0, none)
@@ -29745,6 +33348,21 @@ DEF( typeof_is_function, 1, 1, 1, none)
 #define short_opcode_info(op)           \
     opcode_info[(op) >= OP_TEMP_START ? \
                 (op) + (OP_TEMP_END - OP_TEMP_START) : (op)]
+
+static void json_free_token(JSParseState *s, JSToken *token) {
+    // Only free actual allocated values
+    switch(token->val) {
+    case TOK_NUMBER:
+        JS_FreeValue(s->ctx, token->u.num.val);
+        break;
+    case TOK_STRING:
+        JS_FreeValue(s->ctx, token->u.str.str);
+        break;
+    case TOK_IDENT:
+        JS_FreeAtom(s->ctx, token->u.ident.atom);
+        break;
+    }
+}
 
 static void free_token(JSParseState *s, JSToken *token)
 {
@@ -30827,7 +34445,7 @@ static int json_parse_string(JSParseState *s, const uint8_t **pp)
     uint32_t c;
     StringBuffer b_s, *b = &b_s;
 
-    if (string_buffer_init(s->ctx, b, 32))
+    if (string_buffer_init(s->ctx, b, 48))
         goto fail;
 
     p = *pp;
@@ -30835,6 +34453,22 @@ static int json_parse_string(JSParseState *s, const uint8_t **pp)
         if (p >= s->buf_end) {
             goto end_of_input;
         }
+
+        // Fast path: batch consecutive ASCII characters
+        const uint8_t *p_start = p;
+        while (p < s->buf_end && *p != '"' && *p != '\\' && *p >= 0x20 && *p < 0x80) {
+            p++;
+        }
+
+        // Write batched ASCII in one call
+        if (p > p_start) {
+            if (string_buffer_write8(b, p_start, p - p_start))
+                goto fail;
+        }
+
+        if (p >= s->buf_end)
+            goto end_of_input;
+
         c = *p++;
         if (c == '"')
             break;
@@ -30980,7 +34614,7 @@ static __exception int json_next_token(JSParseState *s)
         return -1;
     }
 
-    free_token(s, &s->token);
+    json_free_token(s, &s->token);
 
     p = s->last_ptr = s->buf_ptr;
     s->last_line_num = s->token.line_num;
@@ -31279,7 +34913,7 @@ static void emit_op(JSParseState *s, uint8_t val)
 static void emit_atom(JSParseState *s, JSAtom name)
 {
     DynBuf *bc = &s->cur_func->byte_code;
-    if (dbuf_realloc(bc, bc->size + 4))
+    if (dbuf_claim(bc, 4))
         return; /* not enough memory : don't duplicate the atom */
     put_u32(bc->buf + bc->size, JS_DupAtom(s->ctx, name));
     bc->size += 4;
@@ -31400,23 +35034,6 @@ static __exception int emit_push_const(JSParseState *s, JSValue val,
     return 0;
 }
 
-// perl hash; variation of k&r hash with a different magic multiplier
-// and a final shuffle to improve distribution of the low-order bits
-static uint32_t hash_bytes(uint32_t h, const void *b, size_t n)
-{
-    const char *p;
-
-    for (p = b; p < (char *)b + n; p++)
-        h = 33*h + *p;
-    h += h >> 5;
-    return h;
-}
-
-static uint32_t hash_atom(JSAtom atom)
-{
-    return hash_bytes(0, &atom, sizeof(atom));
-}
-
 // caveat emptor: the table size must be a power of two in order for
 // masking to work, and the load factor constant must be an odd number (5)
 //
@@ -31446,7 +35063,7 @@ static int update_var_htab(JSContext *ctx, JSFunctionDef *fd)
 insert:
     m = UINT32_MAX >> clz32(m);
     do {
-        i = hash_atom(fd->vars[k].var_name);
+        i = hash32(fd->vars[k].var_name);
         j = 1;
         for (;;) {
             p = &fd->vars_htab[i & m];
@@ -31464,7 +35081,7 @@ static int find_var_htab(JSFunctionDef *fd, JSAtom var_name)
 {
     uint32_t i, j, m, *p;
 
-    i = hash_atom(var_name);
+    i = hash32(var_name);
     j = 1;
     m = fd->var_count + fd->var_count/5;
     m = UINT32_MAX >> clz32(m);
@@ -32290,6 +35907,7 @@ static bool is_regexp_allowed(int tok)
     case TOK_FALSE:
     case TOK_TRUE:
     case TOK_THIS:
+    case TOK_PRIVATE_NAME:
     case ')':
     case ']':
     case '}': /* XXX: regexp may occur after */
@@ -33407,18 +37025,19 @@ done:
     return js_parse_expect(s, ']');
 }
 
-/* XXX: remove */
+/* check if scope chain contains a with statement */
 static bool has_with_scope(JSFunctionDef *s, int scope_level)
 {
-    /* check if scope chain contains a with statement */
     while (s) {
-        int scope_idx = s->scopes[scope_level].first;
-        while (scope_idx >= 0) {
-            JSVarDef *vd = &s->vars[scope_idx];
-
-            if (vd->var_name == JS_ATOM__with_)
-                return true;
-            scope_idx = vd->scope_next;
+        /* no with in strict mode */
+        if (!s->is_strict_mode) {
+            int scope_idx = s->scopes[scope_level].first;
+            while (scope_idx >= 0) {
+                JSVarDef *vd = &s->vars[scope_idx];
+                if (vd->var_name == JS_ATOM__with_)
+                    return true;
+                scope_idx = vd->scope_next;
+            }
         }
         /* check parent scopes */
         scope_level = s->parent_scope_level;
@@ -33451,7 +37070,11 @@ static __exception int get_lvalue(JSParseState *s, int *popcode, int *pscope,
         }
         if (name == JS_ATOM_this || name == JS_ATOM_new_target)
             goto invalid_lvalue;
-        depth = 2;  /* will generate OP_get_ref_value */
+        if (has_with_scope(fd, scope)) {
+            depth = 2;  /* will generate OP_get_ref_value */
+        } else {
+            depth = 0;
+        }
         break;
     case OP_get_field:
         name = get_u32(fd->byte_code.buf + fd->last_opcode_pos + 1);
@@ -33488,16 +37111,22 @@ static __exception int get_lvalue(JSParseState *s, int *popcode, int *pscope,
         /* get the value but keep the object/fields on the stack */
         switch(opcode) {
         case OP_scope_get_var:
-            label = new_label(s);
-            if (label < 0)
-                return -1;
-            emit_op(s, OP_scope_make_ref);
-            emit_atom(s, name);
-            emit_u32(s, label);
-            emit_u16(s, scope);
-            update_label(fd, label, 1);
-            emit_op(s, OP_get_ref_value);
-            opcode = OP_get_ref_value;
+            if (depth != 0) {
+                label = new_label(s);
+                if (label < 0)
+                    return -1;
+                emit_op(s, OP_scope_make_ref);
+                emit_atom(s, name);
+                emit_u32(s, label);
+                emit_u16(s, scope);
+                update_label(fd, label, 1);
+                emit_op(s, OP_get_ref_value);
+                opcode = OP_get_ref_value;
+            } else {
+                emit_op(s, OP_scope_get_var);
+                emit_atom(s, name);
+                emit_u16(s, scope);
+            }
             break;
         case OP_get_field:
             emit_op(s, OP_get_field2);
@@ -33525,15 +37154,17 @@ static __exception int get_lvalue(JSParseState *s, int *popcode, int *pscope,
     } else {
         switch(opcode) {
         case OP_scope_get_var:
-            label = new_label(s);
-            if (label < 0)
-                return -1;
-            emit_op(s, OP_scope_make_ref);
-            emit_atom(s, name);
-            emit_u32(s, label);
-            emit_u16(s, scope);
-            update_label(fd, label, 1);
-            opcode = OP_get_ref_value;
+            if (depth != 0) {
+                label = new_label(s);
+                if (label < 0)
+                    return -1;
+                emit_op(s, OP_scope_make_ref);
+                emit_atom(s, name);
+                emit_u32(s, label);
+                emit_u16(s, scope);
+                update_label(fd, label, 1);
+                opcode = OP_get_ref_value;
+            }
             break;
         case OP_get_array_el:
             emit_op(s, OP_to_propkey2);
@@ -33571,6 +37202,21 @@ static void put_lvalue(JSParseState *s, int opcode, int scope,
                        bool is_let)
 {
     switch(opcode) {
+    case OP_scope_get_var:
+        /* depth = 0 */
+        switch(special) {
+        case PUT_LVALUE_NOKEEP:
+        case PUT_LVALUE_NOKEEP_DEPTH:
+        case PUT_LVALUE_KEEP_SECOND:
+        case PUT_LVALUE_NOKEEP_BOTTOM:
+            break;
+        case PUT_LVALUE_KEEP_TOP:
+            emit_op(s, OP_dup);
+            break;
+        default:
+            abort();
+        }
+        break;
     case OP_get_field:
     case OP_scope_get_private_field:
         /* depth = 1 */
@@ -33642,8 +37288,6 @@ static void put_lvalue(JSParseState *s, int opcode, int scope,
 
     switch(opcode) {
     case OP_scope_get_var:  /* val -- */
-        assert(special == PUT_LVALUE_NOKEEP ||
-               special == PUT_LVALUE_NOKEEP_DEPTH);
         emit_op(s, is_let ? OP_scope_put_var_init : OP_scope_put_var);
         emit_u32(s, name);  /* has refcount */
         emit_u16(s, scope);
@@ -33971,6 +37615,8 @@ static int js_parse_destructuring_element(JSParseState *s, int tok,
                     /* swap ref and lvalue object if any */
                     if (prop_name == JS_ATOM_NULL) {
                         switch(depth_lvalue) {
+                        case 0:
+                            break;
                         case 1:
                             /* source prop x -> x source prop */
                             emit_op(s, OP_rot3r);
@@ -33984,9 +37630,13 @@ static int js_parse_destructuring_element(JSParseState *s, int tok,
                             emit_op(s, OP_rot5l);
                             emit_op(s, OP_rot5l);
                             break;
+                        default:
+                            abort();
                         }
                     } else {
                         switch(depth_lvalue) {
+                        case 0:
+                            break;
                         case 1:
                             /* source x -> x source */
                             emit_op(s, OP_swap);
@@ -33999,6 +37649,8 @@ static int js_parse_destructuring_element(JSParseState *s, int tok,
                             /* source x y z -> x y z source */
                             emit_op(s, OP_rot4l);
                             break;
+                        default:
+                            abort();
                         }
                     }
                 }
@@ -34515,6 +38167,23 @@ static __exception int js_parse_postfix_expr(JSParseState *s, int parse_flags)
                 return js_parse_error(s, "invalid use of 'import()'");
             if (js_parse_assign_expr(s))
                 return -1;
+            if (s->token.val == ',') {
+                if (next_token(s))
+                    return -1;
+                if (s->token.val != ')') {
+                    if (js_parse_assign_expr(s))
+                        return -1;
+                    /* accept a trailing comma */
+                    if (s->token.val == ',') {
+                        if (next_token(s))
+                            return -1;
+                    }
+                } else {
+                    emit_op(s, OP_undefined);
+                }
+            } else {
+                emit_op(s, OP_undefined);
+            }
             if (js_parse_expect(s, ')'))
                 return -1;
             emit_op(s, OP_import);
@@ -35609,7 +39278,7 @@ static __exception int js_parse_assign_expr2(JSParseState *s, int parse_flags)
         }
 
         if (op == '=') {
-            if (opcode == OP_get_ref_value && name == name0) {
+            if ((opcode == OP_get_ref_value || opcode == OP_scope_get_var) && name == name0) {
                 set_object_name(s, name);
             }
         } else {
@@ -35637,11 +39306,14 @@ static __exception int js_parse_assign_expr2(JSParseState *s, int parse_flags)
             return -1;
         }
 
-        if (opcode == OP_get_ref_value && name == name0) {
+        if ((opcode == OP_get_ref_value || opcode == OP_scope_get_var) && name == name0) {
             set_object_name(s, name);
         }
 
         switch(depth_lvalue) {
+        case 0:
+            emit_op(s, OP_dup);
+            break;
         case 1:
             emit_op(s, OP_insert2);
             break;
@@ -36169,8 +39841,6 @@ static __exception int js_parse_for_in_of(JSParseState *s, int label_name,
 
     if (token_is_pseudo_keyword(s, JS_ATOM_of)) {
         is_for_of = true;
-        break_entry.has_iterator = true;
-        break_entry.drop_count += 2;
         if (has_initializer)
             goto initializer_error;
     } else if (s->token.val == TOK_IN) {
@@ -36198,6 +39868,11 @@ static __exception int js_parse_for_in_of(JSParseState *s, int label_name,
        the TDZ values are in the closures */
     close_scopes(s, s->cur_func->scope_level, block_scope_level);
     if (is_for_of) {
+        /* set has_iterator after the iterable expression is parsed so
+           that a yield in the expression does not try to close a
+           not-yet-created iterator */
+        break_entry.has_iterator = true;
+        break_entry.drop_count += 2;
         if (is_async)
             emit_op(s, OP_for_await_of_start);
         else
@@ -36218,7 +39893,8 @@ static __exception int js_parse_for_in_of(JSParseState *s, int label_name,
         int chunk_size = pos_expr - pos_next;
         int offset = bc->size - pos_next;
         int i;
-        dbuf_realloc(bc, bc->size + chunk_size);
+        if (dbuf_claim(bc, chunk_size))
+            return -1;
         dbuf_put(bc, bc->buf + pos_next, chunk_size);
         memset(bc->buf + pos_next, OP_nop, chunk_size);
         /* `next` part ends with a goto */
@@ -36617,7 +40293,8 @@ static __exception int js_parse_statement_or_decl(JSParseState *s,
                 int chunk_size = pos_body - pos_cont;
                 int offset = bc->size - pos_cont;
                 int i;
-                dbuf_realloc(bc, bc->size + chunk_size);
+                if (dbuf_claim(bc, chunk_size))
+                    return -1;
                 dbuf_put(bc, bc->buf + pos_cont, chunk_size);
                 memset(bc->buf + pos_cont, OP_nop, chunk_size);
                 /* increment part ends with a goto */
@@ -36744,7 +40421,7 @@ static __exception int js_parse_statement_or_decl(JSParseState *s,
             if (js_parse_expect(s, '}'))
                 goto fail;
             if (default_label_pos >= 0) {
-                /* Ugly patch for the the `default` label, shameful and risky */
+                /* Ugly patch for the `default` label, shameful and risky */
                 put_u32(s->cur_func->byte_code.buf + default_label_pos,
                         label_case);
                 s->cur_func->label_slots[label_case].pos = default_label_pos + 4;
@@ -37056,6 +40733,7 @@ static JSModuleDef *js_new_module_def(JSContext *ctx, JSAtom name)
     m->promise = JS_UNDEFINED;
     m->resolving_funcs[0] = JS_UNDEFINED;
     m->resolving_funcs[1] = JS_UNDEFINED;
+    m->private_value = JS_UNDEFINED;
     list_add_tail(&m->link, &ctx->loaded_modules);
     return m;
 }
@@ -37064,6 +40742,11 @@ static void js_mark_module_def(JSRuntime *rt, JSModuleDef *m,
                                JS_MarkFunc *mark_func)
 {
     int i;
+
+    for(i = 0; i < m->req_module_entries_count; i++) {
+        JSReqModuleEntry *rme = &m->req_module_entries[i];
+        JS_MarkValue(rt, rme->attributes, mark_func);
+    }
 
     for(i = 0; i < m->export_entries_count; i++) {
         JSExportEntry *me = &m->export_entries[i];
@@ -37080,6 +40763,7 @@ static void js_mark_module_def(JSRuntime *rt, JSModuleDef *m,
     JS_MarkValue(rt, m->promise, mark_func);
     JS_MarkValue(rt, m->resolving_funcs[0], mark_func);
     JS_MarkValue(rt, m->resolving_funcs[1], mark_func);
+    JS_MarkValue(rt, m->private_value, mark_func);
 }
 
 static void js_free_module_def(JSContext *ctx, JSModuleDef *m)
@@ -37091,6 +40775,7 @@ static void js_free_module_def(JSContext *ctx, JSModuleDef *m)
     for(i = 0; i < m->req_module_entries_count; i++) {
         JSReqModuleEntry *rme = &m->req_module_entries[i];
         JS_FreeAtom(ctx, rme->module_name);
+        JS_FreeValue(ctx, rme->attributes);
     }
     js_free(ctx, m->req_module_entries);
 
@@ -37119,6 +40804,7 @@ static void js_free_module_def(JSContext *ctx, JSModuleDef *m)
     JS_FreeValue(ctx, m->promise);
     JS_FreeValue(ctx, m->resolving_funcs[0]);
     JS_FreeValue(ctx, m->resolving_funcs[1]);
+    JS_FreeValue(ctx, m->private_value);
     list_del(&m->link);
     js_free(ctx, m);
 }
@@ -37146,6 +40832,7 @@ static int add_req_module_entry(JSContext *ctx, JSModuleDef *m,
     rme = &m->req_module_entries[m->req_module_entries_count++];
     rme->module_name = JS_DupAtom(ctx, module_name);
     rme->module = NULL;
+    rme->attributes = JS_UNDEFINED;
     return i;
 }
 
@@ -37280,9 +40967,44 @@ void JS_SetModuleLoaderFunc(JSRuntime *rt,
                             JSModuleNormalizeFunc *module_normalize,
                             JSModuleLoaderFunc *module_loader, void *opaque)
 {
-    rt->module_normalize_func = module_normalize;
-    rt->module_loader_func = module_loader;
+    rt->module_normalize_has_attr = false;
+    rt->normalize_u.module_normalize_func = module_normalize;
+    rt->module_loader_has_attr = false;
+    rt->u.module_loader_func = module_loader;
+    rt->module_check_attrs = NULL;
     rt->module_loader_opaque = opaque;
+}
+
+void JS_SetModuleLoaderFunc2(JSRuntime *rt,
+                             JSModuleNormalizeFunc *module_normalize,
+                             JSModuleLoaderFunc2 *module_loader,
+                             JSModuleCheckSupportedImportAttributes *module_check_attrs,
+                             void *opaque)
+{
+    rt->module_normalize_has_attr = false;
+    rt->normalize_u.module_normalize_func = module_normalize;
+    rt->module_loader_has_attr = true;
+    rt->u.module_loader_func2 = module_loader;
+    rt->module_check_attrs = module_check_attrs;
+    rt->module_loader_opaque = opaque;
+}
+
+void JS_SetModuleNormalizeFunc2(JSRuntime *rt,
+                                JSModuleNormalizeFunc2 *module_normalize)
+{
+    rt->module_normalize_has_attr = true;
+    rt->normalize_u.module_normalize_func2 = module_normalize;
+}
+
+int JS_SetModulePrivateValue(JSContext *ctx, JSModuleDef *m, JSValue val)
+{
+    set_value(ctx, &m->private_value, val);
+    return 0;
+}
+
+JSValue JS_GetModulePrivateValue(JSContext *ctx, JSModuleDef *m)
+{
+    return js_dup(m->private_value);
 }
 
 /* default module filename normalizer */
@@ -37300,9 +41022,9 @@ static char *js_default_module_normalize_name(JSContext *ctx,
         return js_strdup(ctx, name);
     }
 
-    p = strrchr(base_name, '/');
-    if (p)
-        len = p - base_name;
+    r = strrchr(base_name, '/');
+    if (r)
+        len = r - base_name;
     else
         len = 0;
 
@@ -37363,18 +41085,23 @@ static JSModuleDef *js_find_loaded_module(JSContext *ctx, JSAtom name)
 /* `base_cname` and `cname1` may be pure ASCII or UTF-8 encoded */
 static JSModuleDef *js_host_resolve_imported_module(JSContext *ctx,
                                                     const char *base_cname,
-                                                    const char *cname1)
+                                                    const char *cname1,
+                                                    JSValueConst attributes)
 {
     JSRuntime *rt = ctx->rt;
     JSModuleDef *m;
     char *cname;
     JSAtom module_name;
 
-    if (!rt->module_normalize_func) {
+    if (!rt->normalize_u.module_normalize_func && !rt->normalize_u.module_normalize_func2) {
         cname = js_default_module_normalize_name(ctx, base_cname, cname1);
+    } else if (rt->module_normalize_has_attr) {
+        cname = rt->normalize_u.module_normalize_func2(ctx, base_cname, cname1,
+                                                       attributes,
+                                                       rt->module_loader_opaque);
     } else {
-        cname = rt->module_normalize_func(ctx, base_cname, cname1,
-                                          rt->module_loader_opaque);
+        cname = rt->normalize_u.module_normalize_func(ctx, base_cname, cname1,
+                                                      rt->module_loader_opaque);
     }
     if (!cname)
         return NULL;
@@ -37396,7 +41123,7 @@ static JSModuleDef *js_host_resolve_imported_module(JSContext *ctx,
     JS_FreeAtom(ctx, module_name);
 
     /* load the module */
-    if (!rt->module_loader_func) {
+    if (!rt->u.module_loader_func) {
         /* XXX: use a syntax error ? */
         // XXX: update JS_DetectModule when you change this
         JS_ThrowReferenceError(ctx, "could not load module '%s'",
@@ -37405,14 +41132,19 @@ static JSModuleDef *js_host_resolve_imported_module(JSContext *ctx,
         return NULL;
     }
 
-    m = rt->module_loader_func(ctx, cname, rt->module_loader_opaque);
+    if (rt->module_loader_has_attr) {
+        m = rt->u.module_loader_func2(ctx, cname, rt->module_loader_opaque, attributes);
+    } else {
+        m = rt->u.module_loader_func(ctx, cname, rt->module_loader_opaque);
+    }
     js_free(ctx, cname);
     return m;
 }
 
 static JSModuleDef *js_host_resolve_imported_module_atom(JSContext *ctx,
-                                                    JSAtom base_module_name,
-                                                    JSAtom module_name1)
+                                                         JSAtom base_module_name,
+                                                         JSAtom module_name1,
+                                                         JSValueConst attributes)
 {
     const char *base_cname, *cname;
     JSModuleDef *m;
@@ -37425,7 +41157,7 @@ static JSModuleDef *js_host_resolve_imported_module_atom(JSContext *ctx,
         JS_FreeCString(ctx, base_cname);
         return NULL;
     }
-    m = js_host_resolve_imported_module(ctx, base_cname, cname);
+    m = js_host_resolve_imported_module(ctx, base_cname, cname, attributes);
     JS_FreeCString(ctx, base_cname);
     JS_FreeCString(ctx, cname);
     return m;
@@ -37880,7 +41612,8 @@ static int js_resolve_module(JSContext *ctx, JSModuleDef *m)
     for(i = 0; i < m->req_module_entries_count; i++) {
         JSReqModuleEntry *rme = &m->req_module_entries[i];
         m1 = js_host_resolve_imported_module_atom(ctx, m->module_name,
-                                                  rme->module_name);
+                                                  rme->module_name,
+                                                  rme->attributes);
         if (!m1)
             return -1;
         rme->module = m1;
@@ -37942,7 +41675,7 @@ static int js_create_module_bytecode_function(JSContext *ctx, JSModuleDef *m)
         for(i = 0; i < b->closure_var_count; i++) {
             JSClosureVar *cv = &b->closure_var[i];
             JSVarRef *var_ref;
-            if (cv->is_local) {
+            if (cv->closure_type == JS_CLOSURE_MODULE_DECL) {
                 var_ref = js_create_module_var(ctx, cv->is_lexical);
                 if (!var_ref)
                     goto fail;
@@ -38350,14 +42083,15 @@ static JSValue js_load_module_fulfilled(JSContext *ctx, JSValueConst this_val,
 
 static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
                                   const char *filename,
-                                  JSValueConst *resolving_funcs)
+                                  JSValueConst *resolving_funcs,
+                                  JSValueConst attributes)
 {
     JSValue evaluate_promise;
     JSModuleDef *m;
     JSValue ret, err, func_obj, evaluate_resolving_funcs[2];
     JSValueConst func_data[3];
 
-    m = js_host_resolve_imported_module(ctx, basename, filename);
+    m = js_host_resolve_imported_module(ctx, basename, filename, attributes);
     if (!m)
         goto fail;
 
@@ -38402,7 +42136,7 @@ JSValue JS_LoadModule(JSContext *ctx, const char *basename,
     promise = JS_NewPromiseCapability(ctx, resolving_funcs);
     if (JS_IsException(promise))
         return JS_EXCEPTION;
-    JS_LoadModuleInternal(ctx, basename, filename, vc(resolving_funcs));
+    JS_LoadModuleInternal(ctx, basename, filename, vc(resolving_funcs), JS_UNDEFINED);
     JS_FreeValue(ctx, resolving_funcs[0]);
     JS_FreeValue(ctx, resolving_funcs[1]);
     return promise;
@@ -38414,6 +42148,7 @@ static JSValue js_dynamic_import_job(JSContext *ctx,
     JSValueConst *resolving_funcs = argv;
     JSValueConst basename_val = argv[2];
     JSValueConst specifier = argv[3];
+    JSValueConst attributes = argv[4];
     const char *basename = NULL, *filename;
     JSValue ret, err;
 
@@ -38429,8 +42164,7 @@ static JSValue js_dynamic_import_job(JSContext *ctx,
     if (!filename)
         goto exception;
 
-    JS_LoadModuleInternal(ctx, basename, filename,
-                          resolving_funcs);
+    JS_LoadModuleInternal(ctx, basename, filename, resolving_funcs, attributes);
     JS_FreeCString(ctx, filename);
     JS_FreeCString(ctx, basename);
     return JS_UNDEFINED;
@@ -38443,11 +42177,14 @@ static JSValue js_dynamic_import_job(JSContext *ctx,
     return JS_UNDEFINED;
 }
 
-static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier)
+static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier,
+                                 JSValueConst options)
 {
     JSAtom basename;
-    JSValue promise, resolving_funcs[2], basename_val;
-    JSValue args[4];
+    JSValue promise, resolving_funcs[2], basename_val, err, ret;
+    JSValue specifier_str = JS_UNDEFINED, attributes = JS_UNDEFINED;
+    JSValue attributes_obj = JS_UNDEFINED;
+    JSValue args[5];
 
     basename = JS_GetScriptOrModuleName(ctx, 0);
     if (basename == JS_ATOM_NULL)
@@ -38464,19 +42201,84 @@ static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier)
         return promise;
     }
 
+    /* the string conversion must occur here */
+    specifier_str = JS_ToString(ctx, specifier);
+    if (JS_IsException(specifier_str))
+        goto exception;
+
+    if (!JS_IsUndefined(options)) {
+        if (!JS_IsObject(options)) {
+            JS_ThrowTypeError(ctx, "options must be an object");
+            goto exception;
+        }
+        attributes_obj = JS_GetProperty(ctx, options, JS_ATOM_with);
+        if (JS_IsException(attributes_obj))
+            goto exception;
+        if (!JS_IsUndefined(attributes_obj)) {
+            JSPropertyEnum *atoms;
+            uint32_t atoms_len, i;
+            JSValue val;
+
+            if (!JS_IsObject(attributes_obj)) {
+                JS_ThrowTypeError(ctx, "options.with must be an object");
+                goto exception;
+            }
+            attributes = JS_NewObjectProto(ctx, JS_NULL);
+            if (JS_IsException(attributes))
+                goto exception;
+            if (JS_GetOwnPropertyNamesInternal(ctx, &atoms, &atoms_len, JS_VALUE_GET_OBJ(attributes_obj),
+                                               JS_GPN_STRING_MASK | JS_GPN_ENUM_ONLY)) {
+                goto exception;
+            }
+            for(i = 0; i < atoms_len; i++) {
+                val = JS_GetProperty(ctx, attributes_obj, atoms[i].atom);
+                if (JS_IsException(val))
+                    goto exception1;
+                if (!JS_IsString(val)) {
+                    JS_FreeValue(ctx, val);
+                    JS_ThrowTypeError(ctx, "module attribute values must be strings");
+                    goto exception1;
+                }
+                if (JS_DefinePropertyValue(ctx, attributes, atoms[i].atom, val,
+                                           JS_PROP_C_W_E) < 0) {
+                exception1:
+                    JS_FreePropertyEnum(ctx, atoms, atoms_len);
+                    goto exception;
+                }
+            }
+            JS_FreePropertyEnum(ctx, atoms, atoms_len);
+            if (ctx->rt->module_check_attrs &&
+                ctx->rt->module_check_attrs(ctx, ctx->rt->module_loader_opaque, attributes) < 0) {
+                goto exception;
+            }
+            JS_FreeValue(ctx, attributes_obj);
+            attributes_obj = JS_UNDEFINED;
+        }
+    }
+
     args[0] = resolving_funcs[0];
     args[1] = resolving_funcs[1];
     args[2] = basename_val;
-    args[3] = unsafe_unconst(specifier);
+    args[3] = specifier_str;
+    args[4] = attributes;
 
     /* cannot run JS_LoadModuleInternal synchronously because it would
        cause an unexpected recursion in js_evaluate_module() */
-    JS_EnqueueJob(ctx, js_dynamic_import_job, 4, vc(args));
-
+    JS_EnqueueJob(ctx, js_dynamic_import_job, 5, vc(args));
+done:
     JS_FreeValue(ctx, basename_val);
     JS_FreeValue(ctx, resolving_funcs[0]);
     JS_FreeValue(ctx, resolving_funcs[1]);
+    JS_FreeValue(ctx, specifier_str);
+    JS_FreeValue(ctx, attributes);
     return promise;
+ exception:
+    JS_FreeValue(ctx, attributes_obj);
+    err = JS_GetException(ctx);
+    ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1, vc(&err));
+    JS_FreeValue(ctx, ret);
+    JS_FreeValue(ctx, err);
+    goto done;
 }
 
 static void js_set_module_evaluated(JSContext *ctx, JSModuleDef *m)
@@ -38874,27 +42676,132 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
 
 #ifndef QJS_DISABLE_PARSER
 
-static __exception JSAtom js_parse_from_clause(JSParseState *s)
+/* Parse 'with { key: "value", ... }' clause for import attributes.
+   rme->attributes is set to JS_UNDEFINED if no 'with' clause or an object
+   containing the attributes as key/value pairs. If rme->attributes is already
+   set (from a previous import of the same module), we still parse the tokens
+   but skip adding to the object since they should be the same. */
+static __exception int js_parse_with_clause(JSParseState *s, JSReqModuleEntry *rme)
+{
+    JSContext *ctx = s->ctx;
+    JSAtom key;
+    int ret;
+    bool already_set;
+
+    if (s->token.val != TOK_WITH)
+        return 0; /* no 'with' clause */
+
+    /* If attributes already set from previous import of same module,
+       just parse to consume tokens but don't modify the object. */
+    already_set = !JS_IsUndefined(rme->attributes);
+
+    if (next_token(s))
+        return -1;
+    if (js_parse_expect(s, '{'))
+        return -1;
+    while (s->token.val != '}') {
+        if (s->token.val == TOK_STRING) {
+            key = JS_ValueToAtom(ctx, s->token.u.str.str);
+            if (key == JS_ATOM_NULL)
+                return -1;
+        } else {
+            if (!token_is_ident(s->token.val)) {
+                js_parse_error(s, "identifier expected");
+                return -1;
+            }
+            key = JS_DupAtom(ctx, s->token.u.ident.atom);
+        }
+        if (next_token(s)) {
+            JS_FreeAtom(ctx, key);
+            return -1;
+        }
+        if (js_parse_expect(s, ':')) {
+            JS_FreeAtom(ctx, key);
+            return -1;
+        }
+        if (s->token.val != TOK_STRING) {
+            js_parse_error(s, "string expected");
+            JS_FreeAtom(ctx, key);
+            return -1;
+        }
+        if (!already_set) {
+            if (JS_IsUndefined(rme->attributes)) {
+                JSValue attributes = JS_NewObjectProto(ctx, JS_NULL);
+                if (JS_IsException(attributes)) {
+                    JS_FreeAtom(ctx, key);
+                    return -1;
+                }
+                rme->attributes = attributes;
+            }
+            /* check for duplicate keys */
+            ret = JS_HasProperty(ctx, rme->attributes, key);
+            if (ret != 0) {
+                if (ret < 0) {
+                    JS_FreeAtom(ctx, key);
+                    return -1;
+                } else {
+                    js_parse_error(s, "duplicate with key");
+                    JS_FreeAtom(ctx, key);
+                    return -1;
+                }
+            }
+            ret = JS_DefinePropertyValue(ctx, rme->attributes, key,
+                                         js_dup(s->token.u.str.str), JS_PROP_C_W_E);
+            if (ret < 0) {
+                JS_FreeAtom(ctx, key);
+                return -1;
+            }
+        }
+        JS_FreeAtom(ctx, key);
+        if (next_token(s))
+            return -1;
+        if (s->token.val != '}') {
+            if (js_parse_expect(s, ','))
+                return -1;
+        }
+    }
+    /* check attributes validity if checker function provided */
+    if (!already_set && !JS_IsUndefined(rme->attributes) &&
+        ctx->rt->module_check_attrs &&
+        ctx->rt->module_check_attrs(ctx, ctx->rt->module_loader_opaque, rme->attributes) < 0) {
+        return -1;
+    }
+    return js_parse_expect(s, '}');
+}
+
+/* return the module index in m->req_module_entries[] or < 0 if error */
+static __exception int js_parse_from_clause(JSParseState *s, JSModuleDef *m)
 {
     JSAtom module_name;
+    int idx;
+
     if (!token_is_pseudo_keyword(s, JS_ATOM_from)) {
         js_parse_error(s, "from clause expected");
-        return JS_ATOM_NULL;
+        return -1;
     }
     if (next_token(s))
-        return JS_ATOM_NULL;
+        return -1;
     if (s->token.val != TOK_STRING) {
         js_parse_error(s, "string expected");
-        return JS_ATOM_NULL;
+        return -1;
     }
     module_name = JS_ValueToAtom(s->ctx, s->token.u.str.str);
     if (module_name == JS_ATOM_NULL)
-        return JS_ATOM_NULL;
+        return -1;
     if (next_token(s)) {
         JS_FreeAtom(s->ctx, module_name);
-        return JS_ATOM_NULL;
+        return -1;
     }
-    return module_name;
+
+    idx = add_req_module_entry(s->ctx, m, module_name);
+    JS_FreeAtom(s->ctx, module_name);
+    if (idx < 0)
+        return -1;
+    if (s->token.val == TOK_WITH) {
+        if (js_parse_with_clause(s, &m->req_module_entries[idx]))
+            return -1;
+    }
+    return idx;
 }
 
 static bool has_unmatched_surrogate(const uint16_t *s, size_t n)
@@ -38920,7 +42827,6 @@ static __exception int js_parse_export(JSParseState *s)
     JSModuleDef *m = s->cur_func->module;
     JSAtom local_name, export_name;
     int first_export, idx, i, tok;
-    JSAtom module_name;
     JSExportEntry *me;
 
     if (next_token(s))
@@ -39004,11 +42910,7 @@ static __exception int js_parse_export(JSParseState *s)
         if (js_parse_expect(s, '}'))
             return -1;
         if (token_is_pseudo_keyword(s, JS_ATOM_from)) {
-            module_name = js_parse_from_clause(s);
-            if (module_name == JS_ATOM_NULL)
-                return -1;
-            idx = add_req_module_entry(ctx, m, module_name);
-            JS_FreeAtom(ctx, module_name);
+            idx = js_parse_from_clause(s, m);
             if (idx < 0)
                 return -1;
             for(i = first_export; i < m->export_entries_count; i++) {
@@ -39038,11 +42940,7 @@ static __exception int js_parse_export(JSParseState *s)
             }
             if (next_token(s))
                 goto fail1;
-            module_name = js_parse_from_clause(s);
-            if (module_name == JS_ATOM_NULL)
-                goto fail1;
-            idx = add_req_module_entry(ctx, m, module_name);
-            JS_FreeAtom(ctx, module_name);
+            idx = js_parse_from_clause(s, m);
             if (idx < 0)
                 goto fail1;
             me = add_export_entry(s, m, JS_ATOM__star_, export_name,
@@ -39052,11 +42950,7 @@ static __exception int js_parse_export(JSParseState *s)
                 return -1;
             me->u.req_module_idx = idx;
         } else {
-            module_name = js_parse_from_clause(s);
-            if (module_name == JS_ATOM_NULL)
-                return -1;
-            idx = add_req_module_entry(ctx, m, module_name);
-            JS_FreeAtom(ctx, module_name);
+            idx = js_parse_from_clause(s, m);
             if (idx < 0)
                 return -1;
             if (add_star_export_entry(ctx, m, idx) < 0)
@@ -39106,7 +43000,7 @@ static __exception int js_parse_export(JSParseState *s)
 }
 
 static int add_closure_var(JSContext *ctx, JSFunctionDef *s,
-                           bool is_local, bool is_arg,
+                           JSClosureTypeEnum closure_type,
                            int var_idx, JSAtom var_name,
                            bool is_const, bool is_lexical,
                            JSVarKindEnum var_kind);
@@ -39117,7 +43011,7 @@ static int add_import(JSParseState *s, JSModuleDef *m,
     JSContext *ctx = s->ctx;
     int i, var_idx;
     JSImportEntry *mi;
-    bool is_local;
+    JSClosureTypeEnum closure_type;
 
     if (local_name == JS_ATOM_arguments || local_name == JS_ATOM_eval)
         return js_parse_error(s, "invalid import binding");
@@ -39129,8 +43023,11 @@ static int add_import(JSParseState *s, JSModuleDef *m,
         }
     }
 
-    is_local = (import_name == JS_ATOM__star_);
-    var_idx = add_closure_var(ctx, s->cur_func, is_local, false,
+    if (import_name == JS_ATOM__star_)
+        closure_type = JS_CLOSURE_MODULE_DECL;
+    else
+        closure_type = JS_CLOSURE_MODULE_IMPORT;
+    var_idx = add_closure_var(ctx, s->cur_func, closure_type,
                               m->import_entries_count,
                               local_name, true, true, JS_VAR_NORMAL);
     if (var_idx < 0)
@@ -39164,6 +43061,14 @@ static __exception int js_parse_import(JSParseState *s)
         if (next_token(s)) {
             JS_FreeAtom(ctx, module_name);
             return -1;
+        }
+        idx = add_req_module_entry(ctx, m, module_name);
+        JS_FreeAtom(ctx, module_name);
+        if (idx < 0)
+            return -1;
+        if (s->token.val == TOK_WITH) {
+            if (js_parse_with_clause(s, &m->req_module_entries[idx]))
+                return -1;
         }
     } else {
         if (s->token.val == TOK_IDENT) {
@@ -39251,14 +43156,10 @@ static __exception int js_parse_import(JSParseState *s)
                 return -1;
         }
     end_import_clause:
-        module_name = js_parse_from_clause(s);
-        if (module_name == JS_ATOM_NULL)
+        idx = js_parse_from_clause(s, m);
+        if (idx < 0)
             return -1;
     }
-    idx = add_req_module_entry(ctx, m, module_name);
-    JS_FreeAtom(ctx, module_name);
-    if (idx < 0)
-        return -1;
     for(i = first_import; i < m->import_entries_count; i++)
         m->import_entries[i].req_module_idx = idx;
 
@@ -39890,12 +43791,40 @@ static __maybe_unused void js_dump_function_bytecode(JSContext *ctx, JSFunctionB
         printf("  closure vars:\n");
         for(i = 0; i < b->closure_var_count; i++) {
             JSClosureVar *cv = &b->closure_var[i];
-            printf("%5d: %s %s:%s%d %s\n", i,
-                   JS_AtomGetStr(ctx, atom_buf, sizeof(atom_buf), cv->var_name),
-                   cv->is_local ? "local" : "parent",
-                   cv->is_arg ? "arg" : "loc", cv->var_idx,
+            printf("%5d: %s %s",
+                   i,
                    cv->is_const ? "const" :
-                   cv->is_lexical ? "let" : "var");
+                   cv->is_lexical ? "let" : "var",
+                   JS_AtomGetStr(ctx, atom_buf, sizeof(atom_buf), cv->var_name));
+            switch(cv->closure_type) {
+            case JS_CLOSURE_LOCAL:
+                printf(" [loc%d]\n", cv->var_idx);
+                break;
+            case JS_CLOSURE_ARG:
+                printf(" [arg%d]\n", cv->var_idx);
+                break;
+            case JS_CLOSURE_REF:
+                printf(" [ref%d]\n", cv->var_idx);
+                break;
+            case JS_CLOSURE_GLOBAL_REF:
+                printf(" [global_ref%d]\n", cv->var_idx);
+                break;
+            case JS_CLOSURE_GLOBAL_DECL:
+                printf(" [global_decl]\n");
+                break;
+            case JS_CLOSURE_GLOBAL:
+                printf(" [global]\n");
+                break;
+            case JS_CLOSURE_MODULE_DECL:
+                printf(" [module_decl]\n");
+                break;
+            case JS_CLOSURE_MODULE_IMPORT:
+                printf(" [module_import]\n");
+                break;
+            default:
+                printf(" [?]\n");
+                break;
+            }
         }
     }
     printf("  stack_size: %d\n", b->stack_size);
@@ -39921,7 +43850,7 @@ static __maybe_unused void js_dump_function_bytecode(JSContext *ctx, JSFunctionB
 #ifndef QJS_DISABLE_PARSER
 
 static int add_closure_var(JSContext *ctx, JSFunctionDef *s,
-                           bool is_local, bool is_arg,
+                           JSClosureTypeEnum closure_type,
                            int var_idx, JSAtom var_name,
                            bool is_const, bool is_lexical,
                            JSVarKindEnum var_kind)
@@ -39941,8 +43870,7 @@ static int add_closure_var(JSContext *ctx, JSFunctionDef *s,
                         &s->closure_var_size, s->closure_var_count + 1))
         return -1;
     cv = &s->closure_var[s->closure_var_count++];
-    cv->is_local = is_local;
-    cv->is_arg = is_arg;
+    cv->closure_type = closure_type;
     cv->is_const = is_const;
     cv->is_lexical = is_lexical;
     cv->var_kind = var_kind;
@@ -39963,44 +43891,32 @@ static int find_closure_var(JSContext *ctx, JSFunctionDef *s,
     return -1;
 }
 
-/* 'fd' must be a parent of 's'. Create in 's' a closure referencing a
-   local variable (is_local = true) or a closure (is_local = false) in
-   'fd' */
-static int get_closure_var2(JSContext *ctx, JSFunctionDef *s,
-                            JSFunctionDef *fd, bool is_local,
-                            bool is_arg, int var_idx, JSAtom var_name,
-                            bool is_const, bool is_lexical,
-                            JSVarKindEnum var_kind)
-{
-    int i;
-
-    if (fd != s->parent) {
-        var_idx = get_closure_var2(ctx, s->parent, fd, is_local,
-                                   is_arg, var_idx, var_name,
-                                   is_const, is_lexical, var_kind);
-        if (var_idx < 0)
-            return -1;
-        is_local = false;
-    }
-    for(i = 0; i < s->closure_var_count; i++) {
-        JSClosureVar *cv = &s->closure_var[i];
-        if (cv->var_idx == var_idx && cv->is_arg == is_arg &&
-            cv->is_local == is_local)
-            return i;
-    }
-    return add_closure_var(ctx, s, is_local, is_arg, var_idx, var_name,
-                           is_const, is_lexical, var_kind);
-}
-
+/* 'fd' must be a parent of 's'. Create in 's' a closure referencing
+   another one in 'fd' */
 static int get_closure_var(JSContext *ctx, JSFunctionDef *s,
-                           JSFunctionDef *fd, bool is_arg,
+                           JSFunctionDef *fd, JSClosureTypeEnum closure_type,
                            int var_idx, JSAtom var_name,
                            bool is_const, bool is_lexical,
                            JSVarKindEnum var_kind)
 {
-    return get_closure_var2(ctx, s, fd, true, is_arg,
-                            var_idx, var_name, is_const, is_lexical,
-                            var_kind);
+    int i;
+
+    if (fd != s->parent) {
+        var_idx = get_closure_var(ctx, s->parent, fd, closure_type,
+                                  var_idx, var_name,
+                                  is_const, is_lexical, var_kind);
+        if (var_idx < 0)
+            return -1;
+        if (closure_type != JS_CLOSURE_GLOBAL_REF)
+            closure_type = JS_CLOSURE_REF;
+    }
+    for(i = 0; i < s->closure_var_count; i++) {
+        JSClosureVar *cv = &s->closure_var[i];
+        if (cv->var_idx == var_idx && cv->closure_type == closure_type)
+            return i;
+    }
+    return add_closure_var(ctx, s, closure_type, var_idx, var_name,
+                           is_const, is_lexical, var_kind);
 }
 
 static int get_with_scope_opcode(int op)
@@ -40081,19 +43997,10 @@ static int optimize_scope_make_global_ref(JSContext *ctx, JSFunctionDef *s,
                                           JSAtom var_name)
 {
     int label_pos, end_pos, pos, op;
-    bool is_strict_mode = s->is_strict_mode;
 
     /* replace the reference get/put with normal variable
        accesses */
-    if (is_strict_mode) {
-        /* need to check if the variable exists before evaluating the right
-           expression */
-        /* XXX: need an extra OP_true if destructuring an array */
-        dbuf_putc(bc, OP_check_var);
-        dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
-    } else {
-        /* XXX: need 2 extra OP_true if destructuring an array */
-    }
+    /* XXX: need 2 extra OP_true if destructuring an array */
     if (bc_buf[pos_next] == OP_get_ref_value) {
         dbuf_putc(bc, OP_get_var);
         dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
@@ -40107,34 +44014,10 @@ static int optimize_scope_make_global_ref(JSContext *ctx, JSFunctionDef *s,
     assert(bc_buf[pos] == OP_label);
     end_pos = label_pos + 2;
     op = bc_buf[label_pos];
-    if (is_strict_mode) {
-        if (op != OP_nop) {
-            switch(op) {
-            case OP_insert3:
-                op = OP_insert2;
-                break;
-            case OP_perm4:
-                op = OP_perm3;
-                break;
-            case OP_rot3l:
-                op = OP_swap;
-                break;
-            default:
-                abort();
-            }
-            bc_buf[pos++] = op;
-        }
-    } else {
-        if (op == OP_insert3)
-            bc_buf[pos++] = OP_dup;
-    }
-    if (is_strict_mode) {
-        bc_buf[pos] = OP_put_var_strict;
-        /* XXX: need 1 extra OP_drop if destructuring an array */
-    } else {
-        bc_buf[pos] = OP_put_var;
-        /* XXX: need 2 extra OP_drop if destructuring an array */
-    }
+    if (op == OP_insert3)
+        bc_buf[pos++] = OP_dup;
+    bc_buf[pos] = OP_put_var;
+    /* XXX: need 2 extra OP_drop if destructuring an array */
     put_u32(bc_buf + pos + 1, JS_DupAtom(ctx, var_name));
     pos += 5;
     /* pad with OP_nop */
@@ -40214,6 +44097,14 @@ static void var_object_test(JSContext *ctx, JSFunctionDef *s,
     dbuf_putc(bc, is_with);
     update_label(s, *plabel_done, 1);
     s->jump_size++;
+}
+
+static inline void capture_var(JSFunctionDef *s, JSVarDef *vd)
+{
+    if (!vd->is_captured) {
+        vd->is_captured = 1;
+        vd->var_ref_idx = s->var_ref_count++;
+    }
 }
 
 /* return the position of the next opcode */
@@ -40325,23 +44216,33 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                 /* Create a dummy object with a named slot that is
                    a reference to the local variable */
                 if (var_idx & ARGUMENT_VAR_OFFSET) {
+                    capture_var(s, &s->args[var_idx - ARGUMENT_VAR_OFFSET]);
                     dbuf_putc(bc, OP_make_arg_ref);
                     dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
                     dbuf_put_u16(bc, var_idx - ARGUMENT_VAR_OFFSET);
                 } else {
+                    capture_var(s, &s->vars[var_idx]);
                     dbuf_putc(bc, OP_make_loc_ref);
                     dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
                     dbuf_put_u16(bc, var_idx);
                 }
             }
             break;
+        case OP_scope_put_var:
+            if (!(var_idx & ARGUMENT_VAR_OFFSET) &&
+                s->vars[var_idx].var_kind == JS_VAR_FUNCTION_NAME) {
+                /* in non strict mode, modifying the function name is ignored */
+                dbuf_putc(bc, OP_drop);
+                goto done;
+            }
+            goto local_scope_var;
         case OP_scope_get_ref:
             dbuf_putc(bc, OP_undefined);
-            /* fall thru */
+            goto local_scope_var;
         case OP_scope_get_var_undef:
         case OP_scope_get_var:
-        case OP_scope_put_var:
         case OP_scope_put_var_init:
+        local_scope_var:
             is_put = (op == OP_scope_put_var || op == OP_scope_put_var_init);
             if (var_idx & ARGUMENT_VAR_OFFSET) {
                 dbuf_putc(bc, OP_get_arg + is_put);
@@ -40408,8 +44309,8 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                 var_idx = idx;
                 break;
             } else if (vd->var_name == JS_ATOM__with_ && !is_pseudo_var) {
-                vd->is_captured = 1;
-                idx = get_closure_var(ctx, s, fd, false, idx, vd->var_name, false, false, JS_VAR_NORMAL);
+                capture_var(fd, vd);
+                idx = get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL, idx, vd->var_name, false, false, JS_VAR_NORMAL);
                 if (idx >= 0) {
                     dbuf_putc(bc, OP_get_var_ref);
                     dbuf_put_u16(bc, idx);
@@ -40445,8 +44346,8 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         /* check eval object */
         if (!is_arg_scope && fd->var_object_idx >= 0 && !is_pseudo_var) {
             vd = &fd->vars[fd->var_object_idx];
-            vd->is_captured = 1;
-            idx = get_closure_var(ctx, s, fd, false,
+            capture_var(fd, vd);
+            idx = get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL,
                                   fd->var_object_idx, vd->var_name,
                                   false, false, JS_VAR_NORMAL);
             dbuf_putc(bc, OP_get_var_ref);
@@ -40457,8 +44358,8 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         /* check eval object in argument scope */
         if (fd->arg_var_object_idx >= 0 && !is_pseudo_var) {
             vd = &fd->vars[fd->arg_var_object_idx];
-            vd->is_captured = 1;
-            idx = get_closure_var(ctx, s, fd, false,
+            capture_var(fd, vd);
+            idx = get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL,
                                   fd->arg_var_object_idx, vd->var_name,
                                   false, false, JS_VAR_NORMAL);
             dbuf_putc(bc, OP_get_var_ref);
@@ -40480,11 +44381,11 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             JSClosureVar *cv = &fd->closure_var[idx1];
             if (var_name == cv->var_name) {
                 if (fd != s) {
-                    idx = get_closure_var2(ctx, s, fd,
-                                           false,
-                                           cv->is_arg, idx1,
-                                           cv->var_name, cv->is_const,
-                                           cv->is_lexical, cv->var_kind);
+                    idx = get_closure_var(ctx, s, fd,
+                                          JS_CLOSURE_REF,
+                                          idx1,
+                                          cv->var_name, cv->is_const,
+                                          cv->is_lexical, cv->var_kind);
                 } else {
                     idx = idx1;
                 }
@@ -40494,11 +44395,11 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                         cv->var_name == JS_ATOM__with_) && !is_pseudo_var) {
                 int is_with = (cv->var_name == JS_ATOM__with_);
                 if (fd != s) {
-                    idx = get_closure_var2(ctx, s, fd,
-                                           false,
-                                           cv->is_arg, idx1,
-                                           cv->var_name, false, false,
-                                           JS_VAR_NORMAL);
+                    idx = get_closure_var(ctx, s, fd,
+                                          JS_CLOSURE_REF,
+                                          idx1,
+                                          cv->var_name, false, false,
+                                          JS_VAR_NORMAL);
                 } else {
                     idx = idx1;
                 }
@@ -40512,14 +44413,14 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
     if (var_idx >= 0) {
         /* find the corresponding closure variable */
         if (var_idx & ARGUMENT_VAR_OFFSET) {
-            fd->args[var_idx - ARGUMENT_VAR_OFFSET].is_captured = 1;
+            capture_var(fd, &fd->args[var_idx - ARGUMENT_VAR_OFFSET]);
             idx = get_closure_var(ctx, s, fd,
-                                  true, var_idx - ARGUMENT_VAR_OFFSET,
+                                  JS_CLOSURE_ARG, var_idx - ARGUMENT_VAR_OFFSET,
                                   var_name, false, false, JS_VAR_NORMAL);
         } else {
-            fd->vars[var_idx].is_captured = 1;
+            capture_var(fd, &fd->vars[var_idx]);
             idx = get_closure_var(ctx, s, fd,
-                                  false, var_idx,
+                                  JS_CLOSURE_LOCAL, var_idx,
                                   var_name,
                                   fd->vars[var_idx].is_const,
                                   fd->vars[var_idx].is_lexical,
@@ -40564,15 +44465,22 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                     dbuf_put_u16(bc, idx);
                 }
                 break;
+            case OP_scope_put_var:
+                if (s->closure_var[idx].var_kind == JS_VAR_FUNCTION_NAME) {
+                    /* in non strict mode, modifying the function name is ignored */
+                    dbuf_putc(bc, OP_drop);
+                    goto done;
+                }
+                goto closure_scope_var;
             case OP_scope_get_ref:
                 /* XXX: should create a dummy object with a named slot that is
                    a reference to the closure variable */
                 dbuf_putc(bc, OP_undefined);
-                /* fall thru */
+                goto closure_scope_var;
             case OP_scope_get_var_undef:
             case OP_scope_get_var:
-            case OP_scope_put_var:
             case OP_scope_put_var_init:
+            closure_scope_var:
                 is_put = (op == OP_scope_put_var ||
                           op == OP_scope_put_var_init);
                 if (is_put) {
@@ -40691,7 +44599,8 @@ static int resolve_scope_private_field1(JSContext *ctx,
         if (idx >= 0) {
             var_kind = fd->vars[idx].var_kind;
             if (is_ref) {
-                idx = get_closure_var(ctx, s, fd, false, idx, var_name,
+                capture_var(fd, &fd->vars[idx]);
+                idx = get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL, idx, var_name,
                                       true, true, JS_VAR_NORMAL);
                 if (idx < 0)
                     return -1;
@@ -40708,12 +44617,12 @@ static int resolve_scope_private_field1(JSContext *ctx,
                         var_kind = cv->var_kind;
                         is_ref = true;
                         if (fd != s) {
-                            idx = get_closure_var2(ctx, s, fd,
-                                                   false,
-                                                   cv->is_arg, idx,
-                                                   cv->var_name, cv->is_const,
-                                                   cv->is_lexical,
-                                                   cv->var_kind);
+                            idx = get_closure_var(ctx, s, fd,
+                                                  JS_CLOSURE_REF,
+                                                  idx,
+                                                  cv->var_name, cv->is_const,
+                                                  cv->is_lexical,
+                                                  cv->var_kind);
                             if (idx < 0)
                                 return -1;
                         }
@@ -40846,7 +44755,7 @@ static void mark_eval_captured_variables(JSContext *ctx, JSFunctionDef *s,
 
     for (idx = s->scopes[scope_level].first; idx >= 0;) {
         vd = &s->vars[idx];
-        vd->is_captured = 1;
+        capture_var(s, vd);
         idx = vd->scope_next;
     }
 }
@@ -40910,6 +44819,16 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
        before. */
     assert(s->is_eval || s->closure_var_count == 0);
 
+    /* mark all local variables as captured since eval can access any of them */
+    if (!s->is_eval) {
+        for (i = 0; i < s->arg_count; i++) {
+            capture_var(s, &s->args[i]);
+        }
+        for (i = 0; i < s->var_count; i++) {
+            capture_var(s, &s->vars[i]);
+        }
+    }
+
     /* XXX: inefficient, but eval performance is less critical */
     fd = s;
     for(;;) {
@@ -40942,8 +44861,8 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
         scope_idx = fd->scopes[scope_level].first;
         while (scope_idx >= 0) {
             vd = &fd->vars[scope_idx];
-            vd->is_captured = 1;
-            get_closure_var(ctx, s, fd, false, scope_idx,
+            capture_var(fd, vd);
+            get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL, scope_idx,
                             vd->var_name, vd->is_const, vd->is_lexical, vd->var_kind);
             scope_idx = vd->scope_next;
         }
@@ -40954,8 +44873,9 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
             for(i = 0; i < fd->arg_count; i++) {
                 vd = &fd->args[i];
                 if (vd->var_name != JS_ATOM_NULL) {
+                    capture_var(fd, vd);
                     get_closure_var(ctx, s, fd,
-                                    true, i, vd->var_name, false,
+                                    JS_CLOSURE_ARG, i, vd->var_name, false,
                                     vd->is_lexical, JS_VAR_NORMAL);
                 }
             }
@@ -40965,8 +44885,9 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                 if (vd->scope_level == 0 &&
                     vd->var_name != JS_ATOM__ret_ &&
                     vd->var_name != JS_ATOM_NULL) {
+                    capture_var(fd, vd);
                     get_closure_var(ctx, s, fd,
-                                    false, i, vd->var_name, false,
+                                    JS_CLOSURE_LOCAL, i, vd->var_name, false,
                                     vd->is_lexical, JS_VAR_NORMAL);
                 }
             }
@@ -40975,8 +44896,9 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                 vd = &fd->vars[i];
                 /* do not close top level last result */
                 if (vd->scope_level == 0 && is_var_in_arg_scope(vd)) {
+                    capture_var(fd, vd);
                     get_closure_var(ctx, s, fd,
-                                    false, i, vd->var_name, false,
+                                    JS_CLOSURE_LOCAL, i, vd->var_name, false,
                                     vd->is_lexical, JS_VAR_NORMAL);
                 }
             }
@@ -40987,10 +44909,10 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                top level) */
             for (idx = 0; idx < fd->closure_var_count; idx++) {
                 JSClosureVar *cv = &fd->closure_var[idx];
-                get_closure_var2(ctx, s, fd,
-                                 false, cv->is_arg,
-                                 idx, cv->var_name, cv->is_const,
-                                 cv->is_lexical, cv->var_kind);
+                get_closure_var(ctx, s, fd,
+                                JS_CLOSURE_REF,
+                                idx, cv->var_name, cv->is_const,
+                                cv->is_lexical, cv->var_kind);
             }
         }
     }
@@ -40999,8 +44921,7 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
 static void set_closure_from_var(JSContext *ctx, JSClosureVar *cv,
                                  JSVarDef *vd, int var_idx)
 {
-    cv->is_local = true;
-    cv->is_arg = false;
+    cv->closure_type = JS_CLOSURE_LOCAL;
     cv->is_const = vd->is_const;
     cv->is_lexical = vd->is_lexical;
     cv->var_kind = vd->var_kind;
@@ -41041,8 +44962,7 @@ static __exception int add_closure_variables(JSContext *ctx, JSFunctionDef *s,
         for(i = 0; i < b->arg_count; i++) {
             JSClosureVar *cv = &s->closure_var[s->closure_var_count++];
             vd = &b->vardefs[i];
-            cv->is_local = true;
-            cv->is_arg = true;
+            cv->closure_type = JS_CLOSURE_ARG;
             cv->is_const = false;
             cv->is_lexical = false;
             cv->var_kind = JS_VAR_NORMAL;
@@ -41070,8 +44990,7 @@ static __exception int add_closure_variables(JSContext *ctx, JSFunctionDef *s,
     for(i = 0; i < b->closure_var_count; i++) {
         JSClosureVar *cv0 = &b->closure_var[i];
         JSClosureVar *cv = &s->closure_var[s->closure_var_count++];
-        cv->is_local = false;
-        cv->is_arg = cv0->is_arg;
+        cv->closure_type = JS_CLOSURE_REF;
         cv->is_const = cv0->is_const;
         cv->is_lexical = cv0->is_lexical;
         cv->var_kind = cv0->var_kind;
@@ -42079,6 +45998,10 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
             dbuf_putc(&bc_out, OP_special_object);
             dbuf_putc(&bc_out, OP_SPECIAL_OBJECT_ARGUMENTS);
         } else {
+            /* mapped arguments need all args to be captured */
+            for (i = 0; i < s->arg_count; i++) {
+                capture_var(s, &s->args[i]);
+            }
             dbuf_putc(&bc_out, OP_special_object);
             dbuf_putc(&bc_out, OP_SPECIAL_OBJECT_MAPPED_ARGUMENTS);
         }
@@ -42547,13 +46470,12 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         case OP_insert2:
             /* Transformation:
                insert2 put_field(a) drop -> put_field(a)
-               insert2 put_var_strict(a) drop -> put_var_strict(a)
             */
-            if (code_match(&cc, pos_next, M2(OP_put_field, OP_put_var_strict), OP_drop, -1)) {
+            if (code_match(&cc, pos_next, OP_put_field, OP_drop, -1)) {
                 if (cc.line_num >= 0) line_num = cc.line_num;
                 if (cc.col_num >= 0) col_num = cc.col_num;
                 add_pc2line_info(s, bc_out.size, line_num, col_num);
-                dbuf_putc(&bc_out, cc.op);
+                dbuf_putc(&bc_out, OP_put_field);
                 dbuf_put_u32(&bc_out, cc.atom);
                 pos_next = cc.pos;
                 break;
@@ -42737,12 +46659,12 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                     put_short_code(&bc_out, op1, idx);
                     break;
                 }
-                if (code_match(&cc, pos_next, OP_perm3, M2(OP_put_field, OP_put_var_strict), OP_drop, -1)) {
+                if (code_match(&cc, pos_next, OP_perm3, OP_put_field, OP_drop, -1)) {
                     if (cc.line_num >= 0) line_num = cc.line_num;
                     if (cc.col_num >= 0) col_num = cc.col_num;
                     add_pc2line_info(s, bc_out.size, line_num, col_num);
                     dbuf_putc(&bc_out, OP_dec + (op - OP_post_dec));
-                    dbuf_putc(&bc_out, cc.op);
+                    dbuf_putc(&bc_out, OP_put_field);
                     dbuf_put_u32(&bc_out, cc.atom);
                     pos_next = cc.pos;
                     break;
@@ -43185,7 +47107,7 @@ static int add_module_variables(JSContext *ctx, JSFunctionDef *fd)
 
     for(i = 0; i < fd->global_var_count; i++) {
         hf = &fd->global_vars[i];
-        if (add_closure_var(ctx, fd, true, false, i, hf->var_name, hf->is_const,
+        if (add_closure_var(ctx, fd, JS_CLOSURE_MODULE_DECL, i, hf->var_name, hf->is_const,
                             hf->is_lexical, JS_VAR_NORMAL) < 0)
             return -1;
     }
@@ -43339,6 +47261,7 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
         b->var_count = fd->var_count;
         b->arg_count = fd->arg_count;
         b->defined_arg_count = fd->defined_arg_count;
+        b->var_ref_count = fd->var_ref_count;
         js_free(ctx, fd->args);
         js_free(ctx, fd->vars);
         js_free(ctx, fd->vars_htab);
@@ -44674,7 +48597,7 @@ typedef enum BCTagEnum {
     BC_TAG_SYMBOL,
 } BCTagEnum;
 
-#define BC_VERSION 21
+#define BC_VERSION 25
 
 typedef struct BCWriterState {
     JSContext *ctx;
@@ -44740,22 +48663,16 @@ static void bc_put_u8(BCWriterState *s, uint8_t v)
 
 static void bc_put_u16(BCWriterState *s, uint16_t v)
 {
-    if (is_be())
-        v = bswap16(v);
     dbuf_put_u16(&s->dbuf, v);
 }
 
 static __maybe_unused void bc_put_u32(BCWriterState *s, uint32_t v)
 {
-    if (is_be())
-        v = bswap32(v);
     dbuf_put_u32(&s->dbuf, v);
 }
 
 static void bc_put_u64(BCWriterState *s, uint64_t v)
 {
-    if (is_be())
-        v = bswap64(v);
     dbuf_put(&s->dbuf, (uint8_t *)&v, sizeof(v));
 }
 
@@ -44830,64 +48747,30 @@ static int bc_put_atom(BCWriterState *s, JSAtom atom)
     return 0;
 }
 
-static void bc_byte_swap(uint8_t *bc_buf, int bc_len)
+static uint32_t bc_csum(const uint8_t *p, size_t n)
 {
-    int pos, len, op, fmt;
+    uint32_t a, b, c, h;
+    size_t i;
 
-    pos = 0;
-    while (pos < bc_len) {
-        op = bc_buf[pos];
-        len = short_opcode_info(op).size;
-        fmt = short_opcode_info(op).fmt;
-        switch(fmt) {
-        case OP_FMT_u16:
-        case OP_FMT_i16:
-        case OP_FMT_label16:
-        case OP_FMT_npop:
-        case OP_FMT_loc:
-        case OP_FMT_arg:
-        case OP_FMT_var_ref:
-            put_u16(bc_buf + pos + 1,
-                    bswap16(get_u16(bc_buf + pos + 1)));
-            break;
-        case OP_FMT_i32:
-        case OP_FMT_u32:
-        case OP_FMT_const:
-        case OP_FMT_label:
-        case OP_FMT_atom:
-        case OP_FMT_atom_u8:
-            put_u32(bc_buf + pos + 1,
-                    bswap32(get_u32(bc_buf + pos + 1)));
-            break;
-        case OP_FMT_atom_u16:
-        case OP_FMT_label_u16:
-            put_u32(bc_buf + pos + 1,
-                    bswap32(get_u32(bc_buf + pos + 1)));
-            put_u16(bc_buf + pos + 1 + 4,
-                    bswap16(get_u16(bc_buf + pos + 1 + 4)));
-            break;
-        case OP_FMT_atom_label_u8:
-        case OP_FMT_atom_label_u16:
-            put_u32(bc_buf + pos + 1,
-                    bswap32(get_u32(bc_buf + pos + 1)));
-            put_u32(bc_buf + pos + 1 + 4,
-                    bswap32(get_u32(bc_buf + pos + 1 + 4)));
-            if (fmt == OP_FMT_atom_label_u16) {
-                put_u16(bc_buf + pos + 1 + 4 + 4,
-                        bswap16(get_u16(bc_buf + pos + 1 + 4 + 4)));
-            }
-            break;
-        case OP_FMT_npop_u16:
-            put_u16(bc_buf + pos + 1,
-                    bswap16(get_u16(bc_buf + pos + 1)));
-            put_u16(bc_buf + pos + 1 + 2,
-                    bswap16(get_u16(bc_buf + pos + 1 + 2)));
-            break;
-        default:
-            break;
-        }
-        pos += len;
+    h = 0;
+    for (i = 0; i+4 < n; i += 4) {
+        h += get_u32(p+i);
+        h *= 0x9e370001;
     }
+    a = b = c = 0;
+    switch (n-i) {
+    case 3:
+        c = (uint32_t)p[i+2];
+    case 2:
+        b = (uint32_t)p[i+1];
+    case 1:
+        a = (uint32_t)p[i+0];
+    case 0:
+        break;
+    }
+    h += a | b<<8 | c<<16;
+    h *= 0x9e370001;
+    return h;
 }
 
 static int JS_WriteFunctionBytecode(BCWriterState *s,
@@ -44924,9 +48807,6 @@ static int JS_WriteFunctionBytecode(BCWriterState *s,
         }
         pos += len;
     }
-
-    if (is_be())
-        bc_byte_swap(bc_buf, bc_len);
 
     dbuf_put(&s->dbuf, bc_buf, bc_len);
 
@@ -45024,6 +48904,7 @@ static int JS_WriteFunctionTag(BCWriterState *s, JSValueConst obj)
     bc_put_leb128(s, b->var_count);
     bc_put_leb128(s, b->defined_arg_count);
     bc_put_leb128(s, b->stack_size);
+    bc_put_leb128(s, b->var_ref_count);
     bc_put_leb128(s, b->closure_var_count);
     bc_put_leb128(s, b->cpool_count);
     bc_put_leb128(s, b->byte_code_len);
@@ -45042,6 +48923,8 @@ static int JS_WriteFunctionTag(BCWriterState *s, JSValueConst obj)
             bc_set_flags(&flags, &idx, vd->is_captured, 1);
             assert(idx <= 8);
             bc_put_u8(s, flags);
+            if (vd->is_captured)
+                bc_put_leb128(s, vd->var_ref_idx);
         }
     } else {
         bc_put_leb128(s, 0);
@@ -45052,13 +48935,12 @@ static int JS_WriteFunctionTag(BCWriterState *s, JSValueConst obj)
         bc_put_atom(s, cv->var_name);
         bc_put_leb128(s, cv->var_idx);
         flags = idx = 0;
-        bc_set_flags(&flags, &idx, cv->is_local, 1);
-        bc_set_flags(&flags, &idx, cv->is_arg, 1);
+        bc_set_flags(&flags, &idx, cv->closure_type, 3);
         bc_set_flags(&flags, &idx, cv->is_const, 1);
         bc_set_flags(&flags, &idx, cv->is_lexical, 1);
         bc_set_flags(&flags, &idx, cv->var_kind, 4);
-        assert(idx <= 8);
-        bc_put_u8(s, flags);
+        assert(idx <= 16);
+        bc_put_leb128(s, flags);
     }
 
     // write constant pool before code so code can be disassembled
@@ -45197,7 +49079,7 @@ static int JS_WriteObjectTag(BCWriterState *s, JSValueConst obj)
     for(pass = 0; pass < 2; pass++) {
         if (pass == 1)
             bc_put_leb128(s, prop_count);
-        for(i = 0, pr = get_shape_prop(sh); i < sh->prop_count; i++, pr++) {
+        for(i = 0, pr = sh->prop; i < sh->prop_count; i++, pr++) {
             atom = pr->atom;
             if (atom != JS_ATOM_NULL && (pr->flags & JS_PROP_ENUMERABLE)) {
                 if (pr->flags & JS_PROP_TMASK) {
@@ -45269,17 +49151,8 @@ static int JS_WriteRegExp(BCWriterState *s, JSRegExp regexp)
 {
     JSString *bc = regexp.bytecode;
     assert(!bc->is_wide_char);
-
     JS_WriteString(s, regexp.pattern);
-
-    if (is_be())
-        lre_byte_swap(str8(bc), bc->len, /*is_byte_swapped*/false);
-
     JS_WriteString(s, bc);
-
-    if (is_be())
-        lre_byte_swap(str8(bc), bc->len, /*is_byte_swapped*/true);
-
     return 0;
 }
 
@@ -45323,6 +49196,19 @@ static int JS_WriteObjectRec(BCWriterState *s, JSValueConst obj)
             JSString *p = JS_VALUE_GET_STRING(obj);
             bc_put_u8(s, BC_TAG_STRING);
             JS_WriteString(s, p);
+        }
+        break;
+    case JS_TAG_STRING_ROPE:
+        {
+            JSValue str;
+            int ret;
+            str = JS_ToString(s->ctx, obj);
+            if (JS_IsException(str))
+                goto fail;
+            ret = JS_WriteObjectRec(s, str);
+            JS_FreeValue(s->ctx, str);
+            if (ret)
+                goto fail;
         }
         break;
     case JS_TAG_FUNCTION_BYTECODE:
@@ -45449,6 +49335,7 @@ static int JS_WriteObjectAtoms(BCWriterState *s)
     dbuf1 = s->dbuf;
     js_dbuf_init(s->ctx, &s->dbuf);
     bc_put_u8(s, BC_VERSION);
+    bc_put_u32(s, 0); // checksum, filled in after serialization
 
     bc_put_leb128(s, s->idx_to_atom_count);
     for(i = 0; i < s->idx_to_atom_count; i++) {
@@ -45472,7 +49359,7 @@ static int JS_WriteObjectAtoms(BCWriterState *s)
     /* XXX: could just append dbuf1 data, but it uses more memory if
        dbuf1 is larger than dbuf */
     atoms_size = s->dbuf.size;
-    if (dbuf_realloc(&dbuf1, dbuf1.size + atoms_size))
+    if (dbuf_claim(&dbuf1, atoms_size))
         goto fail;
     memmove(dbuf1.buf + atoms_size, dbuf1.buf, dbuf1.size);
     memcpy(dbuf1.buf, s->dbuf.buf, atoms_size);
@@ -45489,6 +49376,8 @@ uint8_t *JS_WriteObject2(JSContext *ctx, size_t *psize, JSValueConst obj,
                          int flags, JSSABTab *psab_tab)
 {
     BCWriterState ss, *s = &ss;
+    uint32_t h;
+    DynBuf *d;
 
     memset(s, 0, sizeof(*s));
     s->ctx = ctx;
@@ -45519,7 +49408,11 @@ uint8_t *JS_WriteObject2(JSContext *ctx, size_t *psize, JSValueConst obj,
     } else {
         js_free(ctx, s->sab_tab);
     }
-    return s->dbuf.buf;
+    // don't include version and checksum fields in checksum
+    d = &s->dbuf;
+    h = bc_csum(&d->buf[5], d->size - 5);
+    put_u32(&d->buf[1], h);
+    return d->buf;
  fail:
     js_object_list_end(ctx, &s->object_list);
     js_free(ctx, s->atom_to_idx);
@@ -45626,8 +49519,6 @@ static int bc_get_u16(BCReaderState *s, uint16_t *pval)
         return bc_read_error_end(s);
     }
     v = get_u16(s->ptr);
-    if (is_be())
-        v = bswap16(v);
     *pval = v;
     s->ptr += 2;
     return 0;
@@ -45641,8 +49532,6 @@ static __maybe_unused int bc_get_u32(BCReaderState *s, uint32_t *pval)
         return bc_read_error_end(s);
     }
     v = get_u32(s->ptr);
-    if (is_be())
-        v = bswap32(v);
     *pval = v;
     s->ptr += 4;
     return 0;
@@ -45656,8 +49545,6 @@ static int bc_get_u64(BCReaderState *s, uint64_t *pval)
         return bc_read_error_end(s);
     }
     v = get_u64(s->ptr);
-    if (is_be())
-        v = bswap64(v);
     *pval = v;
     s->ptr += 8;
     return 0;
@@ -45774,15 +49661,8 @@ static JSString *JS_ReadString(BCReaderState *s)
     }
     memcpy(str8(p), s->ptr, size);
     s->ptr += size;
-    if (is_wide_char) {
-        if (is_be()) {
-            uint32_t i;
-            for (i = 0; i < len; i++)
-                str16(p)[i] = bswap16(str16(p)[i]);
-        }
-    } else {
+    if (!is_wide_char)
         str8(p)[size] = '\0'; /* add the trailing zero for 8 bit strings */
-    }
 #ifdef ENABLE_DUMPS // JS_DUMP_READ_OBJECT
     if (check_dump_flag(s->ctx->rt, JS_DUMP_READ_OBJECT)) {
         bc_read_trace(s, "%s", ""); // hex dump and indentation
@@ -45814,9 +49694,6 @@ static int JS_ReadFunctionBytecode(BCReaderState *s, JSFunctionBytecode *b,
     if (bc_get_buf(s, bc_buf, bc_len))
         return -1;
     b->byte_code_buf = bc_buf;
-
-    if (is_be())
-        bc_byte_swap(bc_buf, bc_len);
 
     pos = 0;
     while (pos < bc_len) {
@@ -45964,7 +49841,9 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s)
         goto fail;
     if (bc_get_leb128_u16(s, &bc.stack_size))
         goto fail;
-    if (bc_get_leb128_int(s, &bc.closure_var_count))
+    if (bc_get_leb128_u16(s, &bc.var_ref_count))
+        goto fail;
+    if (bc_get_leb128_u16(s, &bc.closure_var_count))
         goto fail;
     if (bc_get_leb128_int(s, &bc.cpool_count))
         goto fail;
@@ -46038,6 +49917,10 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s)
             vd->is_const = bc_get_flags(v8, &idx, 1);
             vd->is_lexical = bc_get_flags(v8, &idx, 1);
             vd->is_captured = bc_get_flags(v8, &idx, 1);
+            if (vd->is_captured) {
+                if (bc_get_leb128_u16(s, &vd->var_ref_idx))
+                    goto fail;
+            }
 #ifdef ENABLE_DUMPS // JS_DUMP_READ_OBJECT
             if (check_dump_flag(s->ctx->rt, JS_DUMP_READ_OBJECT)) {
                 bc_read_trace(s, "%3d  %d%c%c%c %4d  ",
@@ -46058,26 +49941,23 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s)
         bc_read_trace(s, "off  flags idx  name\n");
         for(i = 0; i < b->closure_var_count; i++) {
             JSClosureVar *cv = &b->closure_var[i];
-            int var_idx;
+            int var_idx, flags;
             if (bc_get_atom(s, &cv->var_name))
                 goto fail;
             if (bc_get_leb128_int(s, &var_idx))
                 goto fail;
             cv->var_idx = var_idx;
-            if (bc_get_u8(s, &v8))
+            if (bc_get_leb128_int(s, &flags))
                 goto fail;
             idx = 0;
-            cv->is_local = bc_get_flags(v8, &idx, 1);
-            cv->is_arg = bc_get_flags(v8, &idx, 1);
-            cv->is_const = bc_get_flags(v8, &idx, 1);
-            cv->is_lexical = bc_get_flags(v8, &idx, 1);
-            cv->var_kind = bc_get_flags(v8, &idx, 4);
+            cv->closure_type = bc_get_flags(flags, &idx, 3);
+            cv->is_const = bc_get_flags(flags, &idx, 1);
+            cv->is_lexical = bc_get_flags(flags, &idx, 1);
+            cv->var_kind = bc_get_flags(flags, &idx, 4);
 #ifdef ENABLE_DUMPS // JS_DUMP_READ_OBJECT
             if (check_dump_flag(s->ctx->rt, JS_DUMP_READ_OBJECT)) {
-                bc_read_trace(s, "%3d  %d%c%c%c%c %3d  ",
-                              i, cv->var_kind,
-                              cv->is_local ? 'L' : '.',
-                              cv->is_arg ? 'A' : '.',
+                bc_read_trace(s, "%3d  %d:%d%c%c %3d  ",
+                              i, cv->var_kind, cv->closure_type,
                               cv->is_const ? 'C' : '.',
                               cv->is_lexical ? 'X' : '.',
                               cv->var_idx);
@@ -46202,7 +50082,8 @@ static JSValue JS_ReadModule(BCReaderState *s)
             // because that doesn't work for C modules and is also prone
             // to loading the same JS module twice.
             *pm = js_host_resolve_imported_module_atom(s->ctx, m->module_name,
-                                                       rme->module_name);
+                                                       rme->module_name,
+                                                       rme->attributes);
             if (!*pm)
                 goto fail;
         }
@@ -46517,9 +50398,6 @@ static JSValue JS_ReadRegExp(BCReaderState *s)
         return JS_ThrowInternalError(ctx, "bad regexp bytecode");
     }
 
-    if (is_be())
-        lre_byte_swap(str8(bc), bc->len, /*is_byte_swapped*/true);
-
     return js_regexp_constructor_internal(ctx, JS_UNDEFINED,
                                           JS_MKPTR(JS_TAG_STRING, pattern),
                                           JS_MKPTR(JS_TAG_STRING, bc));
@@ -46677,7 +50555,7 @@ static JSValue JS_ReadObjectRec(BCReaderState *s)
             if (bc_get_leb128(s, &val))
                 return JS_EXCEPTION;
             bc_read_trace(s, "%u\n", val);
-            if (val >= s->objects_count) {
+            if (val >= s->objects_count || !s->objects[val]) {
                 return JS_ThrowSyntaxError(ctx, "invalid object reference (%u >= %u)",
                                            val, s->objects_count);
             }
@@ -46716,6 +50594,7 @@ static int JS_ReadObjectAtoms(BCReaderState *s)
 {
     uint8_t v8, type;
     JSString *p;
+    uint32_t h;
     int i;
     JSAtom atom;
 
@@ -46724,6 +50603,14 @@ static int JS_ReadObjectAtoms(BCReaderState *s)
     if (v8 != BC_VERSION) {
         JS_ThrowSyntaxError(s->ctx, "invalid version (%d expected=%d)",
                             v8, BC_VERSION);
+        return -1;
+    }
+    if (bc_get_u32(s, &h))
+        return -1;
+    // allow UINT32_MAX as an escape hatch, otherwise updating
+    // the test corpus in tests/test_bjson.js gets too tedious
+    if (h != UINT32_MAX && h != bc_csum(s->ptr, s->buf_end - s->ptr)) {
+        JS_ThrowSyntaxError(s->ctx, "checksum error");
         return -1;
     }
     if (bc_get_leb128(s, &s->idx_to_atom_count))
@@ -46877,7 +50764,7 @@ static JSValue JS_InstantiateFunctionListItem2(JSContext *ctx, JSObject *p,
                                                JSAtom atom, void *opaque)
 {
     const JSCFunctionListEntry *e = opaque;
-    JSValue val;
+    JSValue val, proto;
 
     switch(e->def_type) {
     case JS_DEF_CFUNC:
@@ -46888,8 +50775,13 @@ static JSValue JS_InstantiateFunctionListItem2(JSContext *ctx, JSObject *p,
         val = JS_NewAtomString(ctx, e->u.str);
         break;
     case JS_DEF_OBJECT:
-        val = JS_NewObject(ctx);
-        JS_SetPropertyFunctionList(ctx, val, e->u.prop_list.tab, e->u.prop_list.len);
+        /* XXX: could add a flag */
+        if (atom == JS_ATOM_Symbol_unscopables)
+            proto = JS_NULL;
+        else
+            proto = ctx->class_proto[JS_CLASS_OBJECT];
+        val = JS_NewObjectProtoList(ctx, proto,
+                                    e->u.prop_list.tab, e->u.prop_list.len);
         break;
     default:
         abort();
@@ -46978,6 +50870,12 @@ static int JS_InstantiateFunctionListItem(JSContext *ctx, JSValueConst obj,
     case JS_DEF_PROP_UNDEFINED:
         val = JS_UNDEFINED;
         break;
+    case JS_DEF_PROP_SYMBOL:
+        val = JS_AtomToValue(ctx, e->u.i32);
+        break;
+    case JS_DEF_PROP_BOOL:
+        val = JS_NewBool(ctx, e->u.i32);
+        break;
     case JS_DEF_PROP_STRING:
     case JS_DEF_OBJECT:
         JS_DefineAutoInitProperty(ctx, obj, atom, JS_AUTOINIT_ID_PROP,
@@ -47046,8 +50944,8 @@ int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
             val = js_float64(e->u.f64);
             break;
         case JS_DEF_OBJECT:
-            val = JS_NewObject(ctx);
-            JS_SetPropertyFunctionList(ctx, val, e->u.prop_list.tab, e->u.prop_list.len);
+            val = JS_NewObjectProtoList(ctx, ctx->class_proto[JS_CLASS_OBJECT],
+                                        e->u.prop_list.tab, e->u.prop_list.len);
             break;
         default:
             abort();
@@ -47059,22 +50957,26 @@ int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
 }
 
 /* Note: 'func_obj' is not necessarily a constructor */
-static void JS_SetConstructor2(JSContext *ctx,
-                               JSValueConst func_obj,
-                               JSValueConst proto,
-                               int proto_flags, int ctor_flags)
+static int JS_SetConstructor2(JSContext *ctx,
+                              JSValueConst func_obj,
+                              JSValueConst proto,
+                              int proto_flags, int ctor_flags)
 {
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_prototype,
-                           js_dup(proto), proto_flags);
-    JS_DefinePropertyValue(ctx, proto, JS_ATOM_constructor,
-                           js_dup(func_obj), ctor_flags);
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_prototype,
+                               js_dup(proto), proto_flags) < 0)
+        return -1;
+    if (JS_DefinePropertyValue(ctx, proto, JS_ATOM_constructor,
+                               js_dup(func_obj), ctor_flags) < 0)
+        return -1;
+    return 0;
 }
 
-void JS_SetConstructor(JSContext *ctx, JSValueConst func_obj,
-                       JSValueConst proto)
+/* return 0 if OK, -1 if exception */
+int JS_SetConstructor(JSContext *ctx, JSValueConst func_obj,
+                      JSValueConst proto)
 {
-    JS_SetConstructor2(ctx, func_obj, proto,
-                       0, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    return JS_SetConstructor2(ctx, func_obj, proto,
+                              0, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
 }
 
 static void JS_NewGlobalCConstructor2(JSContext *ctx,
@@ -47099,14 +51001,97 @@ static JSValue JS_NewGlobalCConstructor(JSContext *ctx, const char *name,
     return func_obj;
 }
 
-static JSValue JS_NewGlobalCConstructorOnly(JSContext *ctx, const char *name,
-                                            JSCFunction *func, int length,
-                                            JSValue proto)
+static JSValue JS_NewObjectProtoList(JSContext *ctx, JSValueConst proto,
+                                     const JSCFunctionListEntry *fields, int n_fields)
 {
-    JSValue func_obj;
-    func_obj = JS_NewCFunction2(ctx, func, name, length, JS_CFUNC_constructor, 0);
-    JS_NewGlobalCConstructor2(ctx, func_obj, name, proto);
-    return func_obj;
+    JSValue obj;
+    obj = JS_NewObjectProtoClassAlloc(ctx, proto, JS_CLASS_OBJECT, n_fields);
+    if (JS_IsException(obj))
+        return obj;
+    if (JS_SetPropertyFunctionList(ctx, obj, fields, n_fields)) {
+        JS_FreeValue(ctx, obj);
+        return JS_EXCEPTION;
+    }
+    return obj;
+}
+
+#define JS_NEW_CTOR_NO_GLOBAL   (1 << 0) /* don't create a global binding */
+#define JS_NEW_CTOR_PROTO_CLASS (1 << 1) /* the prototype class is 'class_id' instead of JS_CLASS_OBJECT */
+#define JS_NEW_CTOR_PROTO_EXIST (1 << 2) /* the prototype is already defined */
+#define JS_NEW_CTOR_READONLY    (1 << 3) /* read-only constructor field */
+
+/* Return the constructor. Define it as a global variable unless
+   JS_NEW_CTOR_NO_GLOBAL is set. The new class inherits from
+   parent_ctor if it is not JS_UNDEFINED. If class_id is >= 0,
+   class_proto[class_id] is set. */
+static JSValue JS_NewCConstructor(JSContext *ctx, int class_id, const char *name,
+                                  JSCFunction *func, int length, JSCFunctionEnum cproto, int magic,
+                                  JSValueConst parent_ctor,
+                                  const JSCFunctionListEntry *ctor_fields, int n_ctor_fields,
+                                  const JSCFunctionListEntry *proto_fields, int n_proto_fields,
+                                  int flags)
+{
+    JSValue ctor = JS_UNDEFINED, proto, parent_proto;
+    int proto_class_id, proto_flags, ctor_flags;
+
+    proto_flags = 0;
+    if (flags & JS_NEW_CTOR_READONLY) {
+        ctor_flags = JS_PROP_CONFIGURABLE;
+    } else {
+        ctor_flags = JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE;
+    }
+
+    if (JS_IsUndefined(parent_ctor)) {
+        parent_proto = js_dup(ctx->class_proto[JS_CLASS_OBJECT]);
+        parent_ctor = ctx->function_proto;
+    } else {
+        parent_proto = JS_GetProperty(ctx, parent_ctor, JS_ATOM_prototype);
+        if (JS_IsException(parent_proto))
+            return JS_EXCEPTION;
+    }
+
+    if (flags & JS_NEW_CTOR_PROTO_EXIST) {
+        proto = js_dup(ctx->class_proto[class_id]);
+    } else {
+        if (flags & JS_NEW_CTOR_PROTO_CLASS)
+            proto_class_id = class_id;
+        else
+            proto_class_id = JS_CLASS_OBJECT;
+        /* one additional field: constructor */
+        proto = JS_NewObjectProtoClassAlloc(ctx, parent_proto, proto_class_id,
+                                            n_proto_fields + 1);
+        if (JS_IsException(proto))
+            goto fail;
+        if (class_id >= 0)
+            ctx->class_proto[class_id] = js_dup(proto);
+    }
+    if (JS_SetPropertyFunctionList(ctx, proto, proto_fields, n_proto_fields))
+        goto fail;
+
+    /* additional fields: name, length, prototype */
+    ctor = JS_NewCFunction3(ctx, func, name, length, cproto, magic, parent_ctor,
+                            n_ctor_fields + 3);
+    if (JS_IsException(ctor))
+        goto fail;
+    if (JS_SetPropertyFunctionList(ctx, ctor, ctor_fields, n_ctor_fields))
+        goto fail;
+    if (!(flags & JS_NEW_CTOR_NO_GLOBAL)) {
+        if (JS_DefinePropertyValueStr(ctx, ctx->global_obj, name,
+                                      js_dup(ctor),
+                                      JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0)
+            goto fail;
+    }
+    if (JS_SetConstructor2(ctx, ctor, proto, proto_flags, ctor_flags))
+        goto fail;
+
+    JS_FreeValue(ctx, proto);
+    JS_FreeValue(ctx, parent_proto);
+    return ctor;
+ fail:
+    JS_FreeValue(ctx, proto);
+    JS_FreeValue(ctx, parent_proto);
+    JS_FreeValue(ctx, ctor);
+    return JS_EXCEPTION;
 }
 
 static JSValue js_global_eval(JSContext *ctx, JSValueConst this_val,
@@ -47176,11 +51161,21 @@ JSValue JS_ToObject(JSContext *ctx, JSValueConst val)
         obj = JS_NewObjectClass(ctx, JS_CLASS_NUMBER);
         goto set_value;
     case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
         /* XXX: should call the string constructor */
         {
-            JSString *p1 = JS_VALUE_GET_STRING(val);
+            JSValue str;
+            str = JS_ToString(ctx, val); /* ensure that we never store a rope */
+            if (JS_IsException(str))
+                return JS_EXCEPTION;
             obj = JS_NewObjectClass(ctx, JS_CLASS_STRING);
-            JS_DefinePropertyValue(ctx, obj, JS_ATOM_length, js_int32(p1->len), 0);
+            if (!JS_IsException(obj)) {
+                JS_DefinePropertyValue(ctx, obj, JS_ATOM_length,
+                                       JS_NewInt32(ctx, JS_VALUE_GET_STRING(str)->len), 0);
+                JS_SetObjectData(ctx, obj, JS_DupValue(ctx, str));
+            }
+            JS_FreeValue(ctx, str);
+            return obj;
         }
         goto set_value;
     case JS_TAG_BOOL:
@@ -47197,6 +51192,8 @@ JSValue JS_ToObject(JSContext *ctx, JSValueConst val)
 
 static JSValue JS_ToObjectFree(JSContext *ctx, JSValue val)
 {
+    if (JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT)
+        return val;
     JSValue obj = JS_ToObject(ctx, val);
     JS_FreeValue(ctx, val);
     return obj;
@@ -47548,11 +51545,11 @@ static JSValue js_object_getOwnPropertyDescriptor(JSContext *ctx, JSValueConst t
                 goto exception1;
             flags = JS_PROP_C_W_E | JS_PROP_THROW;
             if (desc.flags & JS_PROP_GETSET) {
-                if (JS_DefinePropertyValue(ctx, ret, JS_ATOM_get, js_dup(desc.getter), flags) < 0
-                ||  JS_DefinePropertyValue(ctx, ret, JS_ATOM_set, js_dup(desc.setter), flags) < 0)
+                if (JS_DefinePropertyValueConst(ctx, ret, JS_ATOM_get, desc.getter, flags) < 0
+                ||  JS_DefinePropertyValueConst(ctx, ret, JS_ATOM_set, desc.setter, flags) < 0)
                     goto exception1;
             } else {
-                if (JS_DefinePropertyValue(ctx, ret, JS_ATOM_value, js_dup(desc.value), flags) < 0
+                if (JS_DefinePropertyValueConst(ctx, ret, JS_ATOM_value, desc.value, flags) < 0
                 ||  JS_DefinePropertyValue(ctx, ret, JS_ATOM_writable,
                                            js_bool(desc.flags & JS_PROP_WRITABLE),
                                            flags) < 0)
@@ -47654,17 +51651,15 @@ static JSValue JS_GetOwnPropertyNames2(JSContext *ctx, JSValueConst obj1,
     for(j = i = 0; i < len; i++) {
         JSAtom atom = atoms[i].atom;
         if (flags & JS_GPN_ENUM_ONLY) {
-            JSPropertyDescriptor desc;
-            int res;
+            int desc_flags, res;
 
             /* Check if property is still enumerable */
-            res = JS_GetOwnPropertyInternal(ctx, &desc, p, atom);
+            res = JS_GetOwnPropertyFlagsInternal(ctx, &desc_flags, p, atom);
             if (res < 0)
                 goto exception;
             if (!res)
                 continue;
-            js_free_desc(ctx, &desc);
-            if (!(desc.flags & JS_PROP_ENUMERABLE))
+            if (!(desc_flags & JS_PROP_ENUMERABLE))
                 continue;
         }
         switch(kind) {
@@ -48058,18 +52053,17 @@ static JSValue js_object_seal(JSContext *ctx, JSValueConst this_val,
         return JS_EXCEPTION;
 
     for(i = 0; i < len; i++) {
-        JSPropertyDescriptor desc;
+        int prop_flags;
         JSAtom prop = props[i].atom;
 
         desc_flags = JS_PROP_THROW | JS_PROP_HAS_CONFIGURABLE;
         if (freeze_flag) {
-            res = JS_GetOwnPropertyInternal(ctx, &desc, p, prop);
+            res = JS_GetOwnPropertyFlagsInternal(ctx, &prop_flags, p, prop);
             if (res < 0)
                 goto exception;
             if (res) {
-                if (desc.flags & JS_PROP_WRITABLE)
+                if (prop_flags & JS_PROP_WRITABLE)
                     desc_flags |= JS_PROP_HAS_WRITABLE;
-                js_free_desc(ctx, &desc);
             }
         }
         if (JS_DefineProperty(ctx, obj, prop, JS_UNDEFINED,
@@ -48102,16 +52096,15 @@ static JSValue js_object_isSealed(JSContext *ctx, JSValueConst this_val,
         return JS_EXCEPTION;
 
     for(i = 0; i < len; i++) {
-        JSPropertyDescriptor desc;
+        int prop_flags;
         JSAtom prop = props[i].atom;
 
-        res = JS_GetOwnPropertyInternal(ctx, &desc, p, prop);
+        res = JS_GetOwnPropertyFlagsInternal(ctx, &prop_flags, p, prop);
         if (res < 0)
             goto exception;
         if (res) {
-            js_free_desc(ctx, &desc);
-            if ((desc.flags & JS_PROP_CONFIGURABLE)
-            ||  (is_frozen && (desc.flags & JS_PROP_WRITABLE))) {
+            if ((prop_flags & JS_PROP_CONFIGURABLE)
+            ||  (is_frozen && (prop_flags & JS_PROP_WRITABLE))) {
                 res = false;
                 goto done;
             }
@@ -48318,7 +52311,7 @@ static JSValue js_object_propertyIsEnumerable(JSContext *ctx, JSValueConst this_
 {
     JSValue obj, res = JS_EXCEPTION;
     JSAtom prop = JS_ATOM_NULL;
-    JSPropertyDescriptor desc;
+    int prop_flags;
     int has_prop;
 
     obj = JS_ToObject(ctx, this_val);
@@ -48328,12 +52321,11 @@ static JSValue js_object_propertyIsEnumerable(JSContext *ctx, JSValueConst this_
     if (unlikely(prop == JS_ATOM_NULL))
         goto exception;
 
-    has_prop = JS_GetOwnPropertyInternal(ctx, &desc, JS_VALUE_GET_OBJ(obj), prop);
+    has_prop = JS_GetOwnPropertyFlagsInternal(ctx, &prop_flags, JS_VALUE_GET_OBJ(obj), prop);
     if (has_prop < 0)
         goto exception;
     if (has_prop) {
-        res = js_bool(desc.flags & JS_PROP_ENUMERABLE);
-        js_free_desc(ctx, &desc);
+        res = js_bool(prop_flags & JS_PROP_ENUMERABLE);
     } else {
         res = JS_FALSE;
     }
@@ -49009,8 +53001,8 @@ static JSValue js_aggregate_error_constructor(JSContext *ctx,
                                  JS_CLASS_ERROR);
     if (JS_IsException(obj))
         return obj;
-    JS_DefinePropertyValue(ctx, obj, JS_ATOM_errors, js_dup(errors),
-                           JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    JS_DefinePropertyValueConst(ctx, obj, JS_ATOM_errors, errors,
+                               JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
     return obj;
 }
 
@@ -49241,8 +53233,8 @@ static JSValue js_array_of(JSContext *ctx, JSValueConst this_val,
     if (JS_IsException(obj))
         return JS_EXCEPTION;
     for(i = 0; i < argc; i++) {
-        if (JS_CreateDataPropertyUint32(ctx, obj, i, js_dup(argv[i]),
-                                        JS_PROP_THROW) < 0) {
+        if (JS_CreateDataPropertyUint32Const(ctx, obj, i, argv[i],
+                                             JS_PROP_THROW) < 0) {
             goto fail;
         }
     }
@@ -49487,8 +53479,8 @@ static JSValue js_array_concat(JSContext *ctx, JSValueConst this_val,
                 JS_ThrowTypeError(ctx, "Array loo long");
                 goto exception;
             }
-            if (JS_DefinePropertyValueInt64(ctx, arr, n, js_dup(e),
-                                            JS_PROP_C_W_E | JS_PROP_THROW) < 0)
+            if (JS_DefinePropertyValueInt64Const(ctx, arr, n, e,
+                                                 JS_PROP_C_W_E | JS_PROP_THROW) < 0)
                 goto exception;
             n++;
         }
@@ -49662,8 +53654,8 @@ static JSValue js_array_every(JSContext *ctx, JSValueConst this_val,
             case special_filter:
             case special_filter | special_TA:
                 if (JS_ToBoolFree(ctx, res)) {
-                    if (JS_DefinePropertyValueInt64(ctx, ret, n++, js_dup(val),
-                                                    JS_PROP_C_W_E | JS_PROP_THROW) < 0)
+                    if (JS_DefinePropertyValueInt64Const(ctx, ret, n++, val,
+                                                         JS_PROP_C_W_E | JS_PROP_THROW) < 0)
                         goto exception;
                 }
                 break;
@@ -49852,7 +53844,7 @@ static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
         }
         if (js_get_fast_array(ctx, obj, &arrp, &count)) {
             for (; n < count; n++) {
-                if (js_strict_eq2(ctx, js_dup(argv[0]), js_dup(arrp[n]),
+                if (js_strict_eq2(ctx, argv[0], arrp[n],
                                   JS_EQ_SAME_VALUE_ZERO)) {
                     goto done;
                 }
@@ -49862,10 +53854,11 @@ static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
             val = JS_GetPropertyInt64(ctx, obj, n);
             if (JS_IsException(val))
                 goto exception;
-            if (js_strict_eq2(ctx, js_dup(argv[0]), val,
-                              JS_EQ_SAME_VALUE_ZERO)) {
+            if (js_strict_eq2(ctx, argv[0], val, JS_EQ_SAME_VALUE_ZERO)) {
+                JS_FreeValue(ctx, val);
                 goto done;
             }
+            JS_FreeValue(ctx, val);
         }
     }
     res = false;
@@ -49898,8 +53891,7 @@ static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
         }
         if (js_get_fast_array(ctx, obj, &arrp, &count)) {
             for (; n < count; n++) {
-                if (js_strict_eq2(ctx, js_dup(argv[0]), js_dup(arrp[n]),
-                                  JS_EQ_STRICT)) {
+                if (js_strict_eq2(ctx, argv[0], arrp[n], JS_EQ_STRICT)) {
                     goto done;
                 }
             }
@@ -49909,9 +53901,11 @@ static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
             if (present < 0)
                 goto exception;
             if (present) {
-                if (js_strict_eq2(ctx, js_dup(argv[0]), val, JS_EQ_STRICT)) {
+                if (js_strict_eq2(ctx, argv[0], val, JS_EQ_STRICT)) {
+                    JS_FreeValue(ctx, val);
                     goto done;
                 }
+                JS_FreeValue(ctx, val);
             }
         }
     }
@@ -49945,7 +53939,7 @@ static JSValue js_array_lastIndexOf(JSContext *ctx, JSValueConst this_val,
         }
         if (js_get_fast_array(ctx, obj, &arrp, &count) && count == len) {
             for (; n >= 0; n--) {
-                if (js_strict_eq2(ctx, js_dup(argv[0]), js_dup(arrp[n]),
+                if (js_strict_eq2(ctx, argv[0], arrp[n],
                                   JS_EQ_STRICT)) {
                     goto done;
                 }
@@ -49956,9 +53950,11 @@ static JSValue js_array_lastIndexOf(JSContext *ctx, JSValueConst this_val,
             if (present < 0)
                 goto exception;
             if (present) {
-                if (js_strict_eq2(ctx, js_dup(argv[0]), val, JS_EQ_STRICT)) {
+                if (js_strict_eq2(ctx, argv[0], val, JS_EQ_STRICT)) {
+                    JS_FreeValue(ctx, val);
                     goto done;
                 }
+                JS_FreeValue(ctx, val);
             }
         }
     }
@@ -50190,6 +54186,35 @@ static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
     int i;
     int64_t len, from, newLen;
 
+    /* fast path for push on fast arrays */
+    if (likely(JS_VALUE_GET_TAG(this_val) == JS_TAG_OBJECT && !unshift)) {
+        JSObject *p = JS_VALUE_GET_OBJ(this_val);
+        if (likely(p->class_id == JS_CLASS_ARRAY &&
+                   p->fast_array &&
+                   p->extensible &&
+                   p->shape->proto == JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_ARRAY]) &&
+                   ctx->std_array_prototype)) {
+            uint32_t array_len, new_len;
+            if (likely(JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT &&
+                       (p->shape->prop->flags & JS_PROP_WRITABLE))) {
+                array_len = JS_VALUE_GET_INT(p->prop[0].u.value);
+                new_len = array_len + argc;
+                if (likely(new_len >= array_len)) { /* no overflow */
+                    if (unlikely(new_len > p->u.array.u1.size)) {
+                        if (expand_fast_array(ctx, p, new_len))
+                            return JS_EXCEPTION;
+                    }
+                    for(i = 0; i < argc; i++) {
+                        p->u.array.u.values[array_len + i] = js_dup(argv[i]);
+                    }
+                    p->u.array.count = new_len;
+                    p->prop[0].u.value = js_int32(new_len);
+                    return js_int32(new_len);
+                }
+            }
+        }
+    }
+
     obj = JS_ToObject(ctx, this_val);
     if (js_get_length64(ctx, &len, obj))
         goto exception;
@@ -50411,7 +54436,7 @@ static JSValue js_array_slice(JSContext *ctx, JSValueConst this_val,
         js_is_fast_array(ctx, arr)) {
         /* XXX: should share code with fast array constructor */
         for (; k < final && k < count32; k++, n++) {
-            if (JS_CreateDataPropertyUint32(ctx, arr, n, js_dup(arrp[k]), JS_PROP_THROW) < 0)
+            if (JS_CreateDataPropertyUint32Const(ctx, arr, n, arrp[k], JS_PROP_THROW) < 0)
                 goto exception;
         }
     }
@@ -50956,16 +54981,23 @@ static void js_array_iterator_mark(JSRuntime *rt, JSValueConst val,
 static JSValue js_create_array(JSContext *ctx, int len, JSValueConst *tab)
 {
     JSValue obj;
+    JSObject *p;
     int i;
 
     obj = JS_NewArray(ctx);
     if (JS_IsException(obj))
         return JS_EXCEPTION;
-    for(i = 0; i < len; i++) {
-        if (JS_CreateDataPropertyUint32(ctx, obj, i, js_dup(tab[i]), 0) < 0) {
+    if (len > 0) {
+        p = JS_VALUE_GET_OBJ(obj);
+        if (expand_fast_array(ctx, p, len) < 0) {
             JS_FreeValue(ctx, obj);
             return JS_EXCEPTION;
         }
+        p->u.array.count = len;
+        for(i = 0; i < len; i++)
+            p->u.array.u.values[i] = js_dup(tab[i]);
+        /* update the 'length' field */
+        set_value(ctx, &p->prop[0].u.value, js_int32(len));
     }
     return obj;
 }
@@ -51156,11 +55188,11 @@ static JSValue js_iterator_constructor(JSContext *ctx, JSValueConst new_target,
     return js_create_from_ctor(ctx, new_target, JS_CLASS_ITERATOR);
 }
 
-// note: deliberately doesn't use space-saving bit fields for
-// |index|, |count| and |running| because tcc miscompiles them
 typedef struct JSIteratorConcatData {
-    int index, count;             // elements (not pairs!) in values[] array
-    bool running;
+    uint32_t index : 31; // elements (not pairs!) in values[] array
+    uint32_t unused : 1;
+    uint32_t count : 31;
+    uint32_t running : 1;
     JSValue iter, next, values[]; // array of (object, method) pairs
 } JSIteratorConcatData;
 
@@ -51171,7 +55203,7 @@ static void js_iterator_concat_finalizer(JSRuntime *rt, JSValueConst val)
     if (it) {
         JS_FreeValueRT(rt, it->iter);
         JS_FreeValueRT(rt, it->next);
-        for (int i = it->index; i < it->count; i++)
+        for (uint32_t i = it->index; i < it->count; i++)
             JS_FreeValueRT(rt, it->values[i]);
         js_free_rt(rt, it);
     }
@@ -51185,56 +55217,61 @@ static void js_iterator_concat_mark(JSRuntime *rt, JSValueConst val,
     if (it) {
         JS_MarkValue(rt, it->iter, mark_func);
         JS_MarkValue(rt, it->next, mark_func);
-        for (int i = it->index; i < it->count; i++)
+        for (uint32_t i = it->index; i < it->count; i++)
             JS_MarkValue(rt, it->values[i], mark_func);
     }
 }
 
 static JSValue js_iterator_concat_next(JSContext *ctx, JSValueConst this_val,
-                                       int argc, JSValueConst *argv)
+                                       int argc, JSValueConst *argv,
+                                       int *pdone, int magic)
 {
     JSValue iter, item, next, val, *obj, *meth;
     JSIteratorConcatData *it;
-    JSPropertyDescriptor d;
-    int done, ret;
+    int done;
 
     it = JS_GetOpaque2(ctx, this_val, JS_CLASS_ITERATOR_CONCAT);
     if (!it)
         return JS_EXCEPTION;
     if (it->running)
         return JS_ThrowTypeError(ctx, "already running");
+    it->running = true;
 next:
-    if (it->index >= it->count)
-        return js_create_iterator_result(ctx, JS_UNDEFINED, /*done*/true);
+    if (it->index >= it->count) {
+        *pdone = true;
+        val = JS_UNDEFINED;
+        goto done;
+    }
     obj = &it->values[it->index + 0];
     meth = &it->values[it->index + 1];
     iter = it->iter;
     if (JS_IsUndefined(iter)) {
         iter = JS_GetIterator2(ctx, *obj, *meth);
         if (JS_IsException(iter))
-            return JS_EXCEPTION;
+            goto fail;
         it->iter = iter;
     }
     next = it->next;
     if (JS_IsUndefined(next)) {
         next = JS_GetProperty(ctx, iter, JS_ATOM_next);
         if (JS_IsException(next))
-            return JS_EXCEPTION;
+            goto fail;
         it->next = next;
     }
-    it->running = true;
     item = JS_IteratorNext2(ctx, iter, next, 0, NULL, &done);
-    it->running = false;
     if (JS_IsException(item))
-        return JS_EXCEPTION;
-    if (!done)
-        return js_create_iterator_result(ctx, item, /*done*/false);
+        goto fail;
+    if (!done) {
+        *pdone = false;
+        val = item;
+        goto done;
+    }
     // done==1 means really done, done==2 means "unknown, inspect object"
     if (done == 2) {
         val = JS_GetProperty(ctx, item, JS_ATOM_done);
         if (JS_IsException(val)) {
             JS_FreeValue(ctx, item);
-            return JS_EXCEPTION;
+            goto fail;
         }
         done = JS_ToBoolFree(ctx, val);
     }
@@ -51249,45 +55286,22 @@ next:
         it->index += 2;
         goto next;
     }
-    // not done, construct { done: false, value: xxx } object
-    // copy .value verbatim from source object, spec doesn't
-    // allow dereferencing getters here
-    d = (JSPropertyDescriptor){
-        .value = JS_UNDEFINED,
-        .getter = JS_UNDEFINED,
-        .setter = JS_UNDEFINED,
-    };
-    ret = JS_GetOwnProperty(ctx, &d, item, JS_ATOM_value);
+    val = JS_GetProperty(ctx, item, JS_ATOM_value);
     JS_FreeValue(ctx, item);
-    if (ret < 0)
-        return JS_EXCEPTION;
-    if (d.flags & JS_PROP_GETSET) {
-        d.flags |= JS_PROP_HAS_GET | JS_PROP_HAS_SET;
-    } else {
-        d.flags |= JS_PROP_HAS_VALUE;
-    }
-    item = JS_NewObject(ctx);
-    if (JS_IsException(item))
-        goto fail;
-    if (JS_DefinePropertyValue(ctx, item, JS_ATOM_done, JS_FALSE,
-                               JS_PROP_C_W_E) < 0) {
-        goto fail;
-    }
-    if (JS_DefineProperty(ctx, item, JS_ATOM_value, d.value, d.getter,
-                          d.setter, d.flags | JS_PROP_C_W_E) < 0) {
-    fail:
-        JS_FreeValue(ctx, item);
-        item = JS_EXCEPTION;
-    }
-    js_free_desc(ctx, &d);
-    return item;
+    *pdone = false;
+done:
+    it->running = false;
+    return val;
+fail:
+    val = JS_EXCEPTION;
+    goto done;
 }
 
 static JSValue js_iterator_concat_return(JSContext *ctx, JSValueConst this_val,
                                          int argc, JSValueConst *argv)
 {
     JSIteratorConcatData *it;
-    JSValue ret;
+    JSValue ret, *pval;
 
     it = JS_GetOpaque2(ctx, this_val, JS_CLASS_ITERATOR_CONCAT);
     if (!it)
@@ -51303,8 +55317,11 @@ static JSValue js_iterator_concat_return(JSContext *ctx, JSValueConst this_val,
         ret = JS_CallFree(ctx, ret, it->iter, 0, NULL);
         it->running = false;
     }
-    while (it->index < it->count)
-        JS_FreeValue(ctx, it->values[it->index++]);
+    while (it->index < it->count) {
+        pval = &it->values[it->index++];
+        JS_FreeValue(ctx, *pval);
+        *pval = JS_UNDEFINED;
+    }
     JS_FreeValue(ctx, it->iter);
     JS_FreeValue(ctx, it->next);
     it->iter = JS_UNDEFINED;
@@ -51312,13 +55329,8 @@ static JSValue js_iterator_concat_return(JSContext *ctx, JSValueConst this_val,
     return ret;
 }
 
-// note: |next| and |return| don't use JS_ITERATOR_NEXT_DEF because |next|
-// has to return a full { value: xxx, done: xxx } step object - it must
-// copy getters and setters from the inner iterator's step object
-// slightly inefficient because of the intermediate step object that is
-// created but that can't be helped right now
 static const JSCFunctionListEntry js_iterator_concat_proto_funcs[] = {
-    JS_CFUNC_DEF("next", 1, js_iterator_concat_next ),
+    JS_ITERATOR_NEXT_DEF("next", 1, js_iterator_concat_next, 0 ),
     JS_CFUNC_DEF("return", 1, js_iterator_concat_return ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Iterator Concat", JS_PROP_CONFIGURABLE ),
 };
@@ -51360,7 +55372,7 @@ static JSValue js_iterator_concat(JSContext *ctx, JSValueConst this_val,
     JS_SetOpaqueInternal(obj, it);
     return obj;
 fail:
-    for (int i = 0; i < it->count; i++)
+    for (uint32_t i = 0; i < it->count; i++)
         JS_FreeValue(ctx, it->values[i]);
     js_free(ctx, it);
     return JS_EXCEPTION;
@@ -51807,7 +55819,7 @@ static JSValue js_iterator_proto_set_toStringTag(JSContext *ctx, JSValueConst th
         if (JS_SetProperty(ctx, this_val, JS_ATOM_Symbol_toStringTag, js_dup(val)) < 0)
             return JS_EXCEPTION;
     } else {
-        if (JS_DefinePropertyValue(ctx, this_val, JS_ATOM_Symbol_toStringTag, js_dup(val), JS_PROP_C_W_E) < 0)
+        if (JS_DefinePropertyValueConst(ctx, this_val, JS_ATOM_Symbol_toStringTag, val, JS_PROP_C_W_E) < 0)
             return JS_EXCEPTION;
     }
     return JS_UNDEFINED;
@@ -52043,6 +56055,7 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValueConst this_val,
             args[1] = index_val;
             ret = JS_Call(ctx, it->func, JS_UNDEFINED, countof(args), args);
             JS_FreeValue(ctx, index_val);
+            JS_FreeValue(ctx, item);
             if (JS_IsException(ret))
                 goto fail;
             goto done;
@@ -52118,6 +56131,25 @@ static const JSCFunctionListEntry js_iterator_helper_proto_funcs[] = {
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Iterator Helper", JS_PROP_CONFIGURABLE ),
 };
 
+static const JSCFunctionListEntry js_array_unscopables_funcs[] = {
+    JS_PROP_BOOL_DEF("at", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("copyWithin", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("entries", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("fill", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("find", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("findIndex", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("findLast", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("findLastIndex", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("flat", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("flatMap", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("includes", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("keys", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("toReversed", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("toSorted", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("toSpliced", 1, JS_PROP_C_W_E),
+    JS_PROP_BOOL_DEF("values", 1, JS_PROP_C_W_E),
+};
+
 static const JSCFunctionListEntry js_array_proto_funcs[] = {
     JS_CFUNC_DEF("at", 1, js_array_at ),
     JS_CFUNC_DEF("with", 2, js_array_with ),
@@ -52158,6 +56190,7 @@ static const JSCFunctionListEntry js_array_proto_funcs[] = {
     JS_ALIAS_DEF("[Symbol.iterator]", "values" ),
     JS_CFUNC_MAGIC_DEF("keys", 0, js_create_array_iterator, JS_ITERATOR_KIND_KEY ),
     JS_CFUNC_MAGIC_DEF("entries", 0, js_create_array_iterator, JS_ITERATOR_KIND_KEY_AND_VALUE ),
+    JS_OBJECT_DEF("[Symbol.unscopables]", js_array_unscopables_funcs, countof(js_array_unscopables_funcs), JS_PROP_CONFIGURABLE ),
 };
 
 static const JSCFunctionListEntry js_array_iterator_proto_funcs[] = {
@@ -52254,12 +56287,14 @@ static const JSCFunctionListEntry js_number_funcs[] = {
     JS_CFUNC_DEF("isSafeInteger", 1, js_number_isSafeInteger ),
     JS_PROP_DOUBLE_DEF("MAX_VALUE", 1.7976931348623157e+308, 0 ),
     JS_PROP_DOUBLE_DEF("MIN_VALUE", 5e-324, 0 ),
-    JS_PROP_U2D_DEF("NaN", 0x7FF8ull<<48, 0 ), // workaround for msvc
-    JS_PROP_DOUBLE_DEF("NEGATIVE_INFINITY", -INFINITY, 0 ),
-    JS_PROP_DOUBLE_DEF("POSITIVE_INFINITY", INFINITY, 0 ),
     JS_PROP_DOUBLE_DEF("EPSILON", 2.220446049250313e-16, 0 ), /* ES6 */
     JS_PROP_DOUBLE_DEF("MAX_SAFE_INTEGER", 9007199254740991.0, 0 ), /* ES6 */
     JS_PROP_DOUBLE_DEF("MIN_SAFE_INTEGER", -9007199254740991.0, 0 ), /* ES6 */
+    // workarounds for msvc & djgpp where NAN and INFINITY
+    // are not compile-time expressions
+    JS_PROP_U2D_DEF("NaN",               0x7FF8ull<<48, 0 ),
+    JS_PROP_U2D_DEF("NEGATIVE_INFINITY", 0xFFF0ull<<48, 0 ),
+    JS_PROP_U2D_DEF("POSITIVE_INFINITY", 0x7FF0ull<<48, 0 ),
 };
 
 static JSValue js_thisNumberValue(JSContext *ctx, JSValueConst this_val)
@@ -52634,7 +56669,7 @@ static JSValue js_string_constructor(JSContext *ctx, JSValueConst new_target,
 
 static JSValue js_thisStringValue(JSContext *ctx, JSValueConst this_val)
 {
-    if (JS_VALUE_GET_TAG(this_val) == JS_TAG_STRING)
+    if (tag_is_string(JS_VALUE_GET_TAG(this_val)))
         return js_dup(this_val);
 
     if (JS_VALUE_GET_TAG(this_val) == JS_TAG_OBJECT) {
@@ -52892,12 +56927,48 @@ static JSValue js_string_codePointAt(JSContext *ctx, JSValueConst this_val,
 static JSValue js_string_concat(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
 {
+    int i, is_wide_char;
+    JSString *p, *q;
+    int64_t len;
+    uint32_t n;
     JSValue r;
-    int i;
+    char *d;
 
-    /* XXX: Use more efficient method */
-    /* XXX: This method is OK if r has a single refcount */
-    /* XXX: should use string_buffer? */
+    if (JS_TAG_STRING != JS_VALUE_GET_TAG(this_val))
+        goto slow_path;
+    p = JS_VALUE_GET_STRING(this_val);
+    len = p->len;
+    is_wide_char = p->is_wide_char;
+    for (i = 0; i < argc; i++) {
+        if (JS_TAG_STRING != JS_VALUE_GET_TAG(argv[i]))
+            goto slow_path;
+        p = JS_VALUE_GET_STRING(argv[i]);
+        if (p->is_wide_char ^ is_wide_char)
+            goto slow_path;
+        len += p->len;
+    }
+    if (len > INT_MAX>>is_wide_char)
+        return JS_ThrowOutOfMemory(ctx);
+    p = JS_VALUE_GET_STRING(this_val);
+    if (p->len == len)
+        return js_dup(this_val);
+    q = js_alloc_string(ctx, len, is_wide_char);
+    if (!q)
+        return JS_EXCEPTION;
+    d = strv(q);
+    n = p->len << is_wide_char;
+    memcpy(d, strv(p), n);
+    d += n;
+    for (i = 0; i < argc; i++) {
+        p = JS_VALUE_GET_STRING(argv[i]);
+        n = p->len << is_wide_char;
+        memcpy(d, strv(p), n);
+        d += n;
+    }
+    if (!is_wide_char)
+        *d = '\0';
+    return JS_MKPTR(JS_TAG_STRING, q);
+slow_path:
     r = JS_ToStringCheckObject(ctx, this_val);
     for (i = 0; i < argc; i++) {
         if (JS_IsException(r))
@@ -54245,7 +58316,7 @@ static double js_fmin(double a, double b)
         a1.u64 |= b1.u64;
         return a1.d;
     } else {
-        return fmin(a, b);
+        return a < b ? a : b;
     }
 }
 
@@ -54259,7 +58330,7 @@ static double js_fmax(double a, double b)
         a1.u64 &= b1.u64;
         return a1.d;
     } else {
-        return fmax(a, b);
+        return a < b ? b : a;
     }
 }
 
@@ -54272,7 +58343,7 @@ static JSValue js_math_min_max(JSContext *ctx, JSValueConst this_val,
     uint32_t tag;
 
     if (unlikely(argc == 0)) {
-        return js_float64(is_max ? NEG_INF : INF);
+        return js_float64(is_max ? -INFINITY : INFINITY);
     }
 
     tag = JS_VALUE_GET_TAG(argv[0]);
@@ -54919,8 +58990,15 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
         return JS_EXCEPTION;
     }
 
-    ret = js_new_string8_len(ctx, (char *)re_bytecode_buf, re_bytecode_len);
-    js_free(ctx, re_bytecode_buf);
+    ret = js_new_string8_len(ctx, (void *)&re_bytecode_buf,
+                             sizeof(re_bytecode_buf));
+    if (JS_IsException(ret)) {
+        js_free(ctx, re_bytecode_buf);
+    } else {
+        JSString *p = JS_VALUE_GET_STRING(ret);
+        p->kind = JS_STRING_KIND_INDIRECT;
+        p->len = re_bytecode_len;
+    }
     return ret;
 }
 
@@ -54932,27 +59010,36 @@ static JSValue js_regexp_constructor_internal(JSContext *ctx, JSValueConst ctor,
     JSValue obj;
     JSObject *p;
     JSRegExp *re;
+    JSProperty prop;
 
     /* sanity check */
     if (JS_VALUE_GET_TAG(bc) != JS_TAG_STRING ||
         JS_VALUE_GET_TAG(pattern) != JS_TAG_STRING) {
         JS_ThrowTypeError(ctx, "string expected");
-    fail:
-        JS_FreeValue(ctx, bc);
-        JS_FreeValue(ctx, pattern);
-        return JS_EXCEPTION;
-    }
-
-    obj = js_create_from_ctor(ctx, ctor, JS_CLASS_REGEXP);
-    if (JS_IsException(obj))
         goto fail;
+    }
+    prop.u.value = js_int32(0); // lastIndex
+    if (ctx->regexp_shape && JS_IsUndefined(ctor)) {
+        obj = JS_NewObjectFromShape(ctx, js_dup_shape(ctx->regexp_shape),
+                                    JS_CLASS_REGEXP, &prop);
+        if (JS_IsException(obj))
+            goto fail;
+    } else {
+        obj = js_create_from_ctor(ctx, ctor, JS_CLASS_REGEXP);
+        if (JS_IsException(obj))
+            goto fail;
+        JS_DefinePropertyValue(ctx, obj, JS_ATOM_lastIndex, prop.u.value,
+                               JS_PROP_WRITABLE);
+    }
     p = JS_VALUE_GET_OBJ(obj);
     re = &p->u.regexp;
     re->pattern = JS_VALUE_GET_STRING(pattern);
     re->bytecode = JS_VALUE_GET_STRING(bc);
-    JS_DefinePropertyValue(ctx, obj, JS_ATOM_lastIndex, js_int32(0),
-                           JS_PROP_WRITABLE);
     return obj;
+fail:
+    JS_FreeValue(ctx, bc);
+    JS_FreeValue(ctx, pattern);
+    return JS_EXCEPTION;
 }
 
 static JSRegExp *js_get_regexp(JSContext *ctx, JSValueConst obj,
@@ -55344,15 +59431,16 @@ static JSValue js_regexp_escape(JSContext *ctx, JSValueConst this_val,
 static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv)
 {
+    int rc, capture_count, shift, index, i, re_flags, prop_flags;
     JSRegExp *re = js_get_regexp(ctx, this_val, true);
     JSString *str;
     JSValue t, ret, str_val, obj, val, groups;
     JSValue indices, indices_groups;
     uint8_t *re_bytecode;
     uint8_t **capture, *str_buf;
-    int rc, capture_count, shift, i, re_flags;
     int64_t last_index;
     const char *group_name_ptr;
+    JSProperty props[4]; // length, index, input, groups, in that order
 
     if (!re)
         return JS_EXCEPTION;
@@ -55401,24 +59489,27 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
                     goto fail;
             }
         } else {
-            if (rc == LRE_RET_TIMEOUT) {
+            switch(rc) {
+            case LRE_RET_TIMEOUT:
                 JS_ThrowInterrupted(ctx);
-            } else {
+                break;
+            case LRE_RET_MEMORY_ERROR:
                 JS_ThrowInternalError(ctx, "out of memory in regexp execution");
+                break;
+            case LRE_RET_BYTECODE_ERROR:
+                JS_ThrowInternalError(ctx, "corrupted bytecode in regexp execution");
+                break;
+            default:
+                abort();
             }
             goto fail;
         }
     } else {
-        int prop_flags;
         if (re_flags & (LRE_FLAG_GLOBAL | LRE_FLAG_STICKY)) {
             if (JS_SetProperty(ctx, this_val, JS_ATOM_lastIndex,
                                js_int32((capture[1] - str_buf) >> shift)) < 0)
                 goto fail;
         }
-        obj = JS_NewArray(ctx);
-        if (JS_IsException(obj))
-            goto fail;
-        prop_flags = JS_PROP_C_W_E | JS_PROP_THROW;
         group_name_ptr = lre_get_groupnames(re_bytecode);
         if (group_name_ptr) {
             groups = JS_NewObjectProto(ctx, JS_NULL);
@@ -55435,7 +59526,17 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
                     goto fail;
             }
         }
-
+        index = (capture[0] - str_buf) >> shift;
+        props[0].u.value = js_int32(capture_count); // length
+        props[1].u.value = js_int32(index);         // index
+        props[2].u.value = str_val;                 // input
+        props[3].u.value = js_dup(groups);          // groups
+        str_val = JS_UNDEFINED;
+        obj = JS_NewObjectFromShape(ctx, js_dup_shape(ctx->regexp_result_shape),
+                                    JS_CLASS_ARRAY, props);
+        if (JS_IsException(obj))
+            goto fail;
+        prop_flags = JS_PROP_C_W_E | JS_PROP_THROW;
         for(i = 0; i < capture_count; i++) {
             const char *name = NULL;
             uint8_t **match = &capture[2 * i];
@@ -55504,20 +59605,6 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
             if (JS_DefinePropertyValueUint32(ctx, obj, i, val, prop_flags) < 0)
                 goto fail;
         }
-
-        t = groups, groups = JS_UNDEFINED;
-        if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_groups,
-                                   t, prop_flags) < 0) {
-            goto fail;
-        }
-
-        t = js_int32((capture[0] - str_buf) >> shift);
-        if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_index, t, prop_flags) < 0)
-            goto fail;
-
-        t = str_val, str_val = JS_UNDEFINED;
-        if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_input, t, prop_flags) < 0)
-            goto fail;
 
         if (!JS_IsUndefined(indices)) {
             t = indices_groups, indices_groups = JS_UNDEFINED;
@@ -55600,10 +59687,18 @@ static JSValue JS_RegExpDelete(JSContext *ctx, JSValueConst this_val, JSValue ar
                         goto fail;
                 }
             } else {
-                if (ret == LRE_RET_TIMEOUT) {
+                switch(ret) {
+                case LRE_RET_TIMEOUT:
                     JS_ThrowInterrupted(ctx);
-                } else {
+                    break;
+                case LRE_RET_MEMORY_ERROR:
                     JS_ThrowInternalError(ctx, "out of memory in regexp execution");
+                    break;
+                case LRE_RET_BYTECODE_ERROR:
+                    JS_ThrowInternalError(ctx, "corrupted bytecode in regexp execution");
+                    break;
+                default:
+                    abort();
                 }
                 goto fail;
             }
@@ -56107,8 +60202,8 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
         tab = JS_NewArray(ctx);
         if (JS_IsException(tab))
             goto exception;
-        if (JS_DefinePropertyValueInt64(ctx, tab, 0, js_dup(matched),
-                                        JS_PROP_C_W_E | JS_PROP_THROW) < 0)
+        if (JS_DefinePropertyValueInt64Const(ctx, tab, 0, matched,
+                                             JS_PROP_C_W_E | JS_PROP_THROW) < 0)
             goto exception;
         for(n = 1; n < nCaptures; n++) {
             JSValue capN;
@@ -56131,10 +60226,10 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
         if (functionalReplace) {
             if (JS_DefinePropertyValueInt64(ctx, tab, n++, js_int32(position), JS_PROP_C_W_E | JS_PROP_THROW) < 0)
                 goto exception;
-            if (JS_DefinePropertyValueInt64(ctx, tab, n++, js_dup(str), JS_PROP_C_W_E | JS_PROP_THROW) < 0)
+            if (JS_DefinePropertyValueInt64Const(ctx, tab, n++, str, JS_PROP_C_W_E | JS_PROP_THROW) < 0)
                 goto exception;
             if (!JS_IsUndefined(namedCaptures)) {
-                if (JS_DefinePropertyValueInt64(ctx, tab, n++, js_dup(namedCaptures), JS_PROP_C_W_E | JS_PROP_THROW) < 0)
+                if (JS_DefinePropertyValueInt64Const(ctx, tab, n++, namedCaptures, JS_PROP_C_W_E | JS_PROP_THROW) < 0)
                     goto exception;
             }
             args[0] = JS_UNDEFINED;
@@ -56414,46 +60509,245 @@ void JS_AddIntrinsicRegExpCompiler(JSContext *ctx)
     ctx->compile_regexp = js_compile_regexp;
 }
 
-void JS_AddIntrinsicRegExp(JSContext *ctx)
+int JS_AddIntrinsicRegExp(JSContext *ctx)
 {
-    JSValue obj;
+    JSValue proto, obj;
 
-    JS_AddIntrinsicRegExpCompiler(ctx);
-
-    ctx->class_proto[JS_CLASS_REGEXP] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_REGEXP], js_regexp_proto_funcs,
-                               countof(js_regexp_proto_funcs));
+    proto = ctx->class_proto[JS_CLASS_REGEXP] = JS_NewObject(ctx);
+    if (JS_IsException(proto))
+        return -1;
+    if (JS_SetPropertyFunctionList(ctx, proto, js_regexp_proto_funcs,
+                                   countof(js_regexp_proto_funcs))) {
+        return -1;
+    }
     obj = JS_NewGlobalCConstructor(ctx, "RegExp", js_regexp_constructor, 2,
-                                   ctx->class_proto[JS_CLASS_REGEXP]);
+                                   proto);
+    if (JS_IsException(obj))
+        return -1;
     ctx->regexp_ctor = js_dup(obj);
-    JS_SetPropertyFunctionList(ctx, obj, js_regexp_funcs, countof(js_regexp_funcs));
-
-    ctx->class_proto[JS_CLASS_REGEXP_STRING_ITERATOR] =
+    if (JS_SetPropertyFunctionList(ctx, obj, js_regexp_funcs,
+                                   countof(js_regexp_funcs))) {
+        return -1;
+    }
+    static const JSShapeProperty regexp_props[] = {
+        {.atom=JS_ATOM_lastIndex, .flags=JS_PROP_WRITABLE},
+    };
+    static const JSShapeProperty regexp_result_props[] = {
+        {.atom=JS_ATOM_length, .flags=JS_PROP_WRITABLE|JS_PROP_LENGTH},
+        {.atom=JS_ATOM_index,  .flags=JS_PROP_C_W_E},
+        {.atom=JS_ATOM_input,  .flags=JS_PROP_C_W_E},
+        {.atom=JS_ATOM_groups, .flags=JS_PROP_C_W_E},
+    };
+    if (js_new_shape_with(ctx, &ctx->regexp_shape, proto,
+                          countof(regexp_props), regexp_props)) {
+        return -1;
+    }
+    if (js_new_shape_with(ctx, &ctx->regexp_result_shape,
+                          ctx->class_proto[JS_CLASS_ARRAY],
+                          countof(regexp_result_props), regexp_result_props)) {
+        return -1;
+    }
+    proto = ctx->class_proto[JS_CLASS_REGEXP_STRING_ITERATOR] =
         JS_NewObjectProto(ctx, ctx->class_proto[JS_CLASS_ITERATOR]);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_REGEXP_STRING_ITERATOR],
-                               js_regexp_string_iterator_proto_funcs,
-                               countof(js_regexp_string_iterator_proto_funcs));
+    if (JS_IsException(proto))
+        return -1;
+    if (JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_REGEXP_STRING_ITERATOR],
+                                   js_regexp_string_iterator_proto_funcs,
+                                   countof(js_regexp_string_iterator_proto_funcs))) {
+        return -1;
+    }
+    JS_AddIntrinsicRegExpCompiler(ctx);
+    return 0;
 }
 
 /* JSON */
 
-static JSValue json_parse_value(JSParseState *s)
+typedef struct {
+    int count;
+    uint32_t hash_size;
+    struct JSONParseRecordEntry *entries;
+    uint32_t *hash_table;
+} JSONParseRecordObject;
+
+typedef struct JSONParseRecord {
+    JSValue value;
+    union {
+        JSONParseRecordObject obj;
+        struct {
+            int count;
+            struct JSONParseRecord *elements;
+        } array;
+        struct {
+            uint32_t source_pos;
+            uint32_t source_len;
+        } primitive;
+    } u;
+} JSONParseRecord;
+
+typedef struct JSONParseRecordEntry {
+    JSAtom atom;
+    uint32_t hash_next;
+    JSONParseRecord parse_record;
+} JSONParseRecordEntry;
+
+static void json_parse_record_init_obj(JSContext *ctx, JSONParseRecord *pr, JSValueConst val)
+{
+    pr->value = js_dup(val);
+    pr->u.obj.count = 0;
+    pr->u.obj.entries = NULL;
+    pr->u.obj.hash_table = NULL;
+    pr->u.obj.hash_size = 0;
+}
+
+static void json_parse_record_init_array(JSContext *ctx, JSONParseRecord *pr, JSValueConst val)
+{
+    pr->value = js_dup(val);
+    pr->u.array.count = 0;
+    pr->u.array.elements = NULL;
+}
+
+static void json_parse_record_init_primitive(JSContext *ctx, JSONParseRecord *pr, JSValueConst val,
+                                             uint32_t source_pos, uint32_t source_len)
+{
+    pr->value = js_dup(val);
+    pr->u.primitive.source_pos = source_pos;
+    pr->u.primitive.source_len = source_len;
+}
+
+static int json_parse_record_resize_hash(JSContext *ctx, JSONParseRecordObject *po, uint32_t new_hash_size)
+{
+    uint32_t i, h, *new_hash_table;
+    JSONParseRecordEntry *e;
+
+    new_hash_table = js_malloc(ctx, sizeof(new_hash_table[0]) * new_hash_size);
+    if (!new_hash_table)
+        return -1;
+    js_free(ctx, po->hash_table);
+    po->hash_table = new_hash_table;
+    po->hash_size = new_hash_size;
+
+    for(i = 0; i < po->hash_size; i++) {
+        po->hash_table[i] = -1;
+    }
+    for(i = 0; i < po->count; i++) {
+        e = &po->entries[i];
+        h = e->atom & (po->hash_size - 1);
+        e->hash_next = po->hash_table[h];
+        po->hash_table[h] = i;
+    }
+    return 0;
+}
+
+static JSONParseRecord *json_parse_record_add(JSContext *ctx, JSONParseRecord *pr, JSAtom key, int *psize)
+{
+    JSONParseRecordObject *po = &pr->u.obj;
+    JSONParseRecordEntry *e;
+    JSONParseRecord *pr1;
+    uint32_t h;
+
+    if (js_resize_array(ctx, (void **)&po->entries, sizeof(po->entries[0]),
+                        psize, po->count + 1)) {
+        return NULL;
+    }
+    /* switch to hash table when going over size threshold */
+    if (po->count >= 8 && (po->count + 1) > po->hash_size) {
+        int hash_bits = 32 - clz32(po->count);
+        if (json_parse_record_resize_hash(ctx, po, 1 << hash_bits))
+            return NULL;
+    }
+
+    e = &po->entries[po->count++];
+    e->atom = JS_DupAtom(ctx, key);
+    pr1 = &e->parse_record;
+    pr1->value = JS_UNDEFINED;
+    if (po->hash_size != 0) {
+        h = key & (po->hash_size - 1);
+        e->hash_next = po->hash_table[h];
+        po->hash_table[h] = po->count - 1;
+    }
+    return pr1;
+}
+
+static JSONParseRecord *json_parse_record_find(JSONParseRecord *pr, JSAtom key)
+{
+    JSONParseRecordObject *po = &pr->u.obj;
+    JSONParseRecordEntry *e;
+    uint32_t h, i;
+
+    if (po->hash_size == 0) {
+        for(i = 0; i < po->count; i++) {
+            if (po->entries[i].atom == key)
+                return &po->entries[i].parse_record;
+        }
+    } else {
+        h = key & (po->hash_size - 1);
+        i = po->hash_table[h];
+        while (i != -1) {
+            e = &po->entries[i];
+            if (e->atom == key)
+                return &e->parse_record;
+            i = e->hash_next;
+        }
+    }
+    return NULL;
+}
+
+static void json_free_parse_record(JSContext *ctx, JSONParseRecord *pr)
+{
+    int i;
+    if (!pr)
+        return;
+    if (JS_IsObject(pr->value)) {
+        if (js_is_array(ctx, pr->value)) {
+            for(i = 0; i < pr->u.array.count; i++) {
+                json_free_parse_record(ctx, &pr->u.array.elements[i]);
+            }
+            js_free(ctx, pr->u.array.elements);
+        } else {
+            for(i = 0; i < pr->u.obj.count; i++) {
+                JS_FreeAtom(ctx, pr->u.obj.entries[i].atom);
+                json_free_parse_record(ctx, &pr->u.obj.entries[i].parse_record);
+            }
+            js_free(ctx, pr->u.obj.entries);
+            js_free(ctx, pr->u.obj.hash_table);
+        }
+    }
+    JS_FreeValue(ctx, pr->value);
+    pr->value = JS_UNDEFINED; /* fail safe */
+}
+
+/* 'pr' can be NULL */
+static JSValue json_parse_value(JSParseState *s, JSONParseRecord *pr)
 {
     JSContext *ctx = s->ctx;
     JSValue val = JS_NULL;
     int ret;
+
+    if (js_check_stack_overflow(ctx->rt, 0)) {
+        return JS_ThrowStackOverflow(ctx);
+    }
+
+    if (pr) {
+        pr->value = JS_UNDEFINED;
+    }
 
     switch(s->token.val) {
     case '{':
         {
             JSValue prop_val;
             JSAtom prop_name;
+            JSONParseRecord *pr1;
+            int pr_size;
 
             if (json_next_token(s))
                 goto fail;
             val = JS_NewObject(ctx);
             if (JS_IsException(val))
                 goto fail;
+            if (pr) {
+                json_parse_record_init_obj(ctx, pr, val);
+                pr_size = 0;
+            }
             if (s->token.val != '}') {
                 for(;;) {
                     if (s->token.val == TOK_STRING) {
@@ -56472,7 +60766,14 @@ static JSValue json_parse_value(JSParseState *s)
                     }
                     if (json_next_token(s))
                         goto fail1;
-                    prop_val = json_parse_value(s);
+                    if (pr) {
+                        pr1 = json_parse_record_add(ctx, pr, prop_name, &pr_size);
+                        if (!pr1)
+                            goto fail1;
+                    } else {
+                        pr1 = NULL;
+                    }
+                    prop_val = json_parse_value(s, pr1);
                     if (JS_IsException(prop_val)) {
                     fail1:
                         JS_FreeAtom(ctx, prop_name);
@@ -56502,15 +60803,30 @@ static JSValue json_parse_value(JSParseState *s)
         {
             JSValue el;
             uint32_t idx;
+            JSONParseRecord *pr1;
+            int pr_size;
 
             if (json_next_token(s))
                 goto fail;
             val = JS_NewArray(ctx);
             if (JS_IsException(val))
                 goto fail;
+            if (pr) {
+                json_parse_record_init_array(ctx, pr, val);
+                pr_size = 0;
+            }
             if (s->token.val != ']') {
                 for(idx = 0;; idx++) {
-                    el = json_parse_value(s);
+                    if (pr) {
+                        if (js_resize_array(ctx, (void **)&pr->u.array.elements, sizeof(pr->u.array.elements[0]),
+                                            &pr_size, pr->u.array.count + 1))
+                            goto fail;
+                        pr1 = &pr->u.array.elements[pr->u.array.count++];
+                        pr1->value = JS_UNDEFINED;
+                    } else {
+                        pr1 = NULL;
+                    }
+                    el = json_parse_value(s, pr1);
                     if (JS_IsException(el))
                         goto fail;
                     ret = JS_DefinePropertyValueUint32(ctx, val, idx, el, JS_PROP_C_W_E);
@@ -56532,11 +60848,21 @@ static JSValue json_parse_value(JSParseState *s)
         break;
     case TOK_STRING:
         val = js_dup(s->token.u.str.str);
+        if (pr) {
+            json_parse_record_init_primitive(ctx, pr, val,
+                                             s->token.ptr - s->buf_start,
+                                             s->buf_ptr - s->token.ptr);
+        }
         if (json_next_token(s))
             goto fail;
         break;
     case TOK_NUMBER:
         val = s->token.u.num.val;
+        if (pr) {
+            json_parse_record_init_primitive(ctx, pr, val,
+                                             s->token.ptr - s->buf_start,
+                                             s->buf_ptr - s->token.ptr);
+        }
         if (json_next_token(s))
             goto fail;
         break;
@@ -56544,8 +60870,18 @@ static JSValue json_parse_value(JSParseState *s)
         if (s->token.u.ident.atom == JS_ATOM_false ||
             s->token.u.ident.atom == JS_ATOM_true) {
             val = js_bool(s->token.u.ident.atom == JS_ATOM_true);
+            if (pr) {
+                json_parse_record_init_primitive(ctx, pr, val,
+                                                 s->token.ptr - s->buf_start,
+                                                 s->buf_ptr - s->token.ptr);
+            }
         } else if (s->token.u.ident.atom == JS_ATOM_null) {
             val = JS_NULL;
+            if (pr) {
+                json_parse_record_init_primitive(ctx, pr, val,
+                                                 s->token.ptr - s->buf_start,
+                                                 s->buf_ptr - s->token.ptr);
+            }
         } else {
             goto def_token;
         }
@@ -56564,12 +60900,13 @@ static JSValue json_parse_value(JSParseState *s)
     }
     return val;
  fail:
+    json_free_parse_record(ctx, pr);
     JS_FreeValue(ctx, val);
     return JS_EXCEPTION;
 }
 
-/* 'buf' must be zero terminated i.e. buf[buf_len] = '\0'. */
-JSValue JS_ParseJSON(JSContext *ctx, const char *buf, size_t buf_len, const char *filename)
+static JSValue JS_ParseJSON_internal(JSContext *ctx, const char *buf, size_t buf_len,
+                                     const char *filename, JSONParseRecord *pr)
 {
     JSParseState s1, *s = &s1;
     JSValue val = JS_UNDEFINED;
@@ -56577,12 +60914,14 @@ JSValue JS_ParseJSON(JSContext *ctx, const char *buf, size_t buf_len, const char
     js_parse_init(ctx, s, buf, buf_len, filename, 1);
     if (json_next_token(s))
         goto fail;
-    val = json_parse_value(s);
+    val = json_parse_value(s, pr);
     if (JS_IsException(val))
         goto fail;
     if (s->token.val != TOK_EOF) {
-        if (js_parse_error(s, "unexpected data at the end"))
+        if (js_parse_error(s, "unexpected data at the end")) {
+            json_free_parse_record(ctx, pr);
             goto fail;
+        }
     }
     return val;
  fail:
@@ -56591,11 +60930,19 @@ JSValue JS_ParseJSON(JSContext *ctx, const char *buf, size_t buf_len, const char
     return JS_EXCEPTION;
 }
 
-static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
-                                         JSAtom name, JSValueConst reviver)
+/* 'buf' must be zero terminated i.e. buf[buf_len] = '\0'. */
+JSValue JS_ParseJSON(JSContext *ctx, const char *buf, size_t buf_len, const char *filename)
 {
-    JSValue val, new_el, name_val, res;
-    JSValueConst args[2];
+    return JS_ParseJSON_internal(ctx, buf, buf_len, filename, NULL);
+}
+
+/* if pr != NULL, then pr->value = holder by construction */
+static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
+                                         JSAtom name, JSValueConst reviver,
+                                         const char *text_str, JSONParseRecord *pr)
+{
+    JSValue val, new_el, name_val, res, context;
+    JSValueConst args[3];
     int ret, is_array;
     uint32_t i, len = 0;
     JSAtom prop;
@@ -56608,6 +60955,29 @@ static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
     val = JS_GetProperty(ctx, holder, name);
     if (JS_IsException(val))
         return val;
+
+    if (pr) {
+        if (js_is_array(ctx, pr->value)) {
+            if (__JS_AtomIsTaggedInt(name)) {
+                uint32_t idx = __JS_AtomToUInt32(name);
+                if (idx < pr->u.array.count) {
+                    pr = &pr->u.array.elements[idx];
+                } else {
+                    pr = NULL;
+                }
+            }
+        } else {
+            pr = json_parse_record_find(pr, name);
+        }
+        if (pr && !js_same_value(ctx, pr->value, val)) {
+            pr = NULL;
+        }
+    }
+
+    context = JS_NewObject(ctx);
+    if (JS_IsException(context))
+        goto fail;
+
     if (JS_IsObject(val)) {
         is_array = js_is_array(ctx, val);
         if (is_array < 0)
@@ -56628,7 +60998,7 @@ static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
             } else {
                 prop = JS_DupAtom(ctx, atoms[i].atom);
             }
-            new_el = internalize_json_property(ctx, val, prop, reviver);
+            new_el = internalize_json_property(ctx, val, prop, reviver, text_str, pr);
             if (JS_IsException(new_el)) {
                 JS_FreeAtom(ctx, prop);
                 goto fail;
@@ -56642,6 +61012,15 @@ static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
             if (ret < 0)
                 goto fail;
         }
+    } else {
+        if (pr) {
+            new_el = JS_NewStringLen(ctx, text_str + pr->u.primitive.source_pos,
+                                     pr->u.primitive.source_len);
+            if (JS_IsException(new_el))
+                goto fail;
+            if (JS_DefinePropertyValue(ctx, context, JS_ATOM_source, new_el, JS_PROP_C_W_E) < 0)
+                goto fail;
+        }
     }
     js_free_prop_enum(ctx, atoms, len);
     atoms = NULL;
@@ -56650,12 +61029,15 @@ static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
         goto fail;
     args[0] = name_val;
     args[1] = val;
-    res = JS_Call(ctx, reviver, holder, 2, args);
+    args[2] = context;
+    res = JS_Call(ctx, reviver, holder, 3, args);
     JS_FreeValue(ctx, name_val);
     JS_FreeValue(ctx, val);
+    JS_FreeValue(ctx, context);
     return res;
  fail:
     js_free_prop_enum(ctx, atoms, len);
+    JS_FreeValue(ctx, context);
     JS_FreeValue(ctx, val);
     return JS_EXCEPTION;
 }
@@ -56663,35 +61045,109 @@ static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
 static JSValue js_json_parse(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
-    JSValue obj, root;
-    JSValueConst reviver;
+    JSValue obj;
     const char *str;
     size_t len;
 
     str = JS_ToCStringLen(ctx, &len, argv[0]);
     if (!str)
         return JS_EXCEPTION;
-    obj = JS_ParseJSON(ctx, str, len, "<input>");
-    JS_FreeCString(ctx, str);
-    if (JS_IsException(obj))
-        return obj;
     if (argc > 1 && JS_IsFunction(ctx, argv[1])) {
+        JSONParseRecord pr_s, *pr = &pr_s, *pr1;
+        JSValue root;
+        JSValueConst reviver;
+        int size;
+
         reviver = argv[1];
         root = JS_NewObject(ctx);
-        if (JS_IsException(root)) {
-            JS_FreeValue(ctx, obj);
-            return JS_EXCEPTION;
-        }
+        if (JS_IsException(root))
+            goto fail;
+        json_parse_record_init_obj(ctx, pr, root);
+        size = 0;
+        pr1 = json_parse_record_add(ctx, pr, JS_ATOM_empty_string, &size);
+        if (!pr1)
+            goto fail1;
+
+        obj = JS_ParseJSON_internal(ctx, str, len, "<input>", pr1);
+        if (JS_IsException(obj))
+            goto fail1;
+
         if (JS_DefinePropertyValue(ctx, root, JS_ATOM_empty_string, obj,
                                    JS_PROP_C_W_E) < 0) {
+        fail1:
+            json_free_parse_record(ctx, pr);
             JS_FreeValue(ctx, root);
-            return JS_EXCEPTION;
+            goto fail;
         }
+
         obj = internalize_json_property(ctx, root, JS_ATOM_empty_string,
-                                        reviver);
+                                        reviver, str, pr);
+        json_free_parse_record(ctx, pr);
         JS_FreeValue(ctx, root);
+    } else {
+        obj = JS_ParseJSON_internal(ctx, str, len, "<input>", NULL);
     }
+    JS_FreeCString(ctx, str);
     return obj;
+ fail:
+    JS_FreeCString(ctx, str);
+    return JS_EXCEPTION;
+}
+
+static JSValue js_json_isRawJSON(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv)
+{
+    JSValueConst obj = argv[0];
+    if (JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT) {
+        JSObject *p = JS_VALUE_GET_OBJ(obj);
+        return js_bool(p->class_id == JS_CLASS_RAWJSON);
+    } else {
+        return JS_FALSE;
+    }
+}
+
+static bool is_valid_raw_json_char(int c)
+{
+    return ((c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' ||
+            c == '"');
+}
+
+static JSValue js_json_rawJSON(JSContext *ctx, JSValueConst this_val,
+                               int argc, JSValueConst *argv)
+{
+    JSValue str, res, obj;
+    JSString *p;
+    str = JS_ToString(ctx, argv[0]);
+    if (JS_IsException(str))
+        return str;
+    p = JS_VALUE_GET_STRING(str);
+    if (p->len == 0 ||
+        !is_valid_raw_json_char(string_get(p, 0)) ||
+        !is_valid_raw_json_char(string_get(p, p->len - 1))) {
+        goto syntax_error;
+    }
+    res = js_json_parse(ctx, JS_UNDEFINED, 1, (JSValueConst *)&str);
+    if (JS_IsException(res)) {
+    syntax_error:
+        JS_ThrowSyntaxError(ctx, "invalid rawJSON string");
+        goto fail;
+    }
+    JS_FreeValue(ctx, res);
+
+    obj = JS_NewObjectProtoClass(ctx, JS_NULL, JS_CLASS_RAWJSON);
+    if (JS_IsException(obj))
+        goto fail;
+    if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_rawJSON, str, JS_PROP_ENUMERABLE) < 0) {
+        JS_FreeValue(ctx, obj);
+        return JS_EXCEPTION;
+    }
+    JS_PreventExtensions(ctx, obj);
+    return obj;
+ fail:
+    JS_FreeValue(ctx, str);
+    return JS_EXCEPTION;
 }
 
 typedef struct JSONStringifyContext {
@@ -56746,6 +61202,7 @@ static JSValue js_json_check(JSContext *ctx, JSONStringifyContext *jsc,
         if (JS_IsFunction(ctx, val))
             break;
     case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
     case JS_TAG_INT:
     case JS_TAG_FLOAT64:
     case JS_TAG_BOOL:
@@ -56802,6 +61259,14 @@ static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
         } else if (cl == JS_CLASS_BOOLEAN || cl == JS_CLASS_BIG_INT) {
             set_value(ctx, &val, js_dup(p->u.object_data));
             goto concat_primitive;
+        } else if (cl == JS_CLASS_RAWJSON) {
+            JSValue val1;
+            val1 = JS_GetProperty(ctx, val, JS_ATOM_rawJSON);
+            if (JS_IsException(val1))
+                goto exception;
+            JS_FreeValue(ctx, val);
+            val = val1;
+            goto concat_value;
         }
         v = js_array_includes(ctx, jsc->stack, 1, vc(&val));
         if (JS_IsException(v))
@@ -56919,6 +61384,7 @@ static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
  concat_primitive:
     switch (JS_VALUE_GET_NORM_TAG(val)) {
     case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
         val = JS_ToQuotedStringFree(ctx, val);
         if (JS_IsException(val))
             goto exception;
@@ -57094,7 +61560,9 @@ static JSValue js_json_stringify(JSContext *ctx, JSValueConst this_val,
 }
 
 static const JSCFunctionListEntry js_json_funcs[] = {
+    JS_CFUNC_DEF("isRawJSON", 1, js_json_isRawJSON ),
     JS_CFUNC_DEF("parse", 2, js_json_parse ),
+    JS_CFUNC_DEF("rawJSON", 1, js_json_rawJSON ),
     JS_CFUNC_DEF("stringify", 3, js_json_stringify ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "JSON", JS_PROP_CONFIGURABLE ),
 };
@@ -57103,10 +61571,19 @@ static const JSCFunctionListEntry js_json_obj[] = {
     JS_OBJECT_DEF("JSON", js_json_funcs, countof(js_json_funcs), JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE ),
 };
 
-void JS_AddIntrinsicJSON(JSContext *ctx)
+static const JSClassShortDef js_json_class_def[] = {
+    { JS_ATOM_Object, NULL, NULL }, /* JS_CLASS_RAWJSON */
+};
+
+int JS_AddIntrinsicJSON(JSContext *ctx)
 {
+    if (!JS_IsRegisteredClass(ctx->rt, JS_CLASS_RAWJSON)) {
+        if (init_class_range(ctx->rt, js_json_class_def, JS_CLASS_RAWJSON,
+                             countof(js_json_class_def)) < 0)
+            return -1;
+    }
     /* add JSON as autoinit object */
-    JS_SetPropertyFunctionList(ctx, ctx->global_obj, js_json_obj, countof(js_json_obj));
+    return JS_SetPropertyFunctionList(ctx, ctx->global_obj, js_json_obj, countof(js_json_obj));
 }
 
 /* Reflect */
@@ -57496,14 +61973,13 @@ static int js_proxy_has(JSContext *ctx, JSValueConst obj, JSAtom atom)
         return -1;
     ret = JS_ToBoolFree(ctx, ret1);
     if (!ret) {
-        JSPropertyDescriptor desc;
+        int desc_flags;
         p = JS_VALUE_GET_OBJ(s->target);
-        res = JS_GetOwnPropertyInternal(ctx, &desc, p, atom);
+        res = JS_GetOwnPropertyFlagsInternal(ctx, &desc_flags, p, atom);
         if (res < 0)
             return -1;
         if (res) {
-            res2 = !(desc.flags & JS_PROP_CONFIGURABLE);
-            js_free_desc(ctx, &desc);
+            res2 = !(desc_flags & JS_PROP_CONFIGURABLE);
             if (res2 || !p->extensible) {
                 JS_ThrowTypeError(ctx, "proxy: inconsistent has");
                 return -1;
@@ -57630,16 +62106,16 @@ static JSValue js_create_desc(JSContext *ctx, JSValueConst val,
     if (JS_IsException(ret))
         return ret;
     if (flags & JS_PROP_HAS_GET) {
-        JS_DefinePropertyValue(ctx, ret, JS_ATOM_get, js_dup(getter),
-                               JS_PROP_C_W_E);
+        JS_DefinePropertyValueConst(ctx, ret, JS_ATOM_get, getter,
+                                    JS_PROP_C_W_E);
     }
     if (flags & JS_PROP_HAS_SET) {
-        JS_DefinePropertyValue(ctx, ret, JS_ATOM_set, js_dup(setter),
-                               JS_PROP_C_W_E);
+        JS_DefinePropertyValueConst(ctx, ret, JS_ATOM_set, setter,
+                                    JS_PROP_C_W_E);
     }
     if (flags & JS_PROP_HAS_VALUE) {
-        JS_DefinePropertyValue(ctx, ret, JS_ATOM_value, js_dup(val),
-                               JS_PROP_C_W_E);
+        JS_DefinePropertyValueConst(ctx, ret, JS_ATOM_value, val,
+                                    JS_PROP_C_W_E);
     }
     if (flags & JS_PROP_HAS_WRITABLE) {
         JS_DefinePropertyValue(ctx, ret, JS_ATOM_writable,
@@ -57884,25 +62360,23 @@ static int js_proxy_delete_property(JSContext *ctx, JSValueConst obj,
         return -1;
     res = JS_ToBoolFree(ctx, ret);
     if (res) {
-        JSPropertyDescriptor desc;
-        res2 = JS_GetOwnPropertyInternal(ctx, &desc, JS_VALUE_GET_OBJ(s->target), atom);
+        int desc_flags;
+        res2 = JS_GetOwnPropertyFlagsInternal(ctx, &desc_flags, JS_VALUE_GET_OBJ(s->target), atom);
         if (res2 < 0)
             return -1;
         if (res2) {
-            if (!(desc.flags & JS_PROP_CONFIGURABLE))
-                goto fail;
-            is_extensible = JS_IsExtensible(ctx, s->target);
-            if (is_extensible < 0)
-                goto fail1;
-            if (!is_extensible) {
-                /* proxy-missing-checks */
-            fail:
+            if (!(desc_flags & JS_PROP_CONFIGURABLE)) {
                 JS_ThrowTypeError(ctx, "proxy: inconsistent deleteProperty");
-            fail1:
-                js_free_desc(ctx, &desc);
                 return -1;
             }
-            js_free_desc(ctx, &desc);
+            is_extensible = JS_IsExtensible(ctx, s->target);
+            if (is_extensible < 0)
+                return -1;
+            if (!is_extensible) {
+                /* proxy-missing-checks */
+                JS_ThrowTypeError(ctx, "proxy: inconsistent deleteProperty");
+                return -1;
+            }
         }
     }
     return res;
@@ -57929,7 +62403,6 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
     uint32_t len, i, len2;
     JSPropertyEnum *tab, *tab2;
     JSAtom atom;
-    JSPropertyDescriptor desc;
     int res, is_extensible, idx;
 
     s = get_proxy_method(ctx, &method, obj, JS_ATOM_ownKeys);
@@ -57997,21 +62470,23 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
             JS_ThrowTypeErrorRevokedProxy(ctx);
             goto fail;
         }
-        res = JS_GetOwnPropertyInternal(ctx, &desc, JS_VALUE_GET_OBJ(s->target),
-                                tab2[i].atom);
-        if (res < 0)
-            goto fail;
-        if (res) {  /* safety, property should be found */
-            js_free_desc(ctx, &desc);
-            if (!(desc.flags & JS_PROP_CONFIGURABLE) || !is_extensible) {
-                idx = find_prop_key(tab, len, tab2[i].atom);
-                if (idx < 0) {
-                    JS_ThrowTypeError(ctx, "proxy: target property must be present in proxy ownKeys");
-                    goto fail;
+        {
+            int desc_flags;
+            res = JS_GetOwnPropertyFlagsInternal(ctx, &desc_flags, JS_VALUE_GET_OBJ(s->target),
+                                    tab2[i].atom);
+            if (res < 0)
+                goto fail;
+            if (res) {  /* safety, property should be found */
+                if (!(desc_flags & JS_PROP_CONFIGURABLE) || !is_extensible) {
+                    idx = find_prop_key(tab, len, tab2[i].atom);
+                    if (idx < 0) {
+                        JS_ThrowTypeError(ctx, "proxy: target property must be present in proxy ownKeys");
+                        goto fail;
+                    }
+                    /* mark the property as found */
+                    if (!is_extensible)
+                        tab[idx].is_enumerable = true;
                 }
-                /* mark the property as found */
-                if (!is_extensible)
-                    tab[idx].is_enumerable = true;
             }
         }
     }
@@ -58134,23 +62609,19 @@ static const JSClassExoticMethods js_proxy_exotic_methods = {
     .set_property = js_proxy_set,
 };
 
-static JSValue js_proxy_constructor(JSContext *ctx, JSValueConst this_val,
-                                    int argc, JSValueConst *argv)
+JSValue JS_NewProxy(JSContext *ctx, JSValueConst target, JSValueConst handler)
 {
-    JSValueConst target, handler;
-    JSValue obj;
     JSProxyData *s;
+    JSValue obj;
 
-    target = argv[0];
-    handler = argv[1];
     if (JS_VALUE_GET_TAG(target) != JS_TAG_OBJECT ||
-        JS_VALUE_GET_TAG(handler) != JS_TAG_OBJECT)
+        JS_VALUE_GET_TAG(handler) != JS_TAG_OBJECT) {
         return JS_ThrowTypeErrorNotAnObject(ctx);
-
+    }
     obj = JS_NewObjectProtoClass(ctx, JS_NULL, JS_CLASS_PROXY);
     if (JS_IsException(obj))
         return obj;
-    s = js_malloc(ctx, sizeof(JSProxyData));
+    s = js_malloc(ctx, sizeof(*s));
     if (!s) {
         JS_FreeValue(ctx, obj);
         return JS_EXCEPTION;
@@ -58162,6 +62633,12 @@ static JSValue js_proxy_constructor(JSContext *ctx, JSValueConst this_val,
     JS_SetOpaqueInternal(obj, s);
     JS_SetConstructorBit(ctx, obj, JS_IsConstructor(ctx, target));
     return obj;
+}
+
+static JSValue js_proxy_constructor(JSContext *ctx, JSValueConst this_val,
+                                    int argc, JSValueConst *argv)
+{
+    return JS_NewProxy(ctx, argv[0], argv[1]);
 }
 
 static JSValue js_proxy_revoke(JSContext *ctx, JSValueConst this_val,
@@ -58217,25 +62694,36 @@ static const JSClassShortDef js_proxy_class_def[] = {
     { JS_ATOM_Object, js_proxy_finalizer, js_proxy_mark }, /* JS_CLASS_PROXY */
 };
 
-void JS_AddIntrinsicProxy(JSContext *ctx)
+int JS_AddIntrinsicProxy(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
     JSValue obj1;
 
     if (!JS_IsRegisteredClass(rt, JS_CLASS_PROXY)) {
-        init_class_range(rt, js_proxy_class_def, JS_CLASS_PROXY,
-                         countof(js_proxy_class_def));
+        if (init_class_range(rt, js_proxy_class_def, JS_CLASS_PROXY,
+                             countof(js_proxy_class_def)))
+            return -1;
         rt->class_array[JS_CLASS_PROXY].exotic = &js_proxy_exotic_methods;
         rt->class_array[JS_CLASS_PROXY].call = js_proxy_call;
     }
 
-    obj1 = JS_NewCFunction2(ctx, js_proxy_constructor, "Proxy", 2,
-                            JS_CFUNC_constructor, 0);
+    /* additional fields: name, length */
+    obj1 = JS_NewCFunction3(ctx, js_proxy_constructor, "Proxy", 2,
+                            JS_CFUNC_constructor, 0,
+                            ctx->function_proto, countof(js_proxy_funcs) + 2);
+    if (JS_IsException(obj1))
+        return -1;
     JS_SetConstructorBit(ctx, obj1, true);
-    JS_SetPropertyFunctionList(ctx, obj1, js_proxy_funcs,
-                               countof(js_proxy_funcs));
-    JS_DefinePropertyValueStr(ctx, ctx->global_obj, "Proxy",
-                              obj1, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    if (JS_SetPropertyFunctionList(ctx, obj1, js_proxy_funcs,
+                                   countof(js_proxy_funcs)))
+        goto fail;
+    if (JS_DefinePropertyValueStr(ctx, ctx->global_obj, "Proxy",
+                                  obj1, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0)
+        goto fail;
+    return 0;
+ fail:
+    JS_FreeValue(ctx, obj1);
+    return -1;
 }
 
 bool JS_IsProxy(JSValueConst val)
@@ -58381,6 +62869,19 @@ static JSValue js_symbol_keyFor(JSContext *ctx, JSValueConst this_val,
 static const JSCFunctionListEntry js_symbol_funcs[] = {
     JS_CFUNC_DEF("for", 1, js_symbol_for ),
     JS_CFUNC_DEF("keyFor", 1, js_symbol_keyFor ),
+    JS_PROP_SYMBOL_DEF("toPrimitive", JS_ATOM_Symbol_toPrimitive, 0),
+    JS_PROP_SYMBOL_DEF("iterator", JS_ATOM_Symbol_iterator, 0),
+    JS_PROP_SYMBOL_DEF("match", JS_ATOM_Symbol_match, 0),
+    JS_PROP_SYMBOL_DEF("matchAll", JS_ATOM_Symbol_matchAll, 0),
+    JS_PROP_SYMBOL_DEF("replace", JS_ATOM_Symbol_replace, 0),
+    JS_PROP_SYMBOL_DEF("search", JS_ATOM_Symbol_search, 0),
+    JS_PROP_SYMBOL_DEF("split", JS_ATOM_Symbol_split, 0),
+    JS_PROP_SYMBOL_DEF("toStringTag", JS_ATOM_Symbol_toStringTag, 0),
+    JS_PROP_SYMBOL_DEF("isConcatSpreadable", JS_ATOM_Symbol_isConcatSpreadable, 0),
+    JS_PROP_SYMBOL_DEF("hasInstance", JS_ATOM_Symbol_hasInstance, 0),
+    JS_PROP_SYMBOL_DEF("species", JS_ATOM_Symbol_species, 0),
+    JS_PROP_SYMBOL_DEF("unscopables", JS_ATOM_Symbol_unscopables, 0),
+    JS_PROP_SYMBOL_DEF("asyncIterator", JS_ATOM_Symbol_asyncIterator, 0),
 };
 
 /* Set/Map/WeakSet/WeakMap */
@@ -58425,7 +62926,7 @@ static JSValue js_map_constructor(JSContext *ctx, JSValueConst new_target,
         if (JS_IsException(adder))
             goto fail;
         if (!JS_IsFunction(ctx, adder)) {
-            JS_ThrowTypeError(ctx, "set/add is not a function");
+            JS_ThrowTypeError(ctx, "%s is not a function", is_set ? "set" : "add");
             goto fail;
         }
 
@@ -58527,6 +63028,9 @@ static uint32_t map_hash_key(JSContext *ctx, JSValueConst key)
         break;
     case JS_TAG_STRING:
         h = hash_string(JS_VALUE_GET_STRING(key), 0);
+        break;
+    case JS_TAG_STRING_ROPE:
+        h = hash_string_rope(key, 0);
         break;
     case JS_TAG_OBJECT:
     case JS_TAG_SYMBOL:
@@ -59912,37 +64416,50 @@ static const uint8_t js_map_proto_funcs_count[6] = {
     countof(js_set_iterator_proto_funcs),
 };
 
-void JS_AddIntrinsicMapSet(JSContext *ctx)
+int JS_AddIntrinsicMapSet(JSContext *ctx)
 {
     int i;
     JSValue obj1;
     char buf[ATOM_GET_STR_BUF_SIZE];
+    /* Used to squelch a -Wcast-function-type warning. */
+    JSCFunctionType ft = { .constructor_magic = js_map_constructor };
 
     for(i = 0; i < 4; i++) {
         const char *name = JS_AtomGetStr(ctx, buf, sizeof(buf),
                                          JS_ATOM_Map + i);
         int class_id = JS_CLASS_MAP + i;
-        ctx->class_proto[class_id] = JS_NewObject(ctx);
-        JS_SetPropertyFunctionList(ctx, ctx->class_proto[class_id],
-                                   js_map_proto_funcs_ptr[i],
-                                   js_map_proto_funcs_count[i]);
-        obj1 = JS_NewCFunctionMagic(ctx, js_map_constructor, name, 0,
-                                    JS_CFUNC_constructor_magic, i);
-        if (class_id == JS_CLASS_MAP)
-            JS_SetPropertyFunctionList(ctx, obj1, js_map_funcs, countof(js_map_funcs));
-        else if (class_id == JS_CLASS_SET)
-            JS_SetPropertyFunctionList(ctx, obj1, js_set_funcs, countof(js_set_funcs));
-
-        JS_NewGlobalCConstructor2(ctx, obj1, name, ctx->class_proto[class_id]);
+        const JSCFunctionListEntry *ctor_funcs;
+        int n_ctor_funcs;
+        if (class_id == JS_CLASS_MAP) {
+            ctor_funcs = js_map_funcs;
+            n_ctor_funcs = countof(js_map_funcs);
+        } else if (class_id == JS_CLASS_SET) {
+            ctor_funcs = js_set_funcs;
+            n_ctor_funcs = countof(js_set_funcs);
+        } else {
+            ctor_funcs = NULL;
+            n_ctor_funcs = 0;
+        }
+        obj1 = JS_NewCConstructor(ctx, class_id, name,
+                                  ft.generic, 0, JS_CFUNC_constructor_magic, i,
+                                  JS_UNDEFINED,
+                                  ctor_funcs, n_ctor_funcs,
+                                  js_map_proto_funcs_ptr[i], js_map_proto_funcs_count[i],
+                                  0);
+        if (JS_IsException(obj1))
+            return -1;
+        JS_FreeValue(ctx, obj1);
     }
 
     for(i = 0; i < 2; i++) {
         ctx->class_proto[JS_CLASS_MAP_ITERATOR + i] =
-            JS_NewObjectProto(ctx, ctx->class_proto[JS_CLASS_ITERATOR]);
-        JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_MAP_ITERATOR + i],
-                                   js_map_proto_funcs_ptr[i + 4],
-                                   js_map_proto_funcs_count[i + 4]);
+            JS_NewObjectProtoList(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
+                                  js_map_proto_funcs_ptr[i + 4],
+                                  js_map_proto_funcs_count[i + 4]);
+        if (JS_IsException(ctx->class_proto[JS_CLASS_MAP_ITERATOR + i]))
+            return -1;
     }
+    return 0;
 }
 
 /* Generator */
@@ -59987,7 +64504,7 @@ JSPromiseStateEnum JS_PromiseState(JSContext *ctx, JSValueConst promise)
 {
     JSPromiseData *s = JS_GetOpaque(promise, JS_CLASS_PROMISE);
     if (!s)
-        return -1;
+        return JS_PROMISE_NOT_A_PROMISE;
     return s->promise_state;
 }
 
@@ -60004,6 +64521,11 @@ bool JS_IsPromise(JSValueConst val)
     if (JS_VALUE_GET_TAG(val) != JS_TAG_OBJECT)
         return false;
     return JS_VALUE_GET_OBJ(val)->class_id == JS_CLASS_PROMISE;
+}
+
+JSValue JS_NewSettledPromise(JSContext *ctx, bool is_reject, JSValueConst value)
+{
+    return js_promise_resolve(ctx, ctx->promise_ctor, 1, &value, is_reject);
 }
 
 static int js_create_resolving_functions(JSContext *ctx, JSValue *args,
@@ -60336,33 +64858,33 @@ static void js_promise_mark(JSRuntime *rt, JSValueConst val,
     JS_MarkValue(rt, s->promise_result, mark_func);
 }
 
-static JSValue js_promise_constructor(JSContext *ctx, JSValueConst new_target,
-                                      int argc, JSValueConst *argv)
+/* Create a new promise object with resolving functions. Returns the promise
+   and sets resolving_funcs[0] (resolve) and resolving_funcs[1] (reject). */
+static JSValue js_promise_new(JSContext *ctx, JSValueConst new_target,
+                               JSValue *resolving_funcs)
 {
-    JSValueConst executor;
     JSValue obj;
     JSPromiseData *s;
     JSRuntime *rt;
-    JSValue args[2], ret;
-    int i;
 
-    executor = argv[0];
-    if (check_function(ctx, executor))
-        return JS_EXCEPTION;
     obj = js_create_from_ctor(ctx, new_target, JS_CLASS_PROMISE);
     if (JS_IsException(obj))
         return JS_EXCEPTION;
     s = js_mallocz(ctx, sizeof(*s));
-    if (!s)
-        goto fail;
+    if (!s) {
+        JS_FreeValue(ctx, obj);
+        return JS_EXCEPTION;
+    }
     s->promise_state = JS_PROMISE_PENDING;
     s->is_handled = false;
-    for(i = 0; i < 2; i++)
-        init_list_head(&s->promise_reactions[i]);
+    init_list_head(&s->promise_reactions[0]);
+    init_list_head(&s->promise_reactions[1]);
     s->promise_result = JS_UNDEFINED;
     JS_SetOpaqueInternal(obj, s);
-    if (js_create_resolving_functions(ctx, args, obj))
-        goto fail;
+    if (js_create_resolving_functions(ctx, resolving_funcs, obj)) {
+        JS_FreeValue(ctx, obj);
+        return JS_EXCEPTION;
+    }
     rt = ctx->rt;
     if (rt->promise_hook) {
         JSValueConst parent_promise = JS_UNDEFINED;
@@ -60371,6 +64893,22 @@ static JSValue js_promise_constructor(JSContext *ctx, JSValueConst new_target,
         rt->promise_hook(ctx, JS_PROMISE_HOOK_INIT, obj, parent_promise,
                          rt->promise_hook_opaque);
     }
+    return obj;
+}
+
+static JSValue js_promise_constructor(JSContext *ctx, JSValueConst new_target,
+                                      int argc, JSValueConst *argv)
+{
+    JSValueConst executor;
+    JSValue obj;
+    JSValue args[2], ret;
+
+    executor = argv[0];
+    if (check_function(ctx, executor))
+        return JS_EXCEPTION;
+    obj = js_promise_new(ctx, new_target, args);
+    if (JS_IsException(obj))
+        return JS_EXCEPTION;
     ret = JS_Call(ctx, executor, JS_UNDEFINED, 2, vc(args));
     if (JS_IsException(ret)) {
         JSValue ret2, error;
@@ -60378,17 +64916,16 @@ static JSValue js_promise_constructor(JSContext *ctx, JSValueConst new_target,
         ret2 = JS_Call(ctx, args[1], JS_UNDEFINED, 1, vc(&error));
         JS_FreeValue(ctx, error);
         if (JS_IsException(ret2))
-            goto fail1;
+            goto fail;
         JS_FreeValue(ctx, ret2);
     }
     JS_FreeValue(ctx, ret);
     JS_FreeValue(ctx, args[0]);
     JS_FreeValue(ctx, args[1]);
     return obj;
- fail1:
+ fail:
     JS_FreeValue(ctx, args[0]);
     JS_FreeValue(ctx, args[1]);
- fail:
     JS_FreeValue(ctx, obj);
     return JS_EXCEPTION;
 }
@@ -60426,14 +64963,12 @@ static JSValue js_new_promise_capability(JSContext *ctx,
     JSCFunctionDataRecord *s;
     int i;
 
+    if (JS_IsUndefined(ctor) || js_same_value(ctx, ctor, ctx->promise_ctor))
+        return js_promise_new(ctx, JS_UNDEFINED, resolving_funcs);
     executor = js_promise_executor_new(ctx);
     if (JS_IsException(executor))
         return JS_EXCEPTION;
-    if (JS_IsUndefined(ctor)) {
-        result_promise = js_promise_constructor(ctx, ctor, 1, vc(&executor));
-    } else {
-        result_promise = JS_CallConstructor(ctx, ctor, 1, vc(&executor));
-    }
+    result_promise = JS_CallConstructor(ctx, ctor, 1, vc(&executor));
     if (JS_IsException(result_promise))
         goto fail;
     s = JS_GetOpaque(executor, JS_CLASS_C_FUNCTION_DATA);
@@ -61287,14 +65822,16 @@ static JSClassShortDef const js_async_class_def[] = {
     { JS_ATOM_AsyncGenerator, js_async_generator_finalizer, js_async_generator_mark },  /* JS_CLASS_ASYNC_GENERATOR */
 };
 
-void JS_AddIntrinsicPromise(JSContext *ctx)
+int JS_AddIntrinsicPromise(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
     JSValue obj1;
+    JSCFunctionType ft;
 
     if (!JS_IsRegisteredClass(rt, JS_CLASS_PROMISE)) {
-        init_class_range(rt, js_async_class_def, JS_CLASS_PROMISE,
-                         countof(js_async_class_def));
+        if (init_class_range(rt, js_async_class_def, JS_CLASS_PROMISE,
+                             countof(js_async_class_def)))
+            return -1;
         rt->class_array[JS_CLASS_PROMISE_RESOLVE_FUNCTION].call = js_promise_resolve_function_call;
         rt->class_array[JS_CLASS_PROMISE_REJECT_FUNCTION].call = js_promise_resolve_function_call;
         rt->class_array[JS_CLASS_ASYNC_FUNCTION].call = js_async_function_call;
@@ -61304,77 +65841,67 @@ void JS_AddIntrinsicPromise(JSContext *ctx)
     }
 
     /* Promise */
-    ctx->class_proto[JS_CLASS_PROMISE] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_PROMISE],
-                               js_promise_proto_funcs,
-                               countof(js_promise_proto_funcs));
-    obj1 = JS_NewCFunction2(ctx, js_promise_constructor, "Promise", 1,
-                            JS_CFUNC_constructor, 0);
-    ctx->promise_ctor = js_dup(obj1);
-    JS_SetPropertyFunctionList(ctx, obj1,
-                               js_promise_funcs,
-                               countof(js_promise_funcs));
-    JS_NewGlobalCConstructor2(ctx, obj1, "Promise",
-                              ctx->class_proto[JS_CLASS_PROMISE]);
-
-    /* Used to squelch a -Wcast-function-type warning. */
-    JSCFunctionType ft;
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_PROMISE, "Promise",
+                              js_promise_constructor, 1, JS_CFUNC_constructor, 0,
+                              JS_UNDEFINED,
+                              js_promise_funcs, countof(js_promise_funcs),
+                              js_promise_proto_funcs, countof(js_promise_proto_funcs),
+                              0);
+    if (JS_IsException(obj1))
+        return -1;
+    ctx->promise_ctor = obj1;
 
     /* AsyncFunction */
-    ctx->class_proto[JS_CLASS_ASYNC_FUNCTION] = JS_NewObjectProto(ctx, ctx->function_proto);
     ft.generic_magic = js_function_constructor;
-    obj1 = JS_NewCFunction3(ctx, ft.generic,
-                            "AsyncFunction", 1,
-                            JS_CFUNC_constructor_or_func_magic, JS_FUNC_ASYNC,
-                            ctx->function_ctor);
-    JS_SetPropertyFunctionList(ctx,
-                               ctx->class_proto[JS_CLASS_ASYNC_FUNCTION],
-                               js_async_function_proto_funcs,
-                               countof(js_async_function_proto_funcs));
-    JS_SetConstructor2(ctx, obj1, ctx->class_proto[JS_CLASS_ASYNC_FUNCTION],
-                       0, JS_PROP_CONFIGURABLE);
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_ASYNC_FUNCTION, "AsyncFunction",
+                              ft.generic, 1, JS_CFUNC_constructor_or_func_magic, JS_FUNC_ASYNC,
+                              ctx->function_ctor,
+                              NULL, 0,
+                              js_async_function_proto_funcs, countof(js_async_function_proto_funcs),
+                              JS_NEW_CTOR_NO_GLOBAL | JS_NEW_CTOR_READONLY);
+    if (JS_IsException(obj1))
+        return -1;
     JS_FreeValue(ctx, obj1);
 
     /* AsyncIteratorPrototype */
-    ctx->async_iterator_proto = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->async_iterator_proto,
-                               js_async_iterator_proto_funcs,
-                               countof(js_async_iterator_proto_funcs));
+    ctx->async_iterator_proto =
+        JS_NewObjectProtoList(ctx, ctx->class_proto[JS_CLASS_OBJECT],
+                              js_async_iterator_proto_funcs,
+                              countof(js_async_iterator_proto_funcs));
+    if (JS_IsException(ctx->async_iterator_proto))
+        return -1;
 
     /* AsyncFromSyncIteratorPrototype */
     ctx->class_proto[JS_CLASS_ASYNC_FROM_SYNC_ITERATOR] =
-        JS_NewObjectProto(ctx, ctx->async_iterator_proto);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_ASYNC_FROM_SYNC_ITERATOR],
-                               js_async_from_sync_iterator_proto_funcs,
-                               countof(js_async_from_sync_iterator_proto_funcs));
+        JS_NewObjectProtoList(ctx, ctx->async_iterator_proto,
+                              js_async_from_sync_iterator_proto_funcs,
+                              countof(js_async_from_sync_iterator_proto_funcs));
+    if (JS_IsException(ctx->class_proto[JS_CLASS_ASYNC_FROM_SYNC_ITERATOR]))
+        return -1;
 
     /* AsyncGeneratorPrototype */
     ctx->class_proto[JS_CLASS_ASYNC_GENERATOR] =
-        JS_NewObjectProto(ctx, ctx->async_iterator_proto);
-    JS_SetPropertyFunctionList(ctx,
-                               ctx->class_proto[JS_CLASS_ASYNC_GENERATOR],
-                               js_async_generator_proto_funcs,
-                               countof(js_async_generator_proto_funcs));
+        JS_NewObjectProtoList(ctx, ctx->async_iterator_proto,
+                              js_async_generator_proto_funcs,
+                              countof(js_async_generator_proto_funcs));
+    if (JS_IsException(ctx->class_proto[JS_CLASS_ASYNC_GENERATOR]))
+        return -1;
 
     /* AsyncGeneratorFunction */
-    ctx->class_proto[JS_CLASS_ASYNC_GENERATOR_FUNCTION] =
-        JS_NewObjectProto(ctx, ctx->function_proto);
     ft.generic_magic = js_function_constructor;
-    obj1 = JS_NewCFunction3(ctx, ft.generic,
-                            "AsyncGeneratorFunction", 1,
-                            JS_CFUNC_constructor_or_func_magic,
-                            JS_FUNC_ASYNC_GENERATOR,
-                            ctx->function_ctor);
-    JS_SetPropertyFunctionList(ctx,
-                               ctx->class_proto[JS_CLASS_ASYNC_GENERATOR_FUNCTION],
-                               js_async_generator_function_proto_funcs,
-                               countof(js_async_generator_function_proto_funcs));
-    JS_SetConstructor2(ctx, ctx->class_proto[JS_CLASS_ASYNC_GENERATOR_FUNCTION],
-                       ctx->class_proto[JS_CLASS_ASYNC_GENERATOR],
-                       JS_PROP_CONFIGURABLE, JS_PROP_CONFIGURABLE);
-    JS_SetConstructor2(ctx, obj1, ctx->class_proto[JS_CLASS_ASYNC_GENERATOR_FUNCTION],
-                       0, JS_PROP_CONFIGURABLE);
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_ASYNC_GENERATOR_FUNCTION, "AsyncGeneratorFunction",
+                              ft.generic, 1, JS_CFUNC_constructor_or_func_magic, JS_FUNC_ASYNC_GENERATOR,
+                              ctx->function_ctor,
+                              NULL, 0,
+                              js_async_generator_function_proto_funcs, countof(js_async_generator_function_proto_funcs),
+                              JS_NEW_CTOR_NO_GLOBAL | JS_NEW_CTOR_READONLY);
+    if (JS_IsException(obj1))
+        return -1;
     JS_FreeValue(ctx, obj1);
+
+    return JS_SetConstructor2(ctx, ctx->class_proto[JS_CLASS_ASYNC_GENERATOR_FUNCTION],
+                              ctx->class_proto[JS_CLASS_ASYNC_GENERATOR],
+                              JS_PROP_CONFIGURABLE, JS_PROP_CONFIGURABLE);
 }
 
 /* URI handling */
@@ -61666,10 +66193,13 @@ static const JSCFunctionListEntry js_global_funcs[] = {
     JS_CFUNC_MAGIC_DEF("encodeURIComponent", 1, js_global_encodeURI, 1 ),
     JS_CFUNC_DEF("escape", 1, js_global_escape ),
     JS_CFUNC_DEF("unescape", 1, js_global_unescape ),
-    JS_PROP_DOUBLE_DEF("Infinity", 1.0 / 0.0, 0 ),
-    JS_PROP_U2D_DEF("NaN", 0x7FF8ull<<48, 0 ), // workaround for msvc
+    // workarounds for msvc & djgpp where NAN and INFINITY
+    // are not compile-time expressions
+    JS_PROP_U2D_DEF("Infinity", 0x7FF0ull<<48, 0 ),
+    JS_PROP_U2D_DEF("NaN", 0x7FF8ull<<48, 0 ),
     JS_PROP_UNDEFINED_DEF("undefined", 0 ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "global", JS_PROP_CONFIGURABLE ),
+    JS_CFUNC_DEF("eval", 1, js_global_eval ),
 };
 
 /* Date */
@@ -61818,7 +66348,9 @@ static double set_date_fields(double fields[minimum_length(7)], int is_local) {
     int yi, mi, i;
     int64_t days;
     volatile double temp;  /* enforce evaluation order */
+    double d = NAN;
 
+    JS_X87_FPCW_SAVE_AND_ADJUST(fpcw);
     /* emulate 21.4.1.15 MakeDay ( year, month, date ) */
     y = fields[0];
     m = fields[1];
@@ -61828,7 +66360,7 @@ static double set_date_fields(double fields[minimum_length(7)], int is_local) {
     if (mn < 0)
         mn += 12;
     if (ym < -271821 || ym > 275760)
-        return NAN;
+        goto out;
 
     yi = ym;
     mi = mn;
@@ -61860,14 +66392,17 @@ static double set_date_fields(double fields[minimum_length(7)], int is_local) {
     /* emulate 21.4.1.16 MakeDate ( day, time ) */
     tv = (temp = day * 86400000) + time;   /* prevent generation of FMA */
     if (!isfinite(tv))
-        return NAN;
+        goto out;
 
     /* adjust for local time and clip */
     if (is_local) {
         int64_t ti = tv < INT64_MIN ? INT64_MIN : tv >= 0x1p63 ? INT64_MAX : (int64_t)tv;
         tv += getTimezoneOffset(ti) * 60000;
     }
-    return time_clip(tv);
+    d = time_clip(tv);
+out:
+    JS_X87_FPCW_RESTORE(fpcw);
+    return d;
 }
 
 static JSValue get_date_field(JSContext *ctx, JSValueConst this_val,
@@ -62813,26 +67348,30 @@ bool JS_IsDate(JSValueConst v)
     return JS_VALUE_GET_OBJ(v)->class_id == JS_CLASS_DATE;
 }
 
-void JS_AddIntrinsicDate(JSContext *ctx)
+int JS_AddIntrinsicDate(JSContext *ctx)
 {
     JSValue obj;
 
-    /* Date */
-    ctx->class_proto[JS_CLASS_DATE] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_DATE], js_date_proto_funcs,
-                               countof(js_date_proto_funcs));
-    obj = JS_NewGlobalCConstructor(ctx, "Date", js_date_constructor, 7,
-                                   ctx->class_proto[JS_CLASS_DATE]);
-    JS_SetPropertyFunctionList(ctx, obj, js_date_funcs, countof(js_date_funcs));
+    obj = JS_NewCConstructor(ctx, JS_CLASS_DATE, "Date",
+                             js_date_constructor, 7, JS_CFUNC_constructor_or_func, 0,
+                             JS_UNDEFINED,
+                             js_date_funcs, countof(js_date_funcs),
+                             js_date_proto_funcs, countof(js_date_proto_funcs),
+                             0);
+    if (JS_IsException(obj))
+        return -1;
+    JS_FreeValue(ctx, obj);
+    return 0;
 }
 
 /* eval */
 
-void JS_AddIntrinsicEval(JSContext *ctx)
+int JS_AddIntrinsicEval(JSContext *ctx)
 {
 #ifndef QJS_DISABLE_PARSER
     ctx->eval_internal = __JS_EvalInternal;
 #endif // QJS_DISABLE_PARSER
+    return 0;
 }
 
 /* BigInt */
@@ -62870,6 +67409,7 @@ static JSValue JS_ToBigIntCtorFree(JSContext *ctx, JSValue val)
         }
         break;
     case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
         val = JS_StringToBigIntErr(ctx, val);
         break;
     case JS_TAG_OBJECT:
@@ -63015,18 +67555,20 @@ static const JSCFunctionListEntry js_bigint_proto_funcs[] = {
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "BigInt", JS_PROP_CONFIGURABLE ),
 };
 
-void JS_AddIntrinsicBigInt(JSContext *ctx)
+int JS_AddIntrinsicBigInt(JSContext *ctx)
 {
     JSValue obj1;
 
-    ctx->class_proto[JS_CLASS_BIG_INT] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_BIG_INT],
-                               js_bigint_proto_funcs,
-                               countof(js_bigint_proto_funcs));
-    obj1 = JS_NewGlobalCConstructor(ctx, "BigInt", js_bigint_constructor, 1,
-                                    ctx->class_proto[JS_CLASS_BIG_INT]);
-    JS_SetPropertyFunctionList(ctx, obj1, js_bigint_funcs,
-                               countof(js_bigint_funcs));
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_BIG_INT, "BigInt",
+                              js_bigint_constructor, 1, JS_CFUNC_constructor_or_func, 0,
+                              JS_UNDEFINED,
+                              js_bigint_funcs, countof(js_bigint_funcs),
+                              js_bigint_proto_funcs, countof(js_bigint_proto_funcs),
+                              0);
+    if (JS_IsException(obj1))
+        return -1;
+    JS_FreeValue(ctx, obj1);
+    return 0;
 }
 
 static const char * const native_error_name[JS_NATIVE_ERROR_COUNT] = {
@@ -63037,18 +67579,38 @@ static const char * const native_error_name[JS_NATIVE_ERROR_COUNT] = {
 
 /* Minimum amount of objects to be able to compile code and display
    error messages. No JSAtom should be allocated by this function. */
-static void JS_AddIntrinsicBasicObjects(JSContext *ctx)
+/* Minimum amount of objects to be able to compile code and display
+   error messages. */
+static int JS_AddIntrinsicBasicObjects(JSContext *ctx)
 {
     JSValue proto;
     int i;
 
-    ctx->class_proto[JS_CLASS_OBJECT] = JS_NewObjectProto(ctx, JS_NULL);
-    ctx->global_obj = JS_NewObject(ctx);
-    ctx->global_var_obj = JS_NewObjectProto(ctx, JS_NULL);
+    /* warning: ordering is tricky */
+    ctx->class_proto[JS_CLASS_OBJECT] =
+        JS_NewObjectProtoClassAlloc(ctx, JS_NULL, JS_CLASS_OBJECT,
+                                    countof(js_object_proto_funcs) + 1);
+    if (JS_IsException(ctx->class_proto[JS_CLASS_OBJECT]))
+        return -1;
+
+    /* 2 more properties: caller and arguments */
     ctx->function_proto = JS_NewCFunction3(ctx, js_function_proto, "", 0,
                                            JS_CFUNC_generic, 0,
-                                           ctx->class_proto[JS_CLASS_OBJECT]);
+                                           ctx->class_proto[JS_CLASS_OBJECT],
+                                           countof(js_function_proto_funcs) + 3 + 2);
+    if (JS_IsException(ctx->function_proto))
+        return -1;
     ctx->class_proto[JS_CLASS_BYTECODE_FUNCTION] = js_dup(ctx->function_proto);
+
+    ctx->global_obj = JS_NewObjectProtoClassAlloc(ctx, ctx->class_proto[JS_CLASS_OBJECT],
+                                                  JS_CLASS_OBJECT, 64);
+    if (JS_IsException(ctx->global_obj))
+        return -1;
+    ctx->global_var_obj = JS_NewObjectProtoClassAlloc(ctx, JS_NULL,
+                                                      JS_CLASS_OBJECT, 16);
+    if (JS_IsException(ctx->global_var_obj))
+        return -1;
+
     ctx->class_proto[JS_CLASS_ERROR] = JS_NewObject(ctx);
     JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_ERROR],
                                js_error_proto_funcs,
@@ -63069,266 +67631,310 @@ static void JS_AddIntrinsicBasicObjects(JSContext *ctx)
     ctx->class_proto[JS_CLASS_ARRAY] =
         JS_NewObjectProtoClass(ctx, ctx->class_proto[JS_CLASS_OBJECT],
                                JS_CLASS_ARRAY);
+    ctx->std_array_prototype = true;
 
-    ctx->array_shape = js_new_shape2(ctx, get_proto_obj(ctx->class_proto[JS_CLASS_ARRAY]),
-                                     JS_PROP_INITIAL_HASH_SIZE, 1);
-    add_shape_property(ctx, &ctx->array_shape, NULL,
-                       JS_ATOM_length, JS_PROP_WRITABLE | JS_PROP_LENGTH);
+    static const JSShapeProperty array_props[] = {
+        {.atom=JS_ATOM_length,          .flags=JS_PROP_WRITABLE|JS_PROP_LENGTH},
+    };
+    static const JSShapeProperty arguments_props[] = {
+        {.atom=JS_ATOM_length,          .flags=JS_PROP_WRITABLE|JS_PROP_CONFIGURABLE},
+        {.atom=JS_ATOM_Symbol_iterator, .flags=JS_PROP_WRITABLE|JS_PROP_CONFIGURABLE},
+        {.atom=JS_ATOM_callee,          .flags=JS_PROP_GETSET},
+    };
+    static const JSShapeProperty mapped_arguments_props[] = {
+        {.atom=JS_ATOM_length,          .flags=JS_PROP_WRITABLE|JS_PROP_CONFIGURABLE},
+        {.atom=JS_ATOM_Symbol_iterator, .flags=JS_PROP_WRITABLE|JS_PROP_CONFIGURABLE},
+        {.atom=JS_ATOM_callee,          .flags=JS_PROP_WRITABLE|JS_PROP_CONFIGURABLE},
+    };
+    if (js_new_shape_with(ctx, &ctx->array_shape,
+                          ctx->class_proto[JS_CLASS_ARRAY],
+                          countof(array_props), array_props)) {
+        return -1;
+    }
+    if (js_new_shape_with(ctx, &ctx->arguments_shape,
+                          ctx->class_proto[JS_CLASS_OBJECT],
+                          countof(arguments_props), arguments_props)) {
+        return -1;
+    }
+    if (js_new_shape_with(ctx, &ctx->mapped_arguments_shape,
+                          ctx->class_proto[JS_CLASS_OBJECT],
+                          countof(mapped_arguments_props), mapped_arguments_props)) {
+        return -1;
+    }
 
-    /* XXX: could test it on first context creation to ensure that no
-       new atoms are created in JS_AddIntrinsicBasicObjects(). It is
-       necessary to avoid useless renumbering of atoms after
-       JS_EvalBinary() if it is done just after
-       JS_AddIntrinsicBasicObjects(). */
-    //    assert(ctx->rt->atom_count == JS_ATOM_END);
+    return 0;
 }
 
-void JS_AddIntrinsicBaseObjects(JSContext *ctx)
+int JS_AddIntrinsicBaseObjects(JSContext *ctx)
 {
-    int i;
-    JSValue obj, number_obj;
-    JSValue obj1;
+    JSValue obj1, obj2;
+    JSCFunctionType ft;
 
     ctx->throw_type_error = JS_NewCFunction(ctx, js_throw_type_error, NULL, 0);
-
+    if (JS_IsException(ctx->throw_type_error))
+        return -1;
     /* add caller and arguments properties to throw a TypeError */
-    JS_DefineProperty(ctx, ctx->function_proto, JS_ATOM_caller, JS_UNDEFINED,
-                      ctx->throw_type_error, ctx->throw_type_error,
-                      JS_PROP_HAS_GET | JS_PROP_HAS_SET |
-                      JS_PROP_HAS_CONFIGURABLE | JS_PROP_CONFIGURABLE);
-    JS_DefineProperty(ctx, ctx->function_proto, JS_ATOM_arguments, JS_UNDEFINED,
-                      ctx->throw_type_error, ctx->throw_type_error,
-                      JS_PROP_HAS_GET | JS_PROP_HAS_SET |
-                      JS_PROP_HAS_CONFIGURABLE | JS_PROP_CONFIGURABLE);
+    if (JS_DefineProperty(ctx, ctx->function_proto, JS_ATOM_caller, JS_UNDEFINED,
+                          ctx->throw_type_error, ctx->throw_type_error,
+                          JS_PROP_HAS_GET | JS_PROP_HAS_SET |
+                          JS_PROP_HAS_CONFIGURABLE | JS_PROP_CONFIGURABLE) < 0)
+        return -1;
+    if (JS_DefineProperty(ctx, ctx->function_proto, JS_ATOM_arguments, JS_UNDEFINED,
+                          ctx->throw_type_error, ctx->throw_type_error,
+                          JS_PROP_HAS_GET | JS_PROP_HAS_SET |
+                          JS_PROP_HAS_CONFIGURABLE | JS_PROP_CONFIGURABLE) < 0)
+        return -1;
     JS_FreeValue(ctx, js_object_seal(ctx, JS_UNDEFINED, 1, vc(&ctx->throw_type_error), 1));
 
     /* Object */
-    obj = JS_NewGlobalCConstructor(ctx, "Object", js_object_constructor, 1,
-                                   ctx->class_proto[JS_CLASS_OBJECT]);
-    JS_SetPropertyFunctionList(ctx, obj, js_object_funcs, countof(js_object_funcs));
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_OBJECT],
-                               js_object_proto_funcs, countof(js_object_proto_funcs));
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_OBJECT, "Object",
+                              js_object_constructor, 1, JS_CFUNC_constructor_or_func, 0,
+                              JS_UNDEFINED,
+                              js_object_funcs, countof(js_object_funcs),
+                              js_object_proto_funcs, countof(js_object_proto_funcs),
+                              JS_NEW_CTOR_PROTO_EXIST);
+    if (JS_IsException(obj1))
+        return -1;
+    JS_FreeValue(ctx, obj1);
 
     /* Function */
-    JS_SetPropertyFunctionList(ctx, ctx->function_proto, js_function_proto_funcs, countof(js_function_proto_funcs));
-    ctx->function_ctor = JS_NewCFunctionMagic(ctx, js_function_constructor,
-                                              "Function", 1, JS_CFUNC_constructor_or_func_magic,
-                                              JS_FUNC_NORMAL);
-    JS_NewGlobalCConstructor2(ctx, js_dup(ctx->function_ctor), "Function",
-                              ctx->function_proto);
+    ft.generic_magic = js_function_constructor;
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_BYTECODE_FUNCTION, "Function",
+                              ft.generic, 1, JS_CFUNC_constructor_or_func_magic, JS_FUNC_NORMAL,
+                              JS_UNDEFINED,
+                              NULL, 0,
+                              js_function_proto_funcs, countof(js_function_proto_funcs),
+                              JS_NEW_CTOR_PROTO_EXIST);
+    if (JS_IsException(obj1))
+        return -1;
+    ctx->function_ctor = obj1;
 
     /* Error */
+    ft.generic_magic = js_error_constructor;
     ctx->error_ctor = JS_NewCFunctionMagic(ctx, js_error_constructor,
                                            "Error", 1, JS_CFUNC_constructor_or_func_magic, -1);
+    if (JS_IsException(ctx->error_ctor))
+        return -1;
     JS_NewGlobalCConstructor2(ctx, js_dup(ctx->error_ctor),
                               "Error", ctx->class_proto[JS_CLASS_ERROR]);
-    JS_SetPropertyFunctionList(ctx, ctx->error_ctor, js_error_funcs, countof(js_error_funcs));
+    if (JS_SetPropertyFunctionList(ctx, ctx->error_ctor, js_error_funcs, countof(js_error_funcs)))
+        return -1;
 
-    /* Used to squelch a -Wcast-function-type warning. */
-    JSCFunctionType ft = { .generic_magic = js_error_constructor };
-    for(i = 0; i < JS_NATIVE_ERROR_COUNT; i++) {
+    for(int i = 0; i < JS_NATIVE_ERROR_COUNT; i++) {
         JSValue func_obj;
         int n_args;
         n_args = 1 + (i == JS_AGGREGATE_ERROR);
         func_obj = JS_NewCFunction3(ctx, ft.generic,
                                     native_error_name[i], n_args,
                                     JS_CFUNC_constructor_or_func_magic, i,
-                                    ctx->error_ctor);
+                                    ctx->error_ctor, 0);
+        if (JS_IsException(func_obj))
+            return -1;
         JS_NewGlobalCConstructor2(ctx, func_obj, native_error_name[i],
                                   ctx->native_error_proto[i]);
     }
 
     /* CallSite */
-    _JS_AddIntrinsicCallSite(ctx);
+    if (_JS_AddIntrinsicCallSite(ctx))
+        return -1;
 
     /* Iterator */
-    ctx->class_proto[JS_CLASS_ITERATOR] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
-                               js_iterator_proto_funcs,
-                               countof(js_iterator_proto_funcs));
-    obj = JS_NewGlobalCConstructor(ctx, "Iterator", js_iterator_constructor, 0,
-                                   ctx->class_proto[JS_CLASS_ITERATOR]);
+    obj2 = JS_NewCConstructor(ctx, JS_CLASS_ITERATOR, "Iterator",
+                              js_iterator_constructor, 0, JS_CFUNC_constructor_or_func, 0,
+                              JS_UNDEFINED,
+                              js_iterator_funcs, countof(js_iterator_funcs),
+                              js_iterator_proto_funcs, countof(js_iterator_proto_funcs),
+                              0);
+    if (JS_IsException(obj2))
+        return -1;
     // quirk: Iterator.prototype.constructor is an accessor property
-    // TODO(bnoordhuis) mildly inefficient because JS_NewGlobalCConstructor
+    // TODO(bnoordhuis) mildly inefficient because JS_NewCConstructor
     // first creates a .constructor value property that we then replace with
     // an accessor
-    ctx->iterator_ctor_getset = JS_NewCFunctionData(ctx, js_iterator_constructor_getset,
-                                                    0, 0, 1, vc(&obj));
-    JS_DefineProperty(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
-                      JS_ATOM_constructor, JS_UNDEFINED,
-                      ctx->iterator_ctor_getset, ctx->iterator_ctor_getset,
-                      JS_PROP_HAS_GET|JS_PROP_HAS_SET|JS_PROP_WRITABLE|JS_PROP_CONFIGURABLE);
-    ctx->iterator_ctor = js_dup(obj);
-    JS_SetPropertyFunctionList(ctx, obj,
-                               js_iterator_funcs,
-                               countof(js_iterator_funcs));
+    obj1 = JS_NewCFunctionData(ctx, js_iterator_constructor_getset,
+                               0, 0, 1, vc(&obj2));
+    if (JS_IsException(obj1)) {
+        JS_FreeValue(ctx, obj2);
+        return -1;
+    }
+    ctx->iterator_ctor_getset = js_dup(obj1);
+    if (JS_DefineProperty(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
+                          JS_ATOM_constructor, JS_UNDEFINED,
+                          obj1, obj1,
+                          JS_PROP_HAS_GET | JS_PROP_HAS_SET | JS_PROP_CONFIGURABLE) < 0) {
+        JS_FreeValue(ctx, obj2);
+        JS_FreeValue(ctx, obj1);
+        return -1;
+    }
+    JS_FreeValue(ctx, obj1);
+    ctx->iterator_ctor = obj2;
+    JS_DefineAutoInitProperty(ctx, obj2, JS_ATOM_zip, JS_AUTOINIT_ID_BYTECODE,
+                              (void *)(uintptr_t)JS_BUILTIN_ITERATOR_ZIP,
+                              JS_PROP_WRITABLE|JS_PROP_CONFIGURABLE);
+    JS_DefineAutoInitProperty(ctx, obj2, JS_ATOM_zipKeyed, JS_AUTOINIT_ID_BYTECODE,
+                              (void *)(uintptr_t)JS_BUILTIN_ITERATOR_ZIP_KEYED,
+                              JS_PROP_WRITABLE|JS_PROP_CONFIGURABLE);
 
-    ctx->class_proto[JS_CLASS_ITERATOR_CONCAT] = JS_NewObjectProto(ctx, ctx->class_proto[JS_CLASS_ITERATOR]);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_ITERATOR_CONCAT],
-                               js_iterator_concat_proto_funcs,
-                               countof(js_iterator_concat_proto_funcs));
+    ctx->class_proto[JS_CLASS_ITERATOR_CONCAT] =
+        JS_NewObjectProtoList(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
+                              js_iterator_concat_proto_funcs,
+                              countof(js_iterator_concat_proto_funcs));
+    if (JS_IsException(ctx->class_proto[JS_CLASS_ITERATOR_CONCAT]))
+        return -1;
 
-    ctx->class_proto[JS_CLASS_ITERATOR_HELPER] = JS_NewObjectProto(ctx, ctx->class_proto[JS_CLASS_ITERATOR]);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_ITERATOR_HELPER],
-                               js_iterator_helper_proto_funcs,
-                               countof(js_iterator_helper_proto_funcs));
+    ctx->class_proto[JS_CLASS_ITERATOR_HELPER] =
+        JS_NewObjectProtoList(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
+                              js_iterator_helper_proto_funcs,
+                              countof(js_iterator_helper_proto_funcs));
+    if (JS_IsException(ctx->class_proto[JS_CLASS_ITERATOR_HELPER]))
+        return -1;
 
-    ctx->class_proto[JS_CLASS_ITERATOR_WRAP] = JS_NewObjectProto(ctx, ctx->class_proto[JS_CLASS_ITERATOR]);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_ITERATOR_WRAP],
-                               js_iterator_wrap_proto_funcs,
-                               countof(js_iterator_wrap_proto_funcs));
+    ctx->class_proto[JS_CLASS_ITERATOR_WRAP] =
+        JS_NewObjectProtoList(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
+                              js_iterator_wrap_proto_funcs,
+                              countof(js_iterator_wrap_proto_funcs));
+    if (JS_IsException(ctx->class_proto[JS_CLASS_ITERATOR_WRAP]))
+        return -1;
 
     /* Array */
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_ARRAY],
-                               js_array_proto_funcs,
-                               countof(js_array_proto_funcs));
-
-    obj = JS_NewGlobalCConstructor(ctx, "Array", js_array_constructor, 1,
-                                   ctx->class_proto[JS_CLASS_ARRAY]);
-    ctx->array_ctor = js_dup(obj);
-    JS_SetPropertyFunctionList(ctx, obj, js_array_funcs,
-                               countof(js_array_funcs));
-    JS_DefineAutoInitProperty(ctx, obj, JS_ATOM_fromAsync,
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_ARRAY, "Array",
+                              js_array_constructor, 1, JS_CFUNC_constructor_or_func, 0,
+                              JS_UNDEFINED,
+                              js_array_funcs, countof(js_array_funcs),
+                              js_array_proto_funcs, countof(js_array_proto_funcs),
+                              JS_NEW_CTOR_PROTO_EXIST);
+    if (JS_IsException(obj1))
+        return -1;
+    ctx->array_ctor = obj1;
+    JS_DefineAutoInitProperty(ctx, obj1, JS_ATOM_fromAsync,
                               JS_AUTOINIT_ID_BYTECODE,
                               (void *)(uintptr_t)JS_BUILTIN_ARRAY_FROMASYNC,
                               JS_PROP_WRITABLE|JS_PROP_CONFIGURABLE);
 
-    /* XXX: create auto_initializer */
-    {
-        /* initialize Array.prototype[Symbol.unscopables] */
-        static const char unscopables[] =
-            "copyWithin" "\0"
-            "entries" "\0"
-            "fill" "\0"
-            "find" "\0"
-            "findIndex" "\0"
-            "findLast" "\0"
-            "findLastIndex" "\0"
-            "flat" "\0"
-            "flatMap" "\0"
-            "includes" "\0"
-            "keys" "\0"
-            "toReversed" "\0"
-            "toSorted" "\0"
-            "toSpliced" "\0"
-            "values" "\0";
-        const char *p = unscopables;
-        obj1 = JS_NewObjectProto(ctx, JS_NULL);
-        for(p = unscopables; *p; p += strlen(p) + 1) {
-            JS_DefinePropertyValueStr(ctx, obj1, p, JS_TRUE, JS_PROP_C_W_E);
-        }
-        JS_DefinePropertyValue(ctx, ctx->class_proto[JS_CLASS_ARRAY],
-                               JS_ATOM_Symbol_unscopables, obj1,
-                               JS_PROP_CONFIGURABLE);
-    }
-
     /* needed to initialize arguments[Symbol.iterator] */
     ctx->array_proto_values =
         JS_GetProperty(ctx, ctx->class_proto[JS_CLASS_ARRAY], JS_ATOM_values);
+    if (JS_IsException(ctx->array_proto_values))
+        return -1;
 
-    ctx->class_proto[JS_CLASS_ARRAY_ITERATOR] = JS_NewObjectProto(ctx, ctx->class_proto[JS_CLASS_ITERATOR]);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_ARRAY_ITERATOR],
-                               js_array_iterator_proto_funcs,
-                               countof(js_array_iterator_proto_funcs));
+    ctx->class_proto[JS_CLASS_ARRAY_ITERATOR] =
+        JS_NewObjectProtoList(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
+                              js_array_iterator_proto_funcs,
+                              countof(js_array_iterator_proto_funcs));
+    if (JS_IsException(ctx->class_proto[JS_CLASS_ARRAY_ITERATOR]))
+        return -1;
 
     /* parseFloat and parseInteger must be defined before Number
        because of the Number.parseFloat and Number.parseInteger
        aliases */
-    JS_SetPropertyFunctionList(ctx, ctx->global_obj, js_global_funcs,
-                               countof(js_global_funcs));
+    if (JS_SetPropertyFunctionList(ctx, ctx->global_obj, js_global_funcs,
+                                   countof(js_global_funcs)))
+        return -1;
 
     /* Number */
-    ctx->class_proto[JS_CLASS_NUMBER] = JS_NewObjectProtoClass(ctx, ctx->class_proto[JS_CLASS_OBJECT],
-                                                               JS_CLASS_NUMBER);
-    JS_SetObjectData(ctx, ctx->class_proto[JS_CLASS_NUMBER], js_int32(0));
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_NUMBER],
-                               js_number_proto_funcs,
-                               countof(js_number_proto_funcs));
-    number_obj = JS_NewGlobalCConstructor(ctx, "Number", js_number_constructor, 1,
-                                          ctx->class_proto[JS_CLASS_NUMBER]);
-    JS_SetPropertyFunctionList(ctx, number_obj, js_number_funcs, countof(js_number_funcs));
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_NUMBER, "Number",
+                              js_number_constructor, 1, JS_CFUNC_constructor_or_func, 0,
+                              JS_UNDEFINED,
+                              js_number_funcs, countof(js_number_funcs),
+                              js_number_proto_funcs, countof(js_number_proto_funcs),
+                              JS_NEW_CTOR_PROTO_CLASS);
+    if (JS_IsException(obj1))
+        return -1;
+    JS_FreeValue(ctx, obj1);
+    if (JS_SetObjectData(ctx, ctx->class_proto[JS_CLASS_NUMBER], js_int32(0)))
+        return -1;
 
     /* Boolean */
-    ctx->class_proto[JS_CLASS_BOOLEAN] = JS_NewObjectProtoClass(ctx, ctx->class_proto[JS_CLASS_OBJECT],
-                                                                JS_CLASS_BOOLEAN);
-    JS_SetObjectData(ctx, ctx->class_proto[JS_CLASS_BOOLEAN], JS_FALSE);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_BOOLEAN], js_boolean_proto_funcs,
-                               countof(js_boolean_proto_funcs));
-    JS_NewGlobalCConstructor(ctx, "Boolean", js_boolean_constructor, 1,
-                             ctx->class_proto[JS_CLASS_BOOLEAN]);
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_BOOLEAN, "Boolean",
+                              js_boolean_constructor, 1, JS_CFUNC_constructor_or_func, 0,
+                              JS_UNDEFINED,
+                              NULL, 0,
+                              js_boolean_proto_funcs, countof(js_boolean_proto_funcs),
+                              JS_NEW_CTOR_PROTO_CLASS);
+    if (JS_IsException(obj1))
+        return -1;
+    JS_FreeValue(ctx, obj1);
+    if (JS_SetObjectData(ctx, ctx->class_proto[JS_CLASS_BOOLEAN], JS_FALSE))
+        return -1;
 
     /* String */
-    ctx->class_proto[JS_CLASS_STRING] = JS_NewObjectProtoClass(ctx, ctx->class_proto[JS_CLASS_OBJECT],
-                                                               JS_CLASS_STRING);
-    JS_SetObjectData(ctx, ctx->class_proto[JS_CLASS_STRING], js_empty_string(ctx->rt));
-    obj = JS_NewGlobalCConstructor(ctx, "String", js_string_constructor, 1,
-                                   ctx->class_proto[JS_CLASS_STRING]);
-    JS_SetPropertyFunctionList(ctx, obj, js_string_funcs,
-                               countof(js_string_funcs));
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_STRING], js_string_proto_funcs,
-                               countof(js_string_proto_funcs));
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_STRING, "String",
+                              js_string_constructor, 1, JS_CFUNC_constructor_or_func, 0,
+                              JS_UNDEFINED,
+                              js_string_funcs, countof(js_string_funcs),
+                              js_string_proto_funcs, countof(js_string_proto_funcs),
+                              JS_NEW_CTOR_PROTO_CLASS);
+    if (JS_IsException(obj1))
+        return -1;
+    JS_FreeValue(ctx, obj1);
+    if (JS_SetObjectData(ctx, ctx->class_proto[JS_CLASS_STRING], js_empty_string(ctx->rt)))
+        return -1;
 
-    ctx->class_proto[JS_CLASS_STRING_ITERATOR] = JS_NewObjectProto(ctx, ctx->class_proto[JS_CLASS_ITERATOR]);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_STRING_ITERATOR],
-                               js_string_iterator_proto_funcs,
-                               countof(js_string_iterator_proto_funcs));
+    ctx->class_proto[JS_CLASS_STRING_ITERATOR] =
+        JS_NewObjectProtoList(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
+                              js_string_iterator_proto_funcs,
+                              countof(js_string_iterator_proto_funcs));
+    if (JS_IsException(ctx->class_proto[JS_CLASS_STRING_ITERATOR]))
+        return -1;
 
     /* Math: create as autoinit object */
     js_random_init(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->global_obj, js_math_obj, countof(js_math_obj));
+    if (JS_SetPropertyFunctionList(ctx, ctx->global_obj, js_math_obj, countof(js_math_obj)))
+        return -1;
 
     /* ES6 Reflect: create as autoinit object */
-    JS_SetPropertyFunctionList(ctx, ctx->global_obj, js_reflect_obj, countof(js_reflect_obj));
+    if (JS_SetPropertyFunctionList(ctx, ctx->global_obj, js_reflect_obj, countof(js_reflect_obj)))
+        return -1;
 
     /* ES6 Symbol */
-    ctx->class_proto[JS_CLASS_SYMBOL] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_SYMBOL], js_symbol_proto_funcs,
-                               countof(js_symbol_proto_funcs));
-    obj = JS_NewGlobalCConstructor(ctx, "Symbol", js_symbol_constructor, 0,
-                                   ctx->class_proto[JS_CLASS_SYMBOL]);
-    JS_SetPropertyFunctionList(ctx, obj, js_symbol_funcs,
-                               countof(js_symbol_funcs));
-    for(i = JS_ATOM_Symbol_toPrimitive; i < JS_ATOM_END; i++) {
-        char buf[ATOM_GET_STR_BUF_SIZE];
-        const char *str, *p;
-        str = JS_AtomGetStr(ctx, buf, sizeof(buf), i);
-        /* skip "Symbol." */
-        p = strchr(str, '.');
-        if (p)
-            str = p + 1;
-        JS_DefinePropertyValueStr(ctx, obj, str, JS_AtomToValue(ctx, i), 0);
-    }
-
-    /* ES6 Generator */
-    ctx->class_proto[JS_CLASS_GENERATOR] = JS_NewObjectProto(ctx, ctx->class_proto[JS_CLASS_ITERATOR]);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_GENERATOR],
-                               js_generator_proto_funcs,
-                               countof(js_generator_proto_funcs));
-
-    ctx->class_proto[JS_CLASS_GENERATOR_FUNCTION] = JS_NewObjectProto(ctx, ctx->function_proto);
-    obj1 = JS_NewCFunctionMagic(ctx, js_function_constructor,
-                                "GeneratorFunction", 1,
-                                JS_CFUNC_constructor_or_func_magic, JS_FUNC_GENERATOR);
-    JS_SetPropertyFunctionList(ctx,
-                               ctx->class_proto[JS_CLASS_GENERATOR_FUNCTION],
-                               js_generator_function_proto_funcs,
-                               countof(js_generator_function_proto_funcs));
-    JS_SetConstructor2(ctx, ctx->class_proto[JS_CLASS_GENERATOR_FUNCTION],
-                       ctx->class_proto[JS_CLASS_GENERATOR],
-                       JS_PROP_CONFIGURABLE, JS_PROP_CONFIGURABLE);
-    JS_SetConstructor2(ctx, obj1, ctx->class_proto[JS_CLASS_GENERATOR_FUNCTION],
-                       0, JS_PROP_CONFIGURABLE);
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_SYMBOL, "Symbol",
+                              js_symbol_constructor, 0, JS_CFUNC_constructor_or_func, 0,
+                              JS_UNDEFINED,
+                              js_symbol_funcs, countof(js_symbol_funcs),
+                              js_symbol_proto_funcs, countof(js_symbol_proto_funcs),
+                              0);
+    if (JS_IsException(obj1))
+        return -1;
     JS_FreeValue(ctx, obj1);
 
-    /* global properties */
-    ctx->eval_obj = JS_NewCFunction(ctx, js_global_eval, "eval", 1);
-    JS_DefinePropertyValue(ctx, ctx->global_obj, JS_ATOM_eval,
-                           js_dup(ctx->eval_obj),
-                           JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    /* ES6 Generator */
+    ctx->class_proto[JS_CLASS_GENERATOR] =
+        JS_NewObjectProtoList(ctx, ctx->class_proto[JS_CLASS_ITERATOR],
+                              js_generator_proto_funcs,
+                              countof(js_generator_proto_funcs));
+    if (JS_IsException(ctx->class_proto[JS_CLASS_GENERATOR]))
+        return -1;
 
-    JS_DefinePropertyValue(ctx, ctx->global_obj, JS_ATOM_globalThis,
-                           js_dup(ctx->global_obj),
-                           JS_PROP_CONFIGURABLE | JS_PROP_WRITABLE);
+    ft.generic_magic = js_function_constructor;
+    obj1 = JS_NewCConstructor(ctx, JS_CLASS_GENERATOR_FUNCTION, "GeneratorFunction",
+                              ft.generic, 1, JS_CFUNC_constructor_or_func_magic, JS_FUNC_GENERATOR,
+                              ctx->function_ctor,
+                              NULL, 0,
+                              js_generator_function_proto_funcs,
+                              countof(js_generator_function_proto_funcs),
+                              JS_NEW_CTOR_NO_GLOBAL | JS_NEW_CTOR_READONLY);
+    if (JS_IsException(obj1))
+        return -1;
+    JS_FreeValue(ctx, obj1);
+    if (JS_SetConstructor2(ctx, ctx->class_proto[JS_CLASS_GENERATOR_FUNCTION],
+                           ctx->class_proto[JS_CLASS_GENERATOR],
+                           JS_PROP_CONFIGURABLE, JS_PROP_CONFIGURABLE))
+        return -1;
+
+    /* global properties */
+    ctx->eval_obj = JS_GetProperty(ctx, ctx->global_obj, JS_ATOM_eval);
+    if (JS_IsException(ctx->eval_obj))
+        return -1;
+
+    if (JS_DefinePropertyValue(ctx, ctx->global_obj, JS_ATOM_globalThis,
+                               js_dup(ctx->global_obj),
+                               JS_PROP_CONFIGURABLE | JS_PROP_WRITABLE) < 0)
+        return -1;
+
+    /* BigInt */
+    if (JS_AddIntrinsicBigInt(ctx))
+        return -1;
+    return 0;
 }
 
 /* Typed Arrays */
@@ -63398,10 +68004,18 @@ static JSValue js_array_buffer_constructor3(JSContext *ctx,
             rt->sab_funcs.sab_dup) {
             rt->sab_funcs.sab_dup(rt->sab_funcs.sab_opaque, buf);
         }
-        abuf->data = buf;
+        if (buf) {
+            abuf->data = buf;
+        } else {
+            abuf->data = js_mallocz(ctx, 1);
+            if (!abuf->data)
+                goto fail;
+            free_func = js_array_buffer_free;
+        }
     }
     init_list_head(&abuf->array_list);
     abuf->detached = false;
+    abuf->immutable = false;
     abuf->shared = (class_id == JS_CLASS_SHARED_ARRAY_BUFFER);
     abuf->opaque = opaque;
     abuf->free_func = free_func;
@@ -63571,6 +68185,11 @@ static JSValue JS_ThrowTypeErrorDetachedArrayBuffer(JSContext *ctx)
     return JS_ThrowTypeError(ctx, "ArrayBuffer is detached");
 }
 
+static JSValue JS_ThrowTypeErrorImmutableArrayBuffer(JSContext *ctx)
+{
+    return JS_ThrowTypeError(ctx, "ArrayBuffer is immutable");
+}
+
 static JSValue JS_ThrowTypeErrorArrayBufferOOB(JSContext *ctx)
 {
     return JS_ThrowTypeError(ctx, "ArrayBuffer is detached or resized");
@@ -63586,6 +68205,15 @@ static JSValue js_array_buffer_get_detached(JSContext *ctx,
     if (abuf->shared)
         return JS_ThrowTypeError(ctx, "detached called on SharedArrayBuffer");
     return js_bool(abuf->detached);
+}
+
+static JSValue js_array_buffer_get_immutable(JSContext *ctx,
+                                             JSValueConst this_val)
+{
+    JSArrayBuffer *abuf = JS_GetOpaque2(ctx, this_val, JS_CLASS_ARRAY_BUFFER);
+    if (!abuf)
+        return JS_EXCEPTION;
+    return js_bool(abuf->immutable);
 }
 
 static JSValue js_array_buffer_get_byteLength(JSContext *ctx,
@@ -63646,6 +68274,23 @@ void JS_DetachArrayBuffer(JSContext *ctx, JSValueConst obj)
             p->u.array.u.ptr = NULL;
         }
     }
+}
+
+int JS_IsImmutableArrayBuffer(JSValueConst obj)
+{
+    JSArrayBuffer *abuf = JS_GetOpaque(obj, JS_CLASS_ARRAY_BUFFER);
+    if (!abuf)
+        return -1;
+    return abuf->immutable;
+}
+
+int JS_SetImmutableArrayBuffer(JSValueConst obj, bool immutable)
+{
+    JSArrayBuffer *abuf = JS_GetOpaque(obj, JS_CLASS_ARRAY_BUFFER);
+    if (!abuf)
+        return -1;
+    abuf->immutable = immutable;
+    return 0;
 }
 
 /* get an ArrayBuffer or SharedArrayBuffer */
@@ -63724,28 +68369,38 @@ static void js_array_buffer_update_typed_arrays(JSArrayBuffer *abuf)
     }
 }
 
+enum {
+    JS_ARRAY_BUFFER_TRANSFER,
+    JS_ARRAY_BUFFER_TRANSFER_TO_IMMUTABLE,
+    JS_ARRAY_BUFFER_TRANSFER_TO_FIXED_LENGTH,
+};
+
 // ES #sec-arraybuffer.prototype.transfer
 static JSValue js_array_buffer_transfer(JSContext *ctx, JSValueConst this_val,
                                         int argc, JSValueConst *argv, int magic)
 {
-    bool transfer_to_fixed_length = magic & 1;
     JSArrayBuffer *abuf;
     uint64_t new_len, old_len, max_len, *pmax_len;
     uint8_t *bs, *new_bs;
+    JSValue ret;
 
     abuf = JS_GetOpaque2(ctx, this_val, JS_CLASS_ARRAY_BUFFER);
     if (!abuf)
         return JS_EXCEPTION;
     if (abuf->shared)
         return JS_ThrowTypeError(ctx, "cannot transfer a SharedArrayBuffer");
+    if (magic == JS_ARRAY_BUFFER_TRANSFER_TO_IMMUTABLE && abuf->immutable)
+        return JS_ThrowTypeErrorImmutableArrayBuffer(ctx);
     if (argc < 1 || JS_IsUndefined(argv[0]))
         new_len = abuf->byte_length;
     else if (JS_ToIndex(ctx, &new_len, argv[0]))
         return JS_EXCEPTION;
+    if (magic != JS_ARRAY_BUFFER_TRANSFER_TO_IMMUTABLE && abuf->immutable)
+        return JS_ThrowTypeErrorImmutableArrayBuffer(ctx);
     if (abuf->detached)
         return JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
     pmax_len = NULL;
-    if (!transfer_to_fixed_length) {
+    if (magic == JS_ARRAY_BUFFER_TRANSFER) {
         if (array_buffer_is_resizable(abuf)) { // carry over maxByteLength
             max_len = abuf->max_byte_length;
             if (new_len > max_len)
@@ -63758,8 +68413,9 @@ static JSValue js_array_buffer_transfer(JSContext *ctx, JSValueConst this_val,
     /* create an empty AB */
     if (new_len == 0) {
         JS_DetachArrayBuffer(ctx, this_val);
-        return js_array_buffer_constructor2(ctx, JS_UNDEFINED, 0, pmax_len,
-                                            JS_CLASS_ARRAY_BUFFER);
+        ret = js_array_buffer_constructor2(ctx, JS_UNDEFINED, 0, pmax_len,
+                                           JS_CLASS_ARRAY_BUFFER);
+        goto fini;
     }
     bs = abuf->data;
     old_len = abuf->byte_length;
@@ -63777,10 +68433,20 @@ static JSValue js_array_buffer_transfer(JSContext *ctx, JSValueConst this_val,
     abuf->byte_length = 0;
     abuf->detached = true;
     js_array_buffer_update_typed_arrays(abuf);
-    return js_array_buffer_constructor3(ctx, JS_UNDEFINED, new_len, pmax_len,
-                                        JS_CLASS_ARRAY_BUFFER,
-                                        bs, abuf->free_func,
-                                        NULL, false);
+    ret = js_array_buffer_constructor3(ctx, JS_UNDEFINED, new_len, pmax_len,
+                                       JS_CLASS_ARRAY_BUFFER, bs,
+                                       abuf->free_func, NULL,
+                                       /*alloc_flag*/false);
+fini:
+    if (magic == JS_ARRAY_BUFFER_TRANSFER_TO_IMMUTABLE) {
+        if (JS_IsException(ret))
+            return JS_EXCEPTION;
+        abuf = JS_GetOpaque2(ctx, ret, JS_CLASS_ARRAY_BUFFER);
+        if (!abuf)
+            return JS_EXCEPTION;
+        abuf->immutable = true;
+    }
+    return ret;
 }
 
 static JSValue js_array_buffer_resize(JSContext *ctx, JSValueConst this_val,
@@ -63793,6 +68459,8 @@ static JSValue js_array_buffer_resize(JSContext *ctx, JSValueConst this_val,
     abuf = JS_GetOpaque2(ctx, this_val, class_id);
     if (!abuf)
         return JS_EXCEPTION;
+    if (abuf->immutable)
+        return JS_ThrowTypeErrorImmutableArrayBuffer(ctx);
     if (JS_ToInt64(ctx, &len, argv[0]))
         return JS_EXCEPTION;
     if (abuf->detached)
@@ -63835,17 +68503,23 @@ static JSValue js_array_buffer_resize(JSContext *ctx, JSValueConst this_val,
 
 static JSValue js_array_buffer_slice(JSContext *ctx,
                                      JSValueConst this_val,
-                                     int argc, JSValueConst *argv, int class_id)
+                                     int argc, JSValueConst *argv, int magic)
 {
     JSArrayBuffer *abuf, *new_abuf;
     int64_t len, start, end, new_len;
     JSValue ctor, new_obj;
+    bool immutable;
+    int class_id;
 
+    immutable = magic & 1;
+    class_id = magic >> 1;
     abuf = JS_GetOpaque2(ctx, this_val, class_id);
     if (!abuf)
         return JS_EXCEPTION;
     if (abuf->detached)
         return JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
+    if (abuf->immutable)
+        return JS_ThrowTypeErrorImmutableArrayBuffer(ctx);
     len = abuf->byte_length;
 
     if (JS_ToInt64Clamp(ctx, &start, argv[0], 0, len, len))
@@ -63857,9 +68531,15 @@ static JSValue js_array_buffer_slice(JSContext *ctx,
             return JS_EXCEPTION;
     }
     new_len = max_int64(end - start, 0);
-    ctor = JS_SpeciesConstructor(ctx, this_val, JS_UNDEFINED);
-    if (JS_IsException(ctor))
-        return ctor;
+    // note: difference between slice and sliceToImmutable is that the
+    // latter does not have this step:
+    //        1. Let _ctor_ be ? SpeciesConstructor(_O_, %ArrayBuffer%)
+    ctor = JS_UNDEFINED;
+    if (!immutable) {
+        ctor = JS_SpeciesConstructor(ctx, this_val, JS_UNDEFINED);
+        if (JS_IsException(ctor))
+            return ctor;
+    }
     if (JS_IsUndefined(ctor)) {
         new_obj = js_array_buffer_constructor2(ctx, JS_UNDEFINED, new_len,
                                                NULL, class_id);
@@ -63875,6 +68555,10 @@ static JSValue js_array_buffer_slice(JSContext *ctx,
     new_abuf = JS_GetOpaque2(ctx, new_obj, class_id);
     if (!new_abuf)
         goto fail;
+    if (new_abuf->immutable) {
+        JS_ThrowTypeErrorImmutableArrayBuffer(ctx);
+        goto fail;
+    }
     if (js_same_value(ctx, new_obj, this_val)) {
         JS_ThrowTypeError(ctx, "cannot use identical ArrayBuffer");
         goto fail;
@@ -63893,6 +68577,7 @@ static JSValue js_array_buffer_slice(JSContext *ctx,
         goto fail;
     }
     memcpy(new_abuf->data, abuf->data + start, new_len);
+    new_abuf->immutable = immutable;
     return new_obj;
  fail:
     JS_FreeValue(ctx, new_obj);
@@ -63904,10 +68589,13 @@ static const JSCFunctionListEntry js_array_buffer_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("maxByteLength", js_array_buffer_get_maxByteLength, NULL, JS_CLASS_ARRAY_BUFFER ),
     JS_CGETSET_MAGIC_DEF("resizable", js_array_buffer_get_resizable, NULL, JS_CLASS_ARRAY_BUFFER ),
     JS_CGETSET_DEF("detached", js_array_buffer_get_detached, NULL ),
+    JS_CGETSET_DEF("immutable", js_array_buffer_get_immutable, NULL ),
     JS_CFUNC_MAGIC_DEF("resize", 1, js_array_buffer_resize, JS_CLASS_ARRAY_BUFFER ),
-    JS_CFUNC_MAGIC_DEF("slice", 2, js_array_buffer_slice, JS_CLASS_ARRAY_BUFFER ),
-    JS_CFUNC_MAGIC_DEF("transfer", 0, js_array_buffer_transfer, 0 ),
-    JS_CFUNC_MAGIC_DEF("transferToFixedLength", 0, js_array_buffer_transfer, 1 ),
+    JS_CFUNC_MAGIC_DEF("slice", 2, js_array_buffer_slice, JS_CLASS_ARRAY_BUFFER*2 + /*immutable*/0 ),
+    JS_CFUNC_MAGIC_DEF("sliceToImmutable", 2, js_array_buffer_slice, JS_CLASS_ARRAY_BUFFER*2 + /*immutable*/1 ),
+    JS_CFUNC_MAGIC_DEF("transfer", 0, js_array_buffer_transfer, JS_ARRAY_BUFFER_TRANSFER ),
+    JS_CFUNC_MAGIC_DEF("transferToImmutable", 0, js_array_buffer_transfer, JS_ARRAY_BUFFER_TRANSFER_TO_IMMUTABLE ),
+    JS_CFUNC_MAGIC_DEF("transferToFixedLength", 0, js_array_buffer_transfer, JS_ARRAY_BUFFER_TRANSFER_TO_FIXED_LENGTH ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "ArrayBuffer", JS_PROP_CONFIGURABLE ),
 };
 
@@ -63922,13 +68610,25 @@ static const JSCFunctionListEntry js_shared_array_buffer_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("maxByteLength", js_array_buffer_get_maxByteLength, NULL, JS_CLASS_SHARED_ARRAY_BUFFER ),
     JS_CGETSET_MAGIC_DEF("growable", js_array_buffer_get_resizable, NULL, JS_CLASS_SHARED_ARRAY_BUFFER ),
     JS_CFUNC_MAGIC_DEF("grow", 1, js_array_buffer_resize, JS_CLASS_SHARED_ARRAY_BUFFER ),
-    JS_CFUNC_MAGIC_DEF("slice", 2, js_array_buffer_slice, JS_CLASS_SHARED_ARRAY_BUFFER ),
+    JS_CFUNC_MAGIC_DEF("slice", 2, js_array_buffer_slice, JS_CLASS_SHARED_ARRAY_BUFFER*2 + /*immutable*/0 ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "SharedArrayBuffer", JS_PROP_CONFIGURABLE ),
 };
 
 static bool is_typed_array(JSClassID class_id)
 {
     return class_id >= JS_CLASS_UINT8C_ARRAY && class_id <= JS_CLASS_FLOAT64_ARRAY;
+}
+
+// |p| must be a typed array, *not* a DataView
+static bool typed_array_is_immutable(JSObject *p)
+{
+    JSArrayBuffer *abuf;
+    JSTypedArray *ta;
+
+    assert(is_typed_array(p->class_id));
+    ta = p->u.typed_array;
+    abuf = ta->buffer->u.array_buffer;
+    return abuf->immutable;
 }
 
 // is the typed array detached or out of bounds relative to its RAB?
@@ -64121,6 +68821,10 @@ static JSValue js_typed_array_set_internal(JSContext *ctx,
     p = get_typed_array(ctx, dst);
     if (!p)
         goto fail;
+    if (typed_array_is_immutable(p)) {
+        JS_ThrowTypeErrorImmutableArrayBuffer(ctx);
+        goto fail;
+    }
     if (JS_ToInt64Sat(ctx, &offset, off))
         goto fail;
     if (offset < 0)
@@ -64249,39 +68953,79 @@ static JSValue js_typed_array_at(JSContext *ctx, JSValueConst this_val,
 static JSValue js_typed_array_with(JSContext *ctx, JSValueConst this_val,
                                    int argc, JSValueConst *argv)
 {
-    JSValue arr, val;
+    JSValue arr, val, buffer;
     JSObject *p;
+    JSTypedArray *ta;
+    JSArrayBuffer *src_abuf, *abuf;
     int64_t idx;
-    uint32_t len, oldlen, newlen;
+    uint32_t len, newlen, copy_len;
+    int size_log2;
 
     p = get_typed_array(ctx, this_val);
     if (!p)
         return JS_EXCEPTION;
 
-    oldlen = p->u.array.count;
+    len = p->u.array.count;
     if (JS_ToInt64Sat(ctx, &idx, argv[0]))
         return JS_EXCEPTION;
+    /* resolve negative index using original length (spec step 5-6) */
+    if (idx < 0)
+        idx = len + idx;
 
     val = JS_ToPrimitive(ctx, argv[1], HINT_NUMBER);
     if (JS_IsException(val))
         return JS_EXCEPTION;
 
+    /* re-validate after user code (spec step 9: IsValidIntegerIndex) */
+    if (typed_array_is_oob(p)) {
+        JS_FreeValue(ctx, val);
+        return JS_ThrowTypeErrorArrayBufferOOB(ctx);
+    }
     newlen = p->u.array.count;
-    if (idx < 0)
-        idx = newlen + idx;
     if (idx < 0 || idx >= newlen) {
         JS_FreeValue(ctx, val);
-        return JS_ThrowRangeError(ctx, "invalid array index");
+        return JS_ThrowRangeError(ctx, "invalid typed array index");
     }
 
-    len = min_uint32(oldlen, newlen);
-    arr = js_typed_array_constructor_ta(ctx, JS_UNDEFINED, this_val,
-                                        p->class_id, len);
+    copy_len = min_uint32(len, newlen);
+    size_log2 = typed_array_size_log2(p->class_id);
+
+    /* create new typed array with original length (zero-initialized) */
+    arr = js_create_from_ctor(ctx, JS_UNDEFINED, p->class_id);
     if (JS_IsException(arr)) {
         JS_FreeValue(ctx, val);
         return JS_EXCEPTION;
     }
-    if (idx < len && JS_SetPropertyInt64(ctx, arr, idx, val) < 0) {
+    buffer = js_array_buffer_constructor1(ctx, JS_UNDEFINED,
+                                          (uint64_t)len << size_log2,
+                                          NULL);
+    if (JS_IsException(buffer)) {
+        JS_FreeValue(ctx, val);
+        JS_FreeValue(ctx, arr);
+        return JS_EXCEPTION;
+    }
+    if (typed_array_is_oob(p)) {
+        JS_FreeValue(ctx, val);
+        JS_FreeValue(ctx, buffer);
+        JS_FreeValue(ctx, arr);
+        return JS_ThrowTypeErrorArrayBufferOOB(ctx);
+    }
+    abuf = JS_GetOpaque(buffer, JS_CLASS_ARRAY_BUFFER);
+    if (typed_array_init(ctx, arr, buffer, 0, len, /*track_rab*/false)) {
+        JS_FreeValue(ctx, val);
+        JS_FreeValue(ctx, arr);
+        return JS_EXCEPTION;
+    }
+
+    /* copy min(len, newlen) elements from source; rest stays zero */
+    if (copy_len > 0) {
+        ta = p->u.typed_array;
+        src_abuf = ta->buffer->u.array_buffer;
+        memcpy(abuf->data, src_abuf->data + ta->offset,
+               (size_t)copy_len << size_log2);
+    }
+
+    if (JS_SetPropertyInt64(ctx, arr, idx, val) < 0) {
         JS_FreeValue(ctx, arr);
         return JS_EXCEPTION;
     }
@@ -64483,6 +69227,8 @@ static JSValue js_typed_array_copyWithin(JSContext *ctx, JSValueConst this_val,
     p = get_typed_array(ctx, this_val);
     if (!p)
         return JS_EXCEPTION;
+    if (typed_array_is_immutable(p))
+        return JS_ThrowTypeErrorImmutableArrayBuffer(ctx);
     if (typed_array_is_oob(p))
         return JS_ThrowTypeErrorArrayBufferOOB(ctx);
     len = p->u.array.count;
@@ -64525,6 +69271,8 @@ static JSValue js_typed_array_fill(JSContext *ctx, JSValueConst this_val,
     p = get_typed_array(ctx, this_val);
     if (!p)
         return JS_EXCEPTION;
+    if (typed_array_is_immutable(p))
+        return JS_ThrowTypeErrorImmutableArrayBuffer(ctx);
     if (typed_array_is_oob(p))
         return JS_ThrowTypeErrorArrayBufferOOB(ctx);
     len = p->u.array.count;
@@ -65432,6 +70180,8 @@ static JSValue js_typed_array_sort(JSContext *ctx, JSValueConst this_val,
     p = get_typed_array(ctx, this_val);
     if (!p)
         return JS_EXCEPTION;
+    if (typed_array_is_immutable(p))
+        return JS_ThrowTypeErrorImmutableArrayBuffer(ctx);
     if (typed_array_is_oob(p))
         return JS_ThrowTypeErrorArrayBufferOOB(ctx);
 
@@ -65528,25 +70278,29 @@ static JSValue js_typed_array_sort(JSContext *ctx, JSValueConst this_val,
             case 1:
                 for(i = 0; i < len; i++) {
                     j = array_idx[i];
-                    p->u.array.u.uint8_ptr[i] = ((uint8_t *)array_tmp)[j];
+                    if (j < len)
+                        p->u.array.u.uint8_ptr[i] = ((uint8_t *)array_tmp)[j];
                 }
                 break;
             case 2:
                 for(i = 0; i < len; i++) {
                     j = array_idx[i];
-                    p->u.array.u.uint16_ptr[i] = ((uint16_t *)array_tmp)[j];
+                    if (j < len)
+                        p->u.array.u.uint16_ptr[i] = ((uint16_t *)array_tmp)[j];
                 }
                 break;
             case 4:
                 for(i = 0; i < len; i++) {
                     j = array_idx[i];
-                    p->u.array.u.uint32_ptr[i] = ((uint32_t *)array_tmp)[j];
+                    if (j < len)
+                        p->u.array.u.uint32_ptr[i] = ((uint32_t *)array_tmp)[j];
                 }
                 break;
             case 8:
                 for(i = 0; i < len; i++) {
                     j = array_idx[i];
-                    p->u.array.u.uint64_ptr[i] = ((uint64_t *)array_tmp)[j];
+                    if (j < len)
+                        p->u.array.u.uint64_ptr[i] = ((uint64_t *)array_tmp)[j];
                 }
                 break;
             default:
@@ -65626,6 +70380,13 @@ static const JSCFunctionListEntry js_typed_array_base_proto_funcs[] = {
     JS_CFUNC_MAGIC_DEF("lastIndexOf", 1, js_typed_array_indexOf, special_lastIndexOf ),
     JS_CFUNC_MAGIC_DEF("includes", 1, js_typed_array_indexOf, special_includes ),
     //JS_ALIAS_BASE_DEF("toString", "toString", 2 /* Array.prototype. */), @@@
+};
+
+static const JSCFunctionListEntry js_typed_array_funcs[] = {
+    JS_PROP_INT32_DEF("BYTES_PER_ELEMENT", 1, 0),
+    JS_PROP_INT32_DEF("BYTES_PER_ELEMENT", 2, 0),
+    JS_PROP_INT32_DEF("BYTES_PER_ELEMENT", 4, 0),
+    JS_PROP_INT32_DEF("BYTES_PER_ELEMENT", 8, 0),
 };
 
 static JSValue js_typed_array_base_constructor(JSContext *ctx,
@@ -65779,6 +70540,10 @@ static JSValue js_typed_array_constructor_ta(JSContext *ctx,
         JS_ThrowTypeErrorArrayBufferOOB(ctx);
         goto fail;
     }
+    if (len > p->u.array.count) {
+        JS_ThrowRangeError(ctx, "length out of bounds");
+        goto fail;
+    }
     ta = p->u.typed_array;
     src_buffer = ta->buffer;
     src_abuf = src_buffer->u.array_buffer;
@@ -65880,6 +70645,27 @@ static JSValue js_typed_array_constructor(JSContext *ctx,
     if (JS_IsException(obj)) {
         JS_FreeValue(ctx, buffer);
         return JS_EXCEPTION;
+    }
+    // Re-validate buffer after js_create_from_ctor which may have run JS code
+    // that resized or detached the ArrayBuffer
+    abuf = JS_VALUE_GET_OBJ(buffer)->u.array_buffer;
+    if (abuf->detached) {
+        JS_FreeValue(ctx, buffer);
+        JS_FreeValue(ctx, obj);
+        return JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
+    }
+    if (offset > abuf->byte_length) {
+        JS_FreeValue(ctx, buffer);
+        JS_FreeValue(ctx, obj);
+        return JS_ThrowRangeError(ctx, "invalid offset");
+    }
+    if (track_rab) {
+        // Recalculate length for RAB-backed view
+        len = (abuf->byte_length - offset) >> size_log2;
+    } else if ((offset + (len << size_log2)) > abuf->byte_length) {
+        JS_FreeValue(ctx, buffer);
+        JS_FreeValue(ctx, obj);
+        return JS_ThrowRangeError(ctx, "invalid length");
     }
     if (typed_array_init(ctx, obj, buffer, offset, len, track_rab)) {
         JS_FreeValue(ctx, obj);
@@ -66194,6 +70980,9 @@ static JSValue js_dataview_setValue(JSContext *ctx,
     ta = JS_GetOpaque2(ctx, this_obj, JS_CLASS_DATAVIEW);
     if (!ta)
         return JS_EXCEPTION;
+    abuf = ta->buffer->u.array_buffer;
+    if (abuf->immutable)
+        return JS_ThrowTypeErrorImmutableArrayBuffer(ctx);
     size = 1 << typed_array_size_log2(class_id);
     if (JS_ToIndex(ctx, &pos, argv[0]))
         return JS_EXCEPTION;
@@ -66227,7 +71016,6 @@ static JSValue js_dataview_setValue(JSContext *ctx,
     }
     littleEndian = argc > 2 && JS_ToBool(ctx, argv[2]);
     is_swap = littleEndian ^ !is_be();
-    abuf = ta->buffer->u.array_buffer;
     if (abuf->detached)
         return JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
     // order matters: this check should come before the next one
@@ -66365,19 +71153,16 @@ typedef enum AtomicsOpEnum {
     ATOMICS_OP_LOAD,
 } AtomicsOpEnum;
 
-static void *js_atomics_get_ptr(JSContext *ctx,
-                                JSArrayBuffer **pabuf,
-                                int *psize_log2, JSClassID *pclass_id,
-                                JSValueConst obj, JSValueConst idx_val,
-                                int is_waitable)
+static JSObject *js_atomics_get_buf(JSContext *ctx,
+                                    JSValueConst obj, JSValueConst idx_val,
+                                    JSArrayBuffer **pabuf,
+                                    uint64_t *pindex, int is_waitable)
 {
     JSObject *p;
     JSTypedArray *ta;
     JSArrayBuffer *abuf;
-    void *ptr;
     uint64_t idx;
     bool err;
-    int size_log2;
 
     if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
         goto fail;
@@ -66413,15 +71198,10 @@ static void *js_atomics_get_ptr(JSContext *ctx,
         JS_ThrowRangeError(ctx, "out-of-bound access");
         return NULL;
     }
-    size_log2 = typed_array_size_log2(p->class_id);
-    ptr = p->u.array.u.uint8_ptr + ((uintptr_t)idx << size_log2);
     if (pabuf)
         *pabuf = abuf;
-    if (psize_log2)
-        *psize_log2 = size_log2;
-    if (pclass_id)
-        *pclass_id = p->class_id;
-    return ptr;
+    *pindex = idx;
+    return p;
 }
 
 static JSValue js_atomics_op(JSContext *ctx,
@@ -66429,16 +71209,15 @@ static JSValue js_atomics_op(JSContext *ctx,
                              int argc, JSValueConst *argv, int op)
 {
     int size_log2;
-    uint64_t v, a, rep_val;
+    uint64_t v, a, rep_val, idx;
     void *ptr;
+    JSObject *p;
     JSValue ret;
-    JSClassID class_id;
-    JSArrayBuffer *abuf;
 
-    ptr = js_atomics_get_ptr(ctx, &abuf, &size_log2, &class_id,
-                             argv[0], argv[1], 0);
-    if (!ptr)
+    p = js_atomics_get_buf(ctx, argv[0], argv[1], NULL, &idx, 0);
+    if (!p)
         return JS_EXCEPTION;
+    size_log2 = typed_array_size_log2(p->class_id);
     rep_val = 0;
     if (op == ATOMICS_OP_LOAD) {
         v = 0;
@@ -66464,9 +71243,13 @@ static JSValue js_atomics_op(JSContext *ctx,
 				rep_val = v32;
 			}
         }
-        if (abuf->detached)
-            return JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
    }
+
+    /* check if an evil .valueOf has resized or detached the array */
+    if (idx >= p->u.array.count)
+        return JS_ThrowRangeError(ctx, "out-of-bound access");
+
+    ptr = p->u.array.u.uint8_ptr + ((uintptr_t)idx << size_log2);
 
    switch(op | (size_log2 << 3)) {
 
@@ -66535,7 +71318,7 @@ static JSValue js_atomics_op(JSContext *ctx,
         abort();
     }
 
-    switch(class_id) {
+    switch(p->class_id) {
     case JS_CLASS_INT8_ARRAY:
         a = (int8_t)a;
         goto done;
@@ -66572,14 +71355,15 @@ static JSValue js_atomics_store(JSContext *ctx,
                                 int argc, JSValueConst *argv)
 {
     int size_log2;
+    uint64_t idx;
     void *ptr;
+    JSObject *p;
     JSValue ret;
-    JSArrayBuffer *abuf;
 
-    ptr = js_atomics_get_ptr(ctx, &abuf, &size_log2, NULL,
-                             argv[0], argv[1], 0);
-    if (!ptr)
+    p = js_atomics_get_buf(ctx, argv[0], argv[1], NULL, &idx, 0);
+    if (!p)
         return JS_EXCEPTION;
+    size_log2 = typed_array_size_log2(p->class_id);
     if (size_log2 == 3) {
         int64_t v64;
         ret = JS_ToBigIntFree(ctx, js_dup(argv[2]));
@@ -66589,8 +71373,11 @@ static JSValue js_atomics_store(JSContext *ctx,
             JS_FreeValue(ctx, ret);
             return JS_EXCEPTION;
         }
-        if (abuf->detached)
-            return JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
+        /* check if an evil .valueOf has resized or detached the array */
+        if (idx >= p->u.array.count) {
+            return JS_ThrowRangeError(ctx, "out-of-bound access");
+        }
+        ptr = p->u.array.u.uint8_ptr + ((uintptr_t)idx << size_log2);
         atomic_store((_Atomic uint64_t *)ptr, v64);
     } else {
         uint32_t v;
@@ -66602,8 +71389,11 @@ static JSValue js_atomics_store(JSContext *ctx,
             JS_FreeValue(ctx, ret);
             return JS_EXCEPTION;
         }
-        if (abuf->detached)
-            return JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
+        /* check if an evil .valueOf has resized or detached the array */
+        if (idx >= p->u.array.count) {
+            return JS_ThrowRangeError(ctx, "out-of-bound access");
+        }
+        ptr = p->u.array.u.uint8_ptr + ((uintptr_t)idx << size_log2);
         switch(size_log2) {
         case 0:
             atomic_store((_Atomic uint8_t *)ptr, v);
@@ -66653,7 +71443,7 @@ static JSValue js_atomics_pause(JSContext *ctx, JSValueConst this_obj,
     double d;
 
     if (argc > 0) {
-        switch (JS_VALUE_GET_TAG(argv[0])) {
+        switch (JS_VALUE_GET_NORM_TAG(argv[0])) {
         case JS_TAG_FLOAT64: // accepted if and only if fraction == 0.0
             d = JS_VALUE_GET_FLOAT64(argv[0]);
             if (isfinite(d))
@@ -66678,14 +71468,16 @@ static JSValue js_atomics_wait(JSContext *ctx,
     int32_t v32;
     void *ptr;
     int64_t timeout;
+    uint64_t idx;
+    JSObject *p;
     JSAtomicsWaiter waiter_s, *waiter;
     int ret, size_log2, res;
     double d;
 
-    ptr = js_atomics_get_ptr(ctx, NULL, &size_log2, NULL,
-                             argv[0], argv[1], 2);
-    if (!ptr)
+    p = js_atomics_get_buf(ctx, argv[0], argv[1], NULL, &idx, 2);
+    if (!p)
         return JS_EXCEPTION;
+    size_log2 = typed_array_size_log2(p->class_id);
     if (size_log2 == 3) {
         if (JS_ToBigInt64(ctx, &v, argv[2]))
             return JS_EXCEPTION;
@@ -66704,6 +71496,12 @@ static JSValue js_atomics_wait(JSContext *ctx,
         timeout = (int64_t)d;
     if (!ctx->rt->can_block)
         return JS_ThrowTypeError(ctx, "cannot block in this thread");
+
+    /* check if an evil .valueOf has resized or detached the array */
+    if (idx >= p->u.array.count)
+        return JS_ThrowRangeError(ctx, "out-of-bound access");
+
+    ptr = p->u.array.u.uint8_ptr + ((uintptr_t)idx << size_log2);
 
     /* XXX: inefficient if large number of waiters, should hash on
        'ptr' value */
@@ -66746,14 +71544,18 @@ static JSValue js_atomics_notify(JSContext *ctx,
                                  int argc, JSValueConst *argv)
 {
     struct list_head *el, *el1, waiter_list;
+    int size_log2;
     int32_t count, n;
     void *ptr;
-    JSAtomicsWaiter *waiter;
+    uint64_t idx;
+    JSObject *p;
     JSArrayBuffer *abuf;
+    JSAtomicsWaiter *waiter;
 
-    ptr = js_atomics_get_ptr(ctx, &abuf, NULL, NULL, argv[0], argv[1], 1);
-    if (!ptr)
+    p = js_atomics_get_buf(ctx, argv[0], argv[1], &abuf, &idx, 1);
+    if (!p)
         return JS_EXCEPTION;
+    size_log2 = typed_array_size_log2(p->class_id);
 
     if (JS_IsUndefined(argv[2])) {
         count = INT32_MAX;
@@ -66761,11 +71563,15 @@ static JSValue js_atomics_notify(JSContext *ctx,
         if (JS_ToInt32Clamp(ctx, &count, argv[2], 0, INT32_MAX, 0))
             return JS_EXCEPTION;
     }
-    if (abuf->detached)
-        return JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
+
+    /* check if an evil .valueOf has resized or detached the array */
+    if (idx >= p->u.array.count)
+        return JS_ThrowRangeError(ctx, "out-of-bound access");
 
     n = 0;
     if (abuf->shared && count > 0) {
+        ptr = p->u.array.u.uint8_ptr + ((uintptr_t)idx << size_log2);
+
         js_mutex_lock(&js_atomics_mutex);
         init_list_head(&waiter_list);
         list_for_each_safe(el, el1, &js_atomics_waiter_list) {
@@ -66814,103 +71620,107 @@ static void js__atomics_init(void) {
 }
 
 /* TODO(saghul) make this public and not dependent on typed arrays? */
-void JS_AddIntrinsicAtomics(JSContext *ctx)
+static int JS_AddIntrinsicAtomics(JSContext *ctx)
 {
     js_once(&js_atomics_once, js__atomics_init);
 
     /* add Atomics as autoinit object */
-    JS_SetPropertyFunctionList(ctx, ctx->global_obj, js_atomics_obj, countof(js_atomics_obj));
+    return JS_SetPropertyFunctionList(ctx, ctx->global_obj, js_atomics_obj, countof(js_atomics_obj));
 }
 
 #endif /* CONFIG_ATOMICS */
 
-void JS_AddIntrinsicTypedArrays(JSContext *ctx)
+int JS_AddIntrinsicTypedArrays(JSContext *ctx)
 {
-    JSValue typed_array_base_proto, typed_array_base_func;
-    JSValue array_buffer_func, shared_array_buffer_func;
-    int i;
+    JSValue typed_array_base_func, typed_array_base_proto, obj;
+    int i, ret;
 
-    ctx->class_proto[JS_CLASS_ARRAY_BUFFER] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_ARRAY_BUFFER],
-                               js_array_buffer_proto_funcs,
-                               countof(js_array_buffer_proto_funcs));
+    obj = JS_NewCConstructor(ctx, JS_CLASS_ARRAY_BUFFER, "ArrayBuffer",
+                             js_array_buffer_constructor, 1, JS_CFUNC_constructor, 0,
+                             JS_UNDEFINED,
+                             js_array_buffer_funcs, countof(js_array_buffer_funcs),
+                             js_array_buffer_proto_funcs, countof(js_array_buffer_proto_funcs),
+                             0);
+    if (JS_IsException(obj))
+        return -1;
+    JS_FreeValue(ctx, obj);
 
-    array_buffer_func = JS_NewGlobalCConstructorOnly(ctx, "ArrayBuffer",
-                                                 js_array_buffer_constructor, 1,
-                                                 ctx->class_proto[JS_CLASS_ARRAY_BUFFER]);
-    JS_SetPropertyFunctionList(ctx, array_buffer_func,
-                               js_array_buffer_funcs,
-                               countof(js_array_buffer_funcs));
+    obj = JS_NewCConstructor(ctx, JS_CLASS_SHARED_ARRAY_BUFFER, "SharedArrayBuffer",
+                             js_shared_array_buffer_constructor, 1, JS_CFUNC_constructor, 0,
+                             JS_UNDEFINED,
+                             js_shared_array_buffer_funcs, countof(js_shared_array_buffer_funcs),
+                             js_shared_array_buffer_proto_funcs, countof(js_shared_array_buffer_proto_funcs),
+                             0);
+    if (JS_IsException(obj))
+        return -1;
+    JS_FreeValue(ctx, obj);
 
-    ctx->class_proto[JS_CLASS_SHARED_ARRAY_BUFFER] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_SHARED_ARRAY_BUFFER],
-                               js_shared_array_buffer_proto_funcs,
-                               countof(js_shared_array_buffer_proto_funcs));
-
-    shared_array_buffer_func = JS_NewGlobalCConstructorOnly(ctx, "SharedArrayBuffer",
-                                                 js_shared_array_buffer_constructor, 1,
-                                                 ctx->class_proto[JS_CLASS_SHARED_ARRAY_BUFFER]);
-    JS_SetPropertyFunctionList(ctx, shared_array_buffer_func,
-                               js_shared_array_buffer_funcs,
-                               countof(js_shared_array_buffer_funcs));
-
-    typed_array_base_proto = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, typed_array_base_proto,
-                               js_typed_array_base_proto_funcs,
-                               countof(js_typed_array_base_proto_funcs));
+    typed_array_base_func =
+        JS_NewCConstructor(ctx, -1, "TypedArray",
+                           js_typed_array_base_constructor, 0, JS_CFUNC_constructor_or_func, 0,
+                           JS_UNDEFINED,
+                           js_typed_array_base_funcs, countof(js_typed_array_base_funcs),
+                           js_typed_array_base_proto_funcs, countof(js_typed_array_base_proto_funcs),
+                           JS_NEW_CTOR_NO_GLOBAL);
+    if (JS_IsException(typed_array_base_func))
+        return -1;
 
     /* TypedArray.prototype.toString must be the same object as Array.prototype.toString */
-    JSValue obj = JS_GetProperty(ctx, ctx->class_proto[JS_CLASS_ARRAY], JS_ATOM_toString);
+    obj = JS_GetProperty(ctx, ctx->class_proto[JS_CLASS_ARRAY], JS_ATOM_toString);
+    if (JS_IsException(obj))
+        goto fail;
     /* XXX: should use alias method in JSCFunctionListEntry */ //@@@
-    JS_DefinePropertyValue(ctx, typed_array_base_proto, JS_ATOM_toString, obj,
-                           JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
-
-    typed_array_base_func = JS_NewCFunction(ctx, js_typed_array_base_constructor,
-                                            "TypedArray", 0);
-    JS_SetPropertyFunctionList(ctx, typed_array_base_func,
-                               js_typed_array_base_funcs,
-                               countof(js_typed_array_base_funcs));
-    JS_SetConstructor(ctx, typed_array_base_func, typed_array_base_proto);
-    JS_SetConstructorBit(ctx, typed_array_base_func, true);
+    typed_array_base_proto = JS_GetProperty(ctx, typed_array_base_func, JS_ATOM_prototype);
+    if (JS_IsException(typed_array_base_proto))
+        goto fail;
+    ret = JS_DefinePropertyValue(ctx, typed_array_base_proto, JS_ATOM_toString, obj,
+                                 JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    JS_FreeValue(ctx, typed_array_base_proto);
+    if (ret < 0)
+        goto fail;
 
     /* Used to squelch a -Wcast-function-type warning. */
     JSCFunctionType ft = { .generic_magic = js_typed_array_constructor };
     for(i = JS_CLASS_UINT8C_ARRAY; i < JS_CLASS_UINT8C_ARRAY + JS_TYPED_ARRAY_COUNT; i++) {
-        JSValue func_obj;
         char buf[ATOM_GET_STR_BUF_SIZE];
         const char *name;
+        const JSCFunctionListEntry *bpe;
 
-        ctx->class_proto[i] = JS_NewObjectProto(ctx, typed_array_base_proto);
-        JS_DefinePropertyValueStr(ctx, ctx->class_proto[i],
-                                  "BYTES_PER_ELEMENT",
-                                  js_int32(1 << typed_array_size_log2(i)),
-                                  0);
         name = JS_AtomGetStr(ctx, buf, sizeof(buf),
                              JS_ATOM_Uint8ClampedArray + i - JS_CLASS_UINT8C_ARRAY);
-        func_obj = JS_NewCFunction3(ctx, ft.generic,
-                                    name, 3, JS_CFUNC_constructor_magic, i,
-                                    typed_array_base_func);
-        JS_NewGlobalCConstructor2(ctx, func_obj, name, ctx->class_proto[i]);
-        JS_DefinePropertyValueStr(ctx, func_obj,
-                                  "BYTES_PER_ELEMENT",
-                                  js_int32(1 << typed_array_size_log2(i)),
-                                  0);
+        bpe = js_typed_array_funcs + typed_array_size_log2(i);
+        obj = JS_NewCConstructor(ctx, i, name,
+                                 ft.generic, 3, JS_CFUNC_constructor_magic, i,
+                                 typed_array_base_func,
+                                 bpe, 1,
+                                 bpe, 1,
+                                 0);
+        if (JS_IsException(obj)) {
+        fail:
+            JS_FreeValue(ctx, typed_array_base_func);
+            return -1;
+        }
+        JS_FreeValue(ctx, obj);
     }
-    JS_FreeValue(ctx, typed_array_base_proto);
     JS_FreeValue(ctx, typed_array_base_func);
 
     /* DataView */
-    ctx->class_proto[JS_CLASS_DATAVIEW] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_DATAVIEW],
-                               js_dataview_proto_funcs,
-                               countof(js_dataview_proto_funcs));
-    JS_NewGlobalCConstructorOnly(ctx, "DataView",
-                                 js_dataview_constructor, 1,
-                                 ctx->class_proto[JS_CLASS_DATAVIEW]);
+    obj = JS_NewCConstructor(ctx, JS_CLASS_DATAVIEW, "DataView",
+                             js_dataview_constructor, 1, JS_CFUNC_constructor, 0,
+                             JS_UNDEFINED,
+                             NULL, 0,
+                             js_dataview_proto_funcs, countof(js_dataview_proto_funcs),
+                             0);
+    if (JS_IsException(obj))
+        return -1;
+    JS_FreeValue(ctx, obj);
+
     /* Atomics */
 #ifdef CONFIG_ATOMICS
-    JS_AddIntrinsicAtomics(ctx);
+    if (JS_AddIntrinsicAtomics(ctx))
+        return -1;
 #endif
+    return 0;
 }
 
 /* Performance */
@@ -66929,7 +71739,7 @@ static const JSCFunctionListEntry js_perf_proto_funcs[] = {
     JS_CFUNC_DEF2("now", 0, js_perf_now, JS_PROP_ENUMERABLE),
 };
 
-void JS_AddPerformance(JSContext *ctx)
+int JS_AddPerformance(JSContext *ctx)
 {
     ctx->time_origin = js__now_ms();
 
@@ -66942,6 +71752,7 @@ void JS_AddPerformance(JSContext *ctx)
                            js_dup(performance),
                            JS_PROP_WRITABLE | JS_PROP_ENUMERABLE | JS_PROP_CONFIGURABLE);
     JS_FreeValue(ctx, performance);
+    return 0;
 }
 
 /* Equality comparisons and sameness */
@@ -66955,7 +71766,7 @@ int JS_IsEqual(JSContext *ctx, JSValueConst op1, JSValueConst op2)
 
 bool JS_IsStrictEqual(JSContext *ctx, JSValueConst op1, JSValueConst op2)
 {
-    return js_strict_eq2(ctx, js_dup(op1), js_dup(op2), JS_EQ_STRICT);
+    return js_strict_eq2(ctx, op1, op2, JS_EQ_STRICT);
 }
 
 bool JS_IsSameValue(JSContext *ctx, JSValueConst op1, JSValueConst op2)
@@ -67053,10 +71864,11 @@ static const JSClassShortDef js_weakref_class_def[] = {
 
 typedef struct JSFinRecEntry {
     struct list_head link;
-    JSValueConst obj;
     JSValueConst target;
     JSValue held_val;
     JSValue token;
+    JSValue cb;
+    JSContext *ctx;
 } JSFinRecEntry;
 
 typedef struct JSFinalizationRegistryData {
@@ -67081,6 +71893,15 @@ static void delete_finrec_weakref(JSRuntime *rt, JSFinRecEntry *fre)
     js_free_rt(rt, wr);
 }
 
+static void js_finrec_free(JSRuntime *rt, JSFinRecEntry *fre)
+{
+    JS_FreeValueRT(rt, fre->held_val);
+    JS_FreeValueRT(rt, fre->token);
+    JS_FreeValueRT(rt, fre->cb);
+    JS_FreeContext(fre->ctx);
+    js_free_rt(rt, fre);
+}
+
 static void js_finrec_finalizer(JSRuntime *rt, JSValueConst val)
 {
     JSFinalizationRegistryData *frd = JS_GetOpaque(val, JS_CLASS_FINALIZATION_REGISTRY);
@@ -67096,9 +71917,7 @@ static void js_finrec_finalizer(JSRuntime *rt, JSValueConst val)
         list_for_each_safe(el, el1, &frd->entries) {
             JSFinRecEntry *fre = list_entry(el, JSFinRecEntry, link);
             list_del(&fre->link);
-            JS_FreeValueRT(rt, fre->held_val);
-            JS_FreeValueRT(rt, fre->token);
-            js_free_rt(rt, fre);
+            js_finrec_free(rt, fre);
         }
         JS_FreeValueRT(rt, frd->cb);
         js_free_rt(rt, frd);
@@ -67116,6 +71935,8 @@ static void js_finrec_mark(JSRuntime *rt, JSValueConst val,
             JSFinRecEntry *fre = list_entry(el, JSFinRecEntry, link);
             JS_MarkValue(rt, fre->held_val, mark_func);
             JS_MarkValue(rt, fre->token, mark_func);
+            JS_MarkValue(rt, fre->cb, mark_func);
+            mark_func(rt, &fre->ctx->header);
         }
     }
 }
@@ -67172,7 +71993,8 @@ static JSValue js_finrec_register(JSContext *ctx, JSValueConst this_val,
         js_free(ctx, fre);
         return JS_EXCEPTION;
     }
-    fre->obj = this_val;
+    fre->cb = js_dup(frd->cb);
+    fre->ctx = JS_DupContext(frd->ctx);
     fre->target = target;
     fre->held_val = js_dup(held_val);
     fre->token = js_dup(token);
@@ -67201,9 +72023,7 @@ static JSValue js_finrec_unregister(JSContext *ctx, JSValueConst this_val, int a
         if (js_same_value(ctx, fre->token, token)) {
             list_del(&fre->link);
             delete_finrec_weakref(ctx->rt, fre);
-            JS_FreeValue(ctx, fre->held_val);
-            JS_FreeValue(ctx, fre->token);
-            js_free(ctx, fre);
+            js_finrec_free(ctx->rt, fre);
             removed = true;
         }
     }
@@ -67226,31 +72046,43 @@ static JSValue js_finrec_job(JSContext *ctx, int argc, JSValueConst *argv)
     return JS_Call(ctx, argv[0], JS_UNDEFINED, 1, &argv[1]);
 }
 
-void JS_AddIntrinsicWeakRef(JSContext *ctx)
+int JS_AddIntrinsicWeakRef(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
+    JSValue obj;
 
     /* WeakRef */
     if (!JS_IsRegisteredClass(rt, JS_CLASS_WEAK_REF)) {
-        init_class_range(rt, js_weakref_class_def, JS_CLASS_WEAK_REF,
-                         countof(js_weakref_class_def));
+        if (init_class_range(rt, js_weakref_class_def, JS_CLASS_WEAK_REF,
+                             countof(js_weakref_class_def)))
+            return -1;
     }
-    ctx->class_proto[JS_CLASS_WEAK_REF] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_WEAK_REF],
-                               js_weakref_proto_funcs,
-                               countof(js_weakref_proto_funcs));
-    JS_NewGlobalCConstructor(ctx, "WeakRef", js_weakref_constructor, 1, ctx->class_proto[JS_CLASS_WEAK_REF]);
+    obj = JS_NewCConstructor(ctx, JS_CLASS_WEAK_REF, "WeakRef",
+                             js_weakref_constructor, 1, JS_CFUNC_constructor_or_func, 0,
+                             JS_UNDEFINED,
+                             NULL, 0,
+                             js_weakref_proto_funcs, countof(js_weakref_proto_funcs),
+                             0);
+    if (JS_IsException(obj))
+        return -1;
+    JS_FreeValue(ctx, obj);
 
     /* FinalizationRegistry */
     if (!JS_IsRegisteredClass(rt, JS_CLASS_FINALIZATION_REGISTRY)) {
-        init_class_range(rt, js_finrec_class_def, JS_CLASS_FINALIZATION_REGISTRY,
-                         countof(js_finrec_class_def));
+        if (init_class_range(rt, js_finrec_class_def, JS_CLASS_FINALIZATION_REGISTRY,
+                             countof(js_finrec_class_def)))
+            return -1;
     }
-    ctx->class_proto[JS_CLASS_FINALIZATION_REGISTRY] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_FINALIZATION_REGISTRY],
-                               js_finrec_proto_funcs,
-                               countof(js_finrec_proto_funcs));
-    JS_NewGlobalCConstructor(ctx, "FinalizationRegistry", js_finrec_constructor, 1, ctx->class_proto[JS_CLASS_FINALIZATION_REGISTRY]);
+    obj = JS_NewCConstructor(ctx, JS_CLASS_FINALIZATION_REGISTRY, "FinalizationRegistry",
+                             js_finrec_constructor, 1, JS_CFUNC_constructor_or_func, 0,
+                             JS_UNDEFINED,
+                             NULL, 0,
+                             js_finrec_proto_funcs, countof(js_finrec_proto_funcs),
+                             0);
+    if (JS_IsException(obj))
+        return -1;
+    JS_FreeValue(ctx, obj);
+    return 0;
 }
 
 static void reset_weak_ref(JSRuntime *rt, JSWeakRefRecord **first_weak_ref)
@@ -67304,20 +72136,31 @@ static void reset_weak_ref(JSRuntime *rt, JSWeakRefRecord **first_weak_ref)
             break;
         case JS_WEAK_REF_KIND_FINALIZATION_REGISTRY_ENTRY: {
             fre = wr->u.fin_rec_entry;
-            JSFinalizationRegistryData *frd = JS_GetOpaque(fre->obj, JS_CLASS_FINALIZATION_REGISTRY);
-            assert(frd != NULL);
             /**
-             * During the GC sweep phase the held object might be collected first.
+             * During the GC sweep phase the held object might be
+             * collected first (free_mark set). Also skip if the
+             * callback or held value are part of a cycle being
+             * collected (header.mark is set for objects on
+             * tmp_obj_list during gc_free_cycles).
              */
-            if (!rt->in_free && (!JS_IsObject(fre->held_val) || JS_IsLiveObject(rt, fre->held_val))) {
-                JSValueConst args[2];
-                args[0] = frd->cb;
-                args[1] = fre->held_val;
-                JS_EnqueueJob(frd->ctx, js_finrec_job, 2, args);
+            bool enqueue = !rt->in_free;
+            if (enqueue && JS_IsObject(fre->held_val)) {
+                JSObject *p = JS_VALUE_GET_OBJ(fre->held_val);
+                if (p->free_mark || p->header.mark)
+                    enqueue = false;
             }
-            JS_FreeValueRT(rt, fre->held_val);
-            JS_FreeValueRT(rt, fre->token);
-            js_free_rt(rt, fre);
+            if (enqueue && JS_IsObject(fre->cb)) {
+                JSObject *p = JS_VALUE_GET_OBJ(fre->cb);
+                if (p->free_mark || p->header.mark)
+                    enqueue = false;
+            }
+            if (enqueue) {
+                JSValueConst args[2];
+                args[0] = fre->cb;
+                args[1] = fre->held_val;
+                JS_EnqueueJob(fre->ctx, js_finrec_job, 2, args);
+            }
+            js_finrec_free(rt, fre);
             break;
         }
         default:
@@ -67493,18 +72336,19 @@ static const JSClassShortDef js_callsite_class_def[] = {
     { JS_ATOM_CallSite, js_callsite_finalizer, js_callsite_mark }, /* JS_CLASS_CALL_SITE */
 };
 
-static void _JS_AddIntrinsicCallSite(JSContext *ctx)
+static int _JS_AddIntrinsicCallSite(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
 
     if (!JS_IsRegisteredClass(rt, JS_CLASS_CALL_SITE)) {
-        init_class_range(rt, js_callsite_class_def, JS_CLASS_CALL_SITE,
-                         countof(js_callsite_class_def));
+        if (init_class_range(rt, js_callsite_class_def, JS_CLASS_CALL_SITE,
+                             countof(js_callsite_class_def)))
+            return -1;
     }
     ctx->class_proto[JS_CLASS_CALL_SITE] = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_CALL_SITE],
-                               js_callsite_proto_funcs,
-                               countof(js_callsite_proto_funcs));
+    return JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_CALL_SITE],
+                                      js_callsite_proto_funcs,
+                                      countof(js_callsite_proto_funcs));
 }
 
 /* DOMException */
@@ -67698,7 +72542,7 @@ JSValue JS_PRINTF_FORMAT_ATTR(3, 4) JS_ThrowDOMException(JSContext *ctx, const c
     return JS_Throw(ctx, obj);
 }
 
-void JS_AddIntrinsicDOMException(JSContext *ctx)
+int JS_AddIntrinsicDOMException(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
     int i;
@@ -67706,8 +72550,9 @@ void JS_AddIntrinsicDOMException(JSContext *ctx)
     JSValue ctor, proto;
 
     if (!JS_IsRegisteredClass(rt, JS_CLASS_DOM_EXCEPTION)) {
-        init_class_range(rt, js_domexception_class_def, JS_CLASS_DOM_EXCEPTION,
-                         countof(js_domexception_class_def));
+        if (init_class_range(rt, js_domexception_class_def, JS_CLASS_DOM_EXCEPTION,
+                             countof(js_domexception_class_def)))
+            return -1;
     }
     proto = JS_NewObjectClass(ctx, JS_CLASS_ERROR);
     JS_SetPropertyFunctionList(ctx, proto,
@@ -67727,6 +72572,7 @@ void JS_AddIntrinsicDOMException(JSContext *ctx)
     JS_DefinePropertyValue(ctx, ctx->global_obj, JS_ATOM_DOMException, ctor,
                            JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
     ctx->class_proto[JS_CLASS_DOM_EXCEPTION] = proto;
+    return 0;
 }
 
 bool JS_DetectModule(const char *input, size_t input_len)
@@ -67808,1348 +72654,6 @@ uintptr_t js_std_cmd(int cmd, ...) {
 #undef free
 #undef realloc
 /*
- * C utilities
- *
- * Copyright (c) 2017 Fabrice Bellard
- * Copyright (c) 2018 Charlie Gordon
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- */
-#include <assert.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <string.h>
-#include <time.h>
-#if !defined(_MSC_VER)
-#include <sys/time.h>
-#endif
-#if defined(_WIN32)
-#include <windows.h>
-#include <process.h> // _beginthread
-#endif
-#if defined(__APPLE__)
-#include <mach-o/dyld.h>
-#endif
-
-
-
-#undef NANOSEC
-#define NANOSEC ((uint64_t) 1e9)
-
-#ifdef __GNUC__
-#pragma GCC visibility push(default)
-#endif
-
-void js__pstrcpy(char *buf, int buf_size, const char *str)
-{
-    int c;
-    char *q = buf;
-
-    if (buf_size <= 0)
-        return;
-
-    for(;;) {
-        c = *str++;
-        if (c == 0 || q >= buf + buf_size - 1)
-            break;
-        *q++ = c;
-    }
-    *q = '\0';
-}
-
-/* strcat and truncate. */
-char *js__pstrcat(char *buf, int buf_size, const char *s)
-{
-    int len;
-    len = strlen(buf);
-    if (len < buf_size)
-        js__pstrcpy(buf + len, buf_size - len, s);
-    return buf;
-}
-
-int js__strstart(const char *str, const char *val, const char **ptr)
-{
-    const char *p, *q;
-    p = str;
-    q = val;
-    while (*q != '\0') {
-        if (*p != *q)
-            return 0;
-        p++;
-        q++;
-    }
-    if (ptr)
-        *ptr = p;
-    return 1;
-}
-
-int js__has_suffix(const char *str, const char *suffix)
-{
-    size_t len = strlen(str);
-    size_t slen = strlen(suffix);
-    return (len >= slen && !memcmp(str + len - slen, suffix, slen));
-}
-
-/* Dynamic buffer package */
-
-static void *dbuf_default_realloc(void *opaque, void *ptr, size_t size)
-{
-    if (unlikely(size == 0)) {
-        free(ptr);
-        return NULL;
-    }
-    return realloc(ptr, size);
-}
-
-void dbuf_init2(DynBuf *s, void *opaque, DynBufReallocFunc *realloc_func)
-{
-    memset(s, 0, sizeof(*s));
-    if (!realloc_func)
-        realloc_func = dbuf_default_realloc;
-    s->opaque = opaque;
-    s->realloc_func = realloc_func;
-}
-
-void dbuf_init(DynBuf *s)
-{
-    dbuf_init2(s, NULL, NULL);
-}
-
-/* return < 0 if error */
-int dbuf_realloc(DynBuf *s, size_t new_size)
-{
-    size_t size;
-    uint8_t *new_buf;
-    if (new_size > s->allocated_size) {
-        if (s->error)
-            return -1;
-        size = s->allocated_size * 3 / 2;
-        if (size > new_size)
-            new_size = size;
-        new_buf = s->realloc_func(s->opaque, s->buf, new_size);
-        if (!new_buf) {
-            s->error = true;
-            return -1;
-        }
-        s->buf = new_buf;
-        s->allocated_size = new_size;
-    }
-    return 0;
-}
-
-int dbuf_write(DynBuf *s, size_t offset, const void *data, size_t len)
-{
-    size_t end;
-    end = offset + len;
-    if (dbuf_realloc(s, end))
-        return -1;
-    memcpy(s->buf + offset, data, len);
-    if (end > s->size)
-        s->size = end;
-    return 0;
-}
-
-int dbuf_put(DynBuf *s, const void *data, size_t len)
-{
-    if (unlikely((s->size + len) > s->allocated_size)) {
-        if (dbuf_realloc(s, s->size + len))
-            return -1;
-    }
-    if (len > 0) {
-        memcpy(s->buf + s->size, data, len);
-        s->size += len;
-    }
-    return 0;
-}
-
-int dbuf_put_self(DynBuf *s, size_t offset, size_t len)
-{
-    if (unlikely((s->size + len) > s->allocated_size)) {
-        if (dbuf_realloc(s, s->size + len))
-            return -1;
-    }
-    memcpy(s->buf + s->size, s->buf + offset, len);
-    s->size += len;
-    return 0;
-}
-
-int dbuf_putc(DynBuf *s, uint8_t c)
-{
-    return dbuf_put(s, &c, 1);
-}
-
-int dbuf_putstr(DynBuf *s, const char *str)
-{
-    return dbuf_put(s, (const uint8_t *)str, strlen(str));
-}
-
-int JS_PRINTF_FORMAT_ATTR(2, 3) dbuf_printf(DynBuf *s, JS_PRINTF_FORMAT const char *fmt, ...)
-{
-    va_list ap;
-    char buf[128];
-    int len;
-
-    va_start(ap, fmt);
-    len = vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    if (len < (int)sizeof(buf)) {
-        /* fast case */
-        return dbuf_put(s, (uint8_t *)buf, len);
-    } else {
-        if (dbuf_realloc(s, s->size + len + 1))
-            return -1;
-        va_start(ap, fmt);
-        vsnprintf((char *)(s->buf + s->size), s->allocated_size - s->size,
-                  fmt, ap);
-        va_end(ap);
-        s->size += len;
-    }
-    return 0;
-}
-
-void dbuf_free(DynBuf *s)
-{
-    /* we test s->buf as a fail safe to avoid crashing if dbuf_free()
-       is called twice */
-    if (s->buf) {
-        s->realloc_func(s->opaque, s->buf, 0);
-    }
-    memset(s, 0, sizeof(*s));
-}
-
-/*--- UTF-8 utility functions --*/
-
-/* Note: only encode valid codepoints (0x0000..0x10FFFF).
-   At most UTF8_CHAR_LEN_MAX bytes are output. */
-
-/* Compute the number of bytes of the UTF-8 encoding for a codepoint
-   `c` is a code-point.
-   Returns the number of bytes. If a codepoint is beyond 0x10FFFF the
-   return value is 3 as the codepoint would be encoded as 0xFFFD.
- */
-size_t utf8_encode_len(uint32_t c)
-{
-    if (c < 0x80)
-        return 1;
-    if (c < 0x800)
-        return 2;
-    if (c < 0x10000)
-        return 3;
-    if (c < 0x110000)
-        return 4;
-    return 3;
-}
-
-/* Encode a codepoint in UTF-8
-   `buf` points to an array of at least `UTF8_CHAR_LEN_MAX` bytes
-   `c` is a code-point.
-   Returns the number of bytes. If a codepoint is beyond 0x10FFFF the
-   return value is 3 and the codepoint is encoded as 0xFFFD.
-   No null byte is stored after the encoded bytes.
-   Return value is in range 1..4
- */
-size_t utf8_encode(uint8_t buf[minimum_length(UTF8_CHAR_LEN_MAX)], uint32_t c)
-{
-    if (c < 0x80) {
-        buf[0] = c;
-        return 1;
-    }
-    if (c < 0x800) {
-        buf[0] = (c >> 6) | 0xC0;
-        buf[1] = (c & 0x3F) | 0x80;
-        return 2;
-    }
-    if (c < 0x10000) {
-        buf[0] = (c >> 12) | 0xE0;
-        buf[1] = ((c >> 6) & 0x3F) | 0x80;
-        buf[2] = (c & 0x3F) | 0x80;
-        return 3;
-    }
-    if (c < 0x110000) {
-        buf[0] = (c >> 18) | 0xF0;
-        buf[1] = ((c >> 12) & 0x3F) | 0x80;
-        buf[2] = ((c >> 6) & 0x3F) | 0x80;
-        buf[3] = (c & 0x3F) | 0x80;
-        return 4;
-    }
-    buf[0] = (0xFFFD >> 12) | 0xE0;
-    buf[1] = ((0xFFFD >> 6) & 0x3F) | 0x80;
-    buf[2] = (0xFFFD & 0x3F) | 0x80;
-    return 3;
-}
-
-/* Decode a single code point from a UTF-8 encoded array of bytes
-   `p` is a valid pointer to an array of bytes
-   `pp` is a valid pointer to a `const uint8_t *` to store a pointer
-   to the byte following the current sequence.
-   Return the code point at `p`, in the range `0..0x10FFFF`
-   Return 0xFFFD on error. Only a single byte is consumed in this case
-   The maximum length for a UTF-8 byte sequence is 4 bytes.
-   This implements the algorithm specified in whatwg.org, except it accepts
-   UTF-8 encoded surrogates as JavaScript allows them in strings.
-   The source string is assumed to have at least UTF8_CHAR_LEN_MAX bytes
-   or be null terminated.
-   If `p[0]` is '\0', the return value is `0` and the byte is consumed.
-   cf: https://encoding.spec.whatwg.org/#utf-8-encoder
- */
-uint32_t utf8_decode(const uint8_t *p, const uint8_t **pp)
-{
-    uint32_t c;
-    uint8_t lower, upper;
-
-    c = *p++;
-    if (c < 0x80) {
-        *pp = p;
-        return c;
-    }
-    switch(c) {
-    case 0xC2: case 0xC3:
-    case 0xC4: case 0xC5: case 0xC6: case 0xC7:
-    case 0xC8: case 0xC9: case 0xCA: case 0xCB:
-    case 0xCC: case 0xCD: case 0xCE: case 0xCF:
-    case 0xD0: case 0xD1: case 0xD2: case 0xD3:
-    case 0xD4: case 0xD5: case 0xD6: case 0xD7:
-    case 0xD8: case 0xD9: case 0xDA: case 0xDB:
-    case 0xDC: case 0xDD: case 0xDE: case 0xDF:
-        if (*p >= 0x80 && *p <= 0xBF) {
-            *pp = p + 1;
-            return ((c - 0xC0) << 6) + (*p - 0x80);
-        }
-        // otherwise encoding error
-        break;
-    case 0xE0:
-        lower = 0xA0;   /* reject invalid encoding */
-        goto need2;
-    case 0xE1: case 0xE2: case 0xE3:
-    case 0xE4: case 0xE5: case 0xE6: case 0xE7:
-    case 0xE8: case 0xE9: case 0xEA: case 0xEB:
-    case 0xEC: case 0xED: case 0xEE: case 0xEF:
-        lower = 0x80;
-    need2:
-        if (*p >= lower && *p <= 0xBF && p[1] >= 0x80 && p[1] <= 0xBF) {
-            *pp = p + 2;
-            return ((c - 0xE0) << 12) + ((*p - 0x80) << 6) + (p[1] - 0x80);
-        }
-        // otherwise encoding error
-        break;
-    case 0xF0:
-        lower = 0x90;   /* reject invalid encoding */
-        upper = 0xBF;
-        goto need3;
-    case 0xF4:
-        lower = 0x80;
-        upper = 0x8F;   /* reject values above 0x10FFFF */
-        goto need3;
-    case 0xF1: case 0xF2: case 0xF3:
-        lower = 0x80;
-        upper = 0xBF;
-    need3:
-        if (*p >= lower && *p <= upper && p[1] >= 0x80 && p[1] <= 0xBF
-        &&  p[2] >= 0x80 && p[2] <= 0xBF) {
-            *pp = p + 3;
-            return ((c - 0xF0) << 18) + ((*p - 0x80) << 12) +
-                ((p[1] - 0x80) << 6) + (p[2] - 0x80);
-        }
-        // otherwise encoding error
-        break;
-    default:
-        // invalid lead byte
-        break;
-    }
-    *pp = p;
-    return 0xFFFD;
-}
-
-uint32_t utf8_decode_len(const uint8_t *p, size_t max_len, const uint8_t **pp) {
-    switch (max_len) {
-    case 0:
-        *pp = p;
-        return 0xFFFD;
-    case 1:
-        if (*p < 0x80)
-            goto good;
-        break;
-    case 2:
-        if (*p < 0xE0)
-            goto good;
-        break;
-    case 3:
-        if (*p < 0xF0)
-            goto good;
-        break;
-    default:
-    good:
-        return utf8_decode(p, pp);
-    }
-    *pp = p + 1;
-    return 0xFFFD;
-}
-
-/* Scan a UTF-8 encoded buffer for content type
-   `buf` is a valid pointer to a UTF-8 encoded string
-   `len` is the number of bytes to scan
-   `plen` points to a `size_t` variable to receive the number of units
-   Return value is a mask of bits.
-   - `UTF8_PLAIN_ASCII`: return value for 7-bit ASCII plain text
-   - `UTF8_NON_ASCII`: bit for non ASCII code points (8-bit or more)
-   - `UTF8_HAS_16BIT`: bit for 16-bit code points
-   - `UTF8_HAS_NON_BMP1`: bit for non-BMP1 code points, needs UTF-16 surrogate pairs
-   - `UTF8_HAS_ERRORS`: bit for encoding errors
- */
-int utf8_scan(const char *buf, size_t buf_len, size_t *plen)
-{
-    const uint8_t *p, *p_end, *p_next;
-    size_t i, len;
-    int kind;
-    uint8_t cbits;
-
-    kind = UTF8_PLAIN_ASCII;
-    cbits = 0;
-    len = buf_len;
-    // TODO: handle more than 1 byte at a time
-    for (i = 0; i < buf_len; i++)
-        cbits |= buf[i];
-    if (cbits >= 0x80) {
-        p = (const uint8_t *)buf;
-        p_end = p + buf_len;
-        kind = UTF8_NON_ASCII;
-        len = 0;
-        while (p < p_end) {
-            len++;
-            if (*p++ >= 0x80) {
-                /* parse UTF-8 sequence, check for encoding error */
-                uint32_t c = utf8_decode_len(p - 1, p_end - (p - 1), &p_next);
-                if (p_next == p)
-                    kind |= UTF8_HAS_ERRORS;
-                p = p_next;
-                if (c > 0xFF) {
-                    kind |= UTF8_HAS_16BIT;
-                    if (c > 0xFFFF) {
-                        len++;
-                        kind |= UTF8_HAS_NON_BMP1;
-                    }
-                }
-            }
-        }
-    }
-    *plen = len;
-    return kind;
-}
-
-/* Decode a string encoded in UTF-8 into an array of bytes
-   `src` points to the source string. It is assumed to be correctly encoded
-   and only contains code points below 0x800
-   `src_len` is the length of the source string
-   `dest` points to the destination array, it can be null if `dest_len` is `0`
-   `dest_len` is the length of the destination array. A null
-   terminator is stored at the end of the array unless `dest_len` is `0`.
- */
-size_t utf8_decode_buf8(uint8_t *dest, size_t dest_len, const char *src, size_t src_len)
-{
-    const uint8_t *p, *p_end;
-    size_t i;
-
-    p = (const uint8_t *)src;
-    p_end = p + src_len;
-    for (i = 0; p < p_end; i++) {
-        uint32_t c = *p++;
-        if (c >= 0xC0)
-            c = (c << 6) + *p++ - ((0xC0 << 6) + 0x80);
-        if (i < dest_len)
-            dest[i] = c;
-    }
-    if (i < dest_len)
-        dest[i] = '\0';
-    else if (dest_len > 0)
-        dest[dest_len - 1] = '\0';
-    return i;
-}
-
-/* Decode a string encoded in UTF-8 into an array of 16-bit words
-   `src` points to the source string. It is assumed to be correctly encoded.
-   `src_len` is the length of the source string
-   `dest` points to the destination array, it can be null if `dest_len` is `0`
-   `dest_len` is the length of the destination array. No null terminator is
-   stored at the end of the array.
- */
-size_t utf8_decode_buf16(uint16_t *dest, size_t dest_len, const char *src, size_t src_len)
-{
-    const uint8_t *p, *p_end;
-    size_t i;
-
-    p = (const uint8_t *)src;
-    p_end = p + src_len;
-    for (i = 0; p < p_end; i++) {
-        uint32_t c = *p++;
-        if (c >= 0x80) {
-            /* parse utf-8 sequence */
-            c = utf8_decode_len(p - 1, p_end - (p - 1), &p);
-            /* encoding errors are converted as 0xFFFD and use a single byte */
-            if (c > 0xFFFF) {
-                if (i < dest_len)
-                    dest[i] = get_hi_surrogate(c);
-                i++;
-                c = get_lo_surrogate(c);
-            }
-        }
-        if (i < dest_len)
-            dest[i] = c;
-    }
-    return i;
-}
-
-/* Encode a buffer of 8-bit bytes as a UTF-8 encoded string
-   `src` points to the source buffer.
-   `src_len` is the length of the source buffer
-   `dest` points to the destination array, it can be null if `dest_len` is `0`
-   `dest_len` is the length in bytes of the destination array. A null
-   terminator is stored at the end of the array unless `dest_len` is `0`.
- */
-size_t utf8_encode_buf8(char *dest, size_t dest_len, const uint8_t *src, size_t src_len)
-{
-    size_t i, j;
-    uint32_t c;
-
-    for (i = j = 0; i < src_len; i++) {
-        c = src[i];
-        if (c < 0x80) {
-            if (j + 1 >= dest_len)
-                goto overflow;
-            dest[j++] = c;
-        } else {
-            if (j + 2 >= dest_len)
-                goto overflow;
-            dest[j++] = (c >> 6) | 0xC0;
-            dest[j++] = (c & 0x3F) | 0x80;
-        }
-    }
-    if (j < dest_len)
-        dest[j] = '\0';
-    return j;
-
-overflow:
-    if (j < dest_len)
-        dest[j] = '\0';
-    while (i < src_len)
-        j += 1 + (src[i++] >= 0x80);
-    return j;
-}
-
-/* Encode a buffer of 16-bit code points as a UTF-8 encoded string
-   `src` points to the source buffer.
-   `src_len` is the length of the source buffer
-   `dest` points to the destination array, it can be null if `dest_len` is `0`
-   `dest_len` is the length in bytes of the destination array. A null
-   terminator is stored at the end of the array unless `dest_len` is `0`.
- */
-size_t utf8_encode_buf16(char *dest, size_t dest_len, const uint16_t *src, size_t src_len)
-{
-    size_t i, j;
-    uint32_t c;
-
-    for (i = j = 0; i < src_len;) {
-        c = src[i++];
-        if (c < 0x80) {
-            if (j + 1 >= dest_len)
-                goto overflow;
-            dest[j++] = c;
-        } else {
-            if (is_hi_surrogate(c) && i < src_len && is_lo_surrogate(src[i]))
-                c = from_surrogate(c, src[i++]);
-            if (j + utf8_encode_len(c) >= dest_len)
-                goto overflow;
-            j += utf8_encode((uint8_t *)dest + j, c);
-        }
-    }
-    if (j < dest_len)
-        dest[j] = '\0';
-    return j;
-
-overflow:
-    i -= 1 + (c > 0xFFFF);
-    if (j < dest_len)
-        dest[j] = '\0';
-    while (i < src_len) {
-        c = src[i++];
-        if (c < 0x80) {
-            j++;
-        } else {
-            if (is_hi_surrogate(c) && i < src_len && is_lo_surrogate(src[i]))
-                c = from_surrogate(c, src[i++]);
-            j += utf8_encode_len(c);
-        }
-    }
-    return j;
-}
-
-/*---- sorting with opaque argument ----*/
-
-typedef void (*exchange_f)(void *a, void *b, size_t size);
-typedef int (*cmp_f)(const void *, const void *, void *opaque);
-
-static void exchange_bytes(void *a, void *b, size_t size) {
-    uint8_t *ap = (uint8_t *)a;
-    uint8_t *bp = (uint8_t *)b;
-
-    while (size-- != 0) {
-        uint8_t t = *ap;
-        *ap++ = *bp;
-        *bp++ = t;
-    }
-}
-
-static void exchange_one_byte(void *a, void *b, size_t size) {
-    uint8_t *ap = (uint8_t *)a;
-    uint8_t *bp = (uint8_t *)b;
-    uint8_t t = *ap;
-    *ap = *bp;
-    *bp = t;
-}
-
-static void exchange_int16s(void *a, void *b, size_t size) {
-    uint16_t *ap = (uint16_t *)a;
-    uint16_t *bp = (uint16_t *)b;
-
-    for (size /= sizeof(uint16_t); size-- != 0;) {
-        uint16_t t = *ap;
-        *ap++ = *bp;
-        *bp++ = t;
-    }
-}
-
-static void exchange_one_int16(void *a, void *b, size_t size) {
-    uint16_t *ap = (uint16_t *)a;
-    uint16_t *bp = (uint16_t *)b;
-    uint16_t t = *ap;
-    *ap = *bp;
-    *bp = t;
-}
-
-static void exchange_int32s(void *a, void *b, size_t size) {
-    uint32_t *ap = (uint32_t *)a;
-    uint32_t *bp = (uint32_t *)b;
-
-    for (size /= sizeof(uint32_t); size-- != 0;) {
-        uint32_t t = *ap;
-        *ap++ = *bp;
-        *bp++ = t;
-    }
-}
-
-static void exchange_one_int32(void *a, void *b, size_t size) {
-    uint32_t *ap = (uint32_t *)a;
-    uint32_t *bp = (uint32_t *)b;
-    uint32_t t = *ap;
-    *ap = *bp;
-    *bp = t;
-}
-
-static void exchange_int64s(void *a, void *b, size_t size) {
-    uint64_t *ap = (uint64_t *)a;
-    uint64_t *bp = (uint64_t *)b;
-
-    for (size /= sizeof(uint64_t); size-- != 0;) {
-        uint64_t t = *ap;
-        *ap++ = *bp;
-        *bp++ = t;
-    }
-}
-
-static void exchange_one_int64(void *a, void *b, size_t size) {
-    uint64_t *ap = (uint64_t *)a;
-    uint64_t *bp = (uint64_t *)b;
-    uint64_t t = *ap;
-    *ap = *bp;
-    *bp = t;
-}
-
-static void exchange_int128s(void *a, void *b, size_t size) {
-    uint64_t *ap = (uint64_t *)a;
-    uint64_t *bp = (uint64_t *)b;
-
-    for (size /= sizeof(uint64_t) * 2; size-- != 0; ap += 2, bp += 2) {
-        uint64_t t = ap[0];
-        uint64_t u = ap[1];
-        ap[0] = bp[0];
-        ap[1] = bp[1];
-        bp[0] = t;
-        bp[1] = u;
-    }
-}
-
-static void exchange_one_int128(void *a, void *b, size_t size) {
-    uint64_t *ap = (uint64_t *)a;
-    uint64_t *bp = (uint64_t *)b;
-    uint64_t t = ap[0];
-    uint64_t u = ap[1];
-    ap[0] = bp[0];
-    ap[1] = bp[1];
-    bp[0] = t;
-    bp[1] = u;
-}
-
-static inline exchange_f exchange_func(const void *base, size_t size) {
-    switch (((uintptr_t)base | (uintptr_t)size) & 15) {
-    case 0:
-        if (size == sizeof(uint64_t) * 2)
-            return exchange_one_int128;
-        else
-            return exchange_int128s;
-    case 8:
-        if (size == sizeof(uint64_t))
-            return exchange_one_int64;
-        else
-            return exchange_int64s;
-    case 4:
-    case 12:
-        if (size == sizeof(uint32_t))
-            return exchange_one_int32;
-        else
-            return exchange_int32s;
-    case 2:
-    case 6:
-    case 10:
-    case 14:
-        if (size == sizeof(uint16_t))
-            return exchange_one_int16;
-        else
-            return exchange_int16s;
-    default:
-        if (size == 1)
-            return exchange_one_byte;
-        else
-            return exchange_bytes;
-    }
-}
-
-static void heapsortx(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
-{
-    uint8_t *basep = (uint8_t *)base;
-    size_t i, n, c, r;
-    exchange_f swap = exchange_func(base, size);
-
-    if (nmemb > 1) {
-        i = (nmemb / 2) * size;
-        n = nmemb * size;
-
-        while (i > 0) {
-            i -= size;
-            for (r = i; (c = r * 2 + size) < n; r = c) {
-                if (c < n - size && cmp(basep + c, basep + c + size, opaque) <= 0)
-                    c += size;
-                if (cmp(basep + r, basep + c, opaque) > 0)
-                    break;
-                swap(basep + r, basep + c, size);
-            }
-        }
-        for (i = n - size; i > 0; i -= size) {
-            swap(basep, basep + i, size);
-
-            for (r = 0; (c = r * 2 + size) < i; r = c) {
-                if (c < i - size && cmp(basep + c, basep + c + size, opaque) <= 0)
-                    c += size;
-                if (cmp(basep + r, basep + c, opaque) > 0)
-                    break;
-                swap(basep + r, basep + c, size);
-            }
-        }
-    }
-}
-
-static inline void *med3(void *a, void *b, void *c, cmp_f cmp, void *opaque)
-{
-    return cmp(a, b, opaque) < 0 ?
-        (cmp(b, c, opaque) < 0 ? b : (cmp(a, c, opaque) < 0 ? c : a )) :
-        (cmp(b, c, opaque) > 0 ? b : (cmp(a, c, opaque) < 0 ? a : c ));
-}
-
-/* pointer based version with local stack and insertion sort threshhold */
-void rqsort(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
-{
-    struct { uint8_t *base; size_t count; int depth; } stack[50], *sp = stack;
-    uint8_t *ptr, *pi, *pj, *plt, *pgt, *top, *m;
-    size_t m4, i, lt, gt, span, span2;
-    int c, depth;
-    exchange_f swap = exchange_func(base, size);
-    exchange_f swap_block = exchange_func(base, size | 128);
-
-    if (nmemb < 2 || size <= 0)
-        return;
-
-    sp->base = (uint8_t *)base;
-    sp->count = nmemb;
-    sp->depth = 0;
-    sp++;
-
-    while (sp > stack) {
-        sp--;
-        ptr = sp->base;
-        nmemb = sp->count;
-        depth = sp->depth;
-
-        while (nmemb > 6) {
-            if (++depth > 50) {
-                /* depth check to ensure worst case logarithmic time */
-                heapsortx(ptr, nmemb, size, cmp, opaque);
-                nmemb = 0;
-                break;
-            }
-            /* select median of 3 from 1/4, 1/2, 3/4 positions */
-            /* should use median of 5 or 9? */
-            m4 = (nmemb >> 2) * size;
-            m = med3(ptr + m4, ptr + 2 * m4, ptr + 3 * m4, cmp, opaque);
-            swap(ptr, m, size);  /* move the pivot to the start or the array */
-            i = lt = 1;
-            pi = plt = ptr + size;
-            gt = nmemb;
-            pj = pgt = top = ptr + nmemb * size;
-            for (;;) {
-                while (pi < pj && (c = cmp(ptr, pi, opaque)) >= 0) {
-                    if (c == 0) {
-                        swap(plt, pi, size);
-                        lt++;
-                        plt += size;
-                    }
-                    i++;
-                    pi += size;
-                }
-                while (pi < (pj -= size) && (c = cmp(ptr, pj, opaque)) <= 0) {
-                    if (c == 0) {
-                        gt--;
-                        pgt -= size;
-                        swap(pgt, pj, size);
-                    }
-                }
-                if (pi >= pj)
-                    break;
-                swap(pi, pj, size);
-                i++;
-                pi += size;
-            }
-            /* array has 4 parts:
-             * from 0 to lt excluded: elements identical to pivot
-             * from lt to pi excluded: elements smaller than pivot
-             * from pi to gt excluded: elements greater than pivot
-             * from gt to n excluded: elements identical to pivot
-             */
-            /* move elements identical to pivot in the middle of the array: */
-            /* swap values in ranges [0..lt[ and [i-lt..i[
-               swapping the smallest span between lt and i-lt is sufficient
-             */
-            span = plt - ptr;
-            span2 = pi - plt;
-            lt = i - lt;
-            if (span > span2)
-                span = span2;
-            swap_block(ptr, pi - span, span);
-            /* swap values in ranges [gt..top[ and [i..top-(top-gt)[
-               swapping the smallest span between top-gt and gt-i is sufficient
-             */
-            span = top - pgt;
-            span2 = pgt - pi;
-            pgt = top - span2;
-            gt = nmemb - (gt - i);
-            if (span > span2)
-                span = span2;
-            swap_block(pi, top - span, span);
-
-            /* now array has 3 parts:
-             * from 0 to lt excluded: elements smaller than pivot
-             * from lt to gt excluded: elements identical to pivot
-             * from gt to n excluded: elements greater than pivot
-             */
-            /* stack the larger segment and keep processing the smaller one
-               to minimize stack use for pathological distributions */
-            if (lt > nmemb - gt) {
-                sp->base = ptr;
-                sp->count = lt;
-                sp->depth = depth;
-                sp++;
-                ptr = pgt;
-                nmemb -= gt;
-            } else {
-                sp->base = pgt;
-                sp->count = nmemb - gt;
-                sp->depth = depth;
-                sp++;
-                nmemb = lt;
-            }
-        }
-        /* Use insertion sort for small fragments */
-        for (pi = ptr + size, top = ptr + nmemb * size; pi < top; pi += size) {
-            for (pj = pi; pj > ptr && cmp(pj - size, pj, opaque) > 0; pj -= size)
-                swap(pj, pj - size, size);
-        }
-    }
-}
-
-/*---- Portable time functions ----*/
-
-#ifdef _WIN32
- // From: https://stackoverflow.com/a/26085827
-static int gettimeofday_msvc(struct timeval *tp)
-{
-  static const uint64_t EPOCH = ((uint64_t)116444736000000000ULL);
-
-  SYSTEMTIME  system_time;
-  FILETIME    file_time;
-  uint64_t    time;
-
-  GetSystemTime(&system_time);
-  SystemTimeToFileTime(&system_time, &file_time);
-  time = ((uint64_t)file_time.dwLowDateTime);
-  time += ((uint64_t)file_time.dwHighDateTime) << 32;
-
-  tp->tv_sec = (long)((time - EPOCH) / 10000000L);
-  tp->tv_usec = (long)(system_time.wMilliseconds * 1000);
-
-  return 0;
-}
-
-uint64_t js__hrtime_ns(void) {
-    LARGE_INTEGER counter, frequency;
-    double scaled_freq;
-    double result;
-
-    if (!QueryPerformanceFrequency(&frequency))
-        abort();
-    assert(frequency.QuadPart != 0);
-
-    if (!QueryPerformanceCounter(&counter))
-        abort();
-    assert(counter.QuadPart != 0);
-
-  /* Because we have no guarantee about the order of magnitude of the
-   * performance counter interval, integer math could cause this computation
-   * to overflow. Therefore we resort to floating point math.
-   */
-  scaled_freq = (double) frequency.QuadPart / NANOSEC;
-  result = (double) counter.QuadPart / scaled_freq;
-  return (uint64_t) result;
-}
-#else
-uint64_t js__hrtime_ns(void) {
-  struct timespec t;
-
-  if (clock_gettime(CLOCK_MONOTONIC, &t))
-    abort();
-
-  return t.tv_sec * NANOSEC + t.tv_nsec;
-}
-#endif
-
-int64_t js__gettimeofday_us(void) {
-    struct timeval tv;
-#ifdef _WIN32
-    gettimeofday_msvc(&tv);
-#else
-    gettimeofday(&tv, NULL);
-#endif
-    return ((int64_t)tv.tv_sec * 1000000) + tv.tv_usec;
-}
-
-#if defined(_WIN32)
-int js_exepath(char *buffer, size_t *size_ptr) {
-    int utf8_len, utf16_buffer_len, utf16_len;
-    WCHAR* utf16_buffer;
-
-    if (buffer == NULL || size_ptr == NULL || *size_ptr == 0)
-      return -1;
-
-    if (*size_ptr > 32768) {
-      /* Windows paths can never be longer than this. */
-      utf16_buffer_len = 32768;
-    } else {
-      utf16_buffer_len = (int)*size_ptr;
-    }
-
-    utf16_buffer = malloc(sizeof(WCHAR) * utf16_buffer_len);
-    if (!utf16_buffer)
-        return -1;
-
-    /* Get the path as UTF-16. */
-    utf16_len = GetModuleFileNameW(NULL, utf16_buffer, utf16_buffer_len);
-    if (utf16_len <= 0)
-      goto error;
-
-    /* Convert to UTF-8 */
-    utf8_len = WideCharToMultiByte(CP_UTF8,
-                                   0,
-                                   utf16_buffer,
-                                   -1,
-                                   buffer,
-                                   (int)*size_ptr,
-                                   NULL,
-                                   NULL);
-    if (utf8_len == 0)
-      goto error;
-
-    free(utf16_buffer);
-
-    /* utf8_len *does* include the terminating null at this point, but the
-     * returned size shouldn't. */
-    *size_ptr = utf8_len - 1;
-    return 0;
-
-error:
-    free(utf16_buffer);
-    return -1;
-}
-#elif defined(__APPLE__)
-int js_exepath(char *buffer, size_t *size) {
-    /* realpath(exepath) may be > PATH_MAX so double it to be on the safe side. */
-    char abspath[PATH_MAX * 2 + 1];
-    char exepath[PATH_MAX + 1];
-    uint32_t exepath_size;
-    size_t abspath_size;
-
-    if (buffer == NULL || size == NULL || *size == 0)
-        return -1;
-
-    exepath_size = sizeof(exepath);
-    if (_NSGetExecutablePath(exepath, &exepath_size))
-        return -1;
-
-    if (realpath(exepath, abspath) != abspath)
-        return -1;
-
-    abspath_size = strlen(abspath);
-    if (abspath_size == 0)
-        return -1;
-
-    *size -= 1;
-    if (*size > abspath_size)
-        *size = abspath_size;
-
-    memcpy(buffer, abspath, *size);
-    buffer[*size] = '\0';
-
-    return 0;
-}
-#elif defined(__linux__) || defined(__GNU__)
-int js_exepath(char *buffer, size_t *size) {
-    ssize_t n;
-
-    if (buffer == NULL || size == NULL || *size == 0)
-        return -1;
-
-    n = *size - 1;
-    if (n > 0)
-        n = readlink("/proc/self/exe", buffer, n);
-
-    if (n == -1)
-        return n;
-
-    buffer[n] = '\0';
-    *size = n;
-
-    return 0;
-}
-#else
-int js_exepath(char* buffer, size_t* size_ptr) {
-    return -1;
-}
-#endif
-
-/*--- Cross-platform threading APIs. ----*/
-
-#if JS_HAVE_THREADS
-#if defined(_WIN32)
-typedef void (*js__once_cb)(void);
-
-typedef struct {
-    js__once_cb callback;
-} js__once_data_t;
-
-static int WINAPI js__once_inner(INIT_ONCE *once, void *param, void **context) {
-    js__once_data_t *data = param;
-
-    data->callback();
-
-    return 1;
-}
-
-void js_once(js_once_t *guard, js__once_cb callback) {
-    js__once_data_t data = { .callback = callback };
-    InitOnceExecuteOnce(guard, js__once_inner, (void*) &data, NULL);
-}
-
-void js_mutex_init(js_mutex_t *mutex) {
-    InitializeCriticalSection(mutex);
-}
-
-void js_mutex_destroy(js_mutex_t *mutex) {
-    DeleteCriticalSection(mutex);
-}
-
-void js_mutex_lock(js_mutex_t *mutex) {
-    EnterCriticalSection(mutex);
-}
-
-void js_mutex_unlock(js_mutex_t *mutex) {
-    LeaveCriticalSection(mutex);
-}
-
-void js_cond_init(js_cond_t *cond) {
-    InitializeConditionVariable(cond);
-}
-
-void js_cond_destroy(js_cond_t *cond) {
-  /* nothing to do */
-  (void) cond;
-}
-
-void js_cond_signal(js_cond_t *cond) {
-    WakeConditionVariable(cond);
-}
-
-void js_cond_broadcast(js_cond_t *cond) {
-    WakeAllConditionVariable(cond);
-}
-
-void js_cond_wait(js_cond_t *cond, js_mutex_t *mutex) {
-    if (!SleepConditionVariableCS(cond, mutex, INFINITE))
-        abort();
-}
-
-int js_cond_timedwait(js_cond_t *cond, js_mutex_t *mutex, uint64_t timeout) {
-    if (SleepConditionVariableCS(cond, mutex, (DWORD)(timeout / 1e6)))
-        return 0;
-    if (GetLastError() != ERROR_TIMEOUT)
-        abort();
-    return -1;
-}
-
-int js_thread_create(js_thread_t *thrd, void (*start)(void *), void *arg,
-                     int flags)
-{
-    HANDLE h, cp;
-
-    *thrd = INVALID_HANDLE_VALUE;
-    if (flags & ~JS_THREAD_CREATE_DETACHED)
-        return -1;
-    h = (HANDLE)_beginthread(start, /*stacksize*/2<<20, arg);
-    if (!h)
-        return -1;
-    if (flags & JS_THREAD_CREATE_DETACHED)
-        return 0;
-    // _endthread() automatically closes the handle but we want to wait on
-    // it so make a copy. Race-y for very short-lived threads. Can be solved
-    // by switching to _beginthreadex(CREATE_SUSPENDED) but means changing
-    // |start| from __cdecl to __stdcall.
-    cp = GetCurrentProcess();
-    if (DuplicateHandle(cp, h, cp, thrd, 0, FALSE, DUPLICATE_SAME_ACCESS))
-        return 0;
-    return -1;
-}
-
-int js_thread_join(js_thread_t thrd)
-{
-    if (WaitForSingleObject(thrd, INFINITE))
-        return -1;
-    CloseHandle(thrd);
-    return 0;
-}
-
-#else /* !defined(_WIN32) */
-
-void js_once(js_once_t *guard, void (*callback)(void)) {
-    if (pthread_once(guard, callback))
-        abort();
-}
-
-void js_mutex_init(js_mutex_t *mutex) {
-    if (pthread_mutex_init(mutex, NULL))
-        abort();
-}
-
-void js_mutex_destroy(js_mutex_t *mutex) {
-    if (pthread_mutex_destroy(mutex))
-        abort();
-}
-
-void js_mutex_lock(js_mutex_t *mutex) {
-    if (pthread_mutex_lock(mutex))
-        abort();
-}
-
-void js_mutex_unlock(js_mutex_t *mutex) {
-    if (pthread_mutex_unlock(mutex))
-        abort();
-}
-
-void js_cond_init(js_cond_t *cond) {
-#if defined(__APPLE__) && defined(__MACH__)
-    if (pthread_cond_init(cond, NULL))
-        abort();
-#else
-    pthread_condattr_t attr;
-
-    if (pthread_condattr_init(&attr))
-        abort();
-
-    if (pthread_condattr_setclock(&attr, CLOCK_MONOTONIC))
-        abort();
-
-    if (pthread_cond_init(cond, &attr))
-        abort();
-
-    if (pthread_condattr_destroy(&attr))
-        abort();
-#endif
-}
-
-void js_cond_destroy(js_cond_t *cond) {
-#if defined(__APPLE__) && defined(__MACH__)
-    /* It has been reported that destroying condition variables that have been
-     * signalled but not waited on can sometimes result in application crashes.
-     * See https://codereview.chromium.org/1323293005.
-     */
-    pthread_mutex_t mutex;
-    struct timespec ts;
-    int err;
-
-    if (pthread_mutex_init(&mutex, NULL))
-        abort();
-
-    if (pthread_mutex_lock(&mutex))
-        abort();
-
-    ts.tv_sec = 0;
-    ts.tv_nsec = 1;
-
-    err = pthread_cond_timedwait_relative_np(cond, &mutex, &ts);
-    if (err != 0 && err != ETIMEDOUT)
-        abort();
-
-    if (pthread_mutex_unlock(&mutex))
-        abort();
-
-    if (pthread_mutex_destroy(&mutex))
-        abort();
-#endif /* defined(__APPLE__) && defined(__MACH__) */
-
-    if (pthread_cond_destroy(cond))
-        abort();
-}
-
-void js_cond_signal(js_cond_t *cond) {
-    if (pthread_cond_signal(cond))
-        abort();
-}
-
-void js_cond_broadcast(js_cond_t *cond) {
-    if (pthread_cond_broadcast(cond))
-        abort();
-}
-
-void js_cond_wait(js_cond_t *cond, js_mutex_t *mutex) {
-#if defined(__APPLE__) && defined(__MACH__)
-    int r;
-
-    errno = 0;
-    r = pthread_cond_wait(cond, mutex);
-
-    /* Workaround for a bug in OS X at least up to 13.6
-     * See https://github.com/libuv/libuv/issues/4165
-     */
-    if (r == EINVAL && errno == EBUSY)
-        return;
-    if (r)
-        abort();
-#else
-    if (pthread_cond_wait(cond, mutex))
-        abort();
-#endif
-}
-
-int js_cond_timedwait(js_cond_t *cond, js_mutex_t *mutex, uint64_t timeout) {
-    int r;
-    struct timespec ts;
-
-#if !defined(__APPLE__)
-    timeout += js__hrtime_ns();
-#endif
-
-    ts.tv_sec = timeout / NANOSEC;
-    ts.tv_nsec = timeout % NANOSEC;
-#if defined(__APPLE__) && defined(__MACH__)
-    r = pthread_cond_timedwait_relative_np(cond, mutex, &ts);
-#else
-    r = pthread_cond_timedwait(cond, mutex, &ts);
-#endif
-
-    if (r == 0)
-        return 0;
-
-    if (r == ETIMEDOUT)
-        return -1;
-
-    abort();
-
-    /* Pacify some compilers. */
-    return -1;
-}
-
-int js_thread_create(js_thread_t *thrd, void (*start)(void *), void *arg,
-                     int flags)
-{
-    union {
-        void (*x)(void *);
-        void *(*f)(void *);
-    } u = {start};
-    pthread_attr_t attr;
-    int ret;
-
-    if (flags & ~JS_THREAD_CREATE_DETACHED)
-        return -1;
-    if (pthread_attr_init(&attr))
-        return -1;
-    ret = -1;
-    if (pthread_attr_setstacksize(&attr, 2<<20))
-        goto fail;
-    if (flags & JS_THREAD_CREATE_DETACHED)
-        if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED))
-            goto fail;
-    if (pthread_create(thrd, &attr, u.f, arg))
-        goto fail;
-    ret = 0;
-fail:
-    pthread_attr_destroy(&attr);
-    return ret;
-}
-
-int js_thread_join(js_thread_t thrd)
-{
-    if (pthread_join(thrd, NULL))
-        return -1;
-    return 0;
-}
-
-#endif /* !defined(_WIN32) */
-#endif /* JS_HAVE_THREADS */
-
-#ifdef __GNUC__
-#pragma GCC visibility pop
-#endif
-/*
  * Tiny float64 printing and parsing library
  *
  * Copyright (c) 2024 Fabrice Bellard
@@ -69188,7 +72692,6 @@ int js_thread_join(js_thread_t thrd)
 
 /* 
    TODO:
-   - test n_digits=101 instead of 100
    - simplify subnormal handling
    - reduce max memory usage
    - free format: could add shortcut if exact result
@@ -70802,6 +74305,10 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
 
 
 
+#if defined(__sun)
+#include <alloca.h>
+#endif
+
 /*
   TODO:
 
@@ -71003,7 +74510,7 @@ static inline int lre_is_digit(int c) {
 /* insert 'len' bytes at position 'pos'. Return < 0 if error. */
 static int dbuf_insert(DynBuf *s, int pos, int len)
 {
-    if (dbuf_realloc(s, s->size + len))
+    if (dbuf_claim(s, len))
         return -1;
     memmove(s->buf + pos + len, s->buf + pos, s->size - pos);
     s->size += len;
@@ -71276,6 +74783,13 @@ static int JS_PRINTF_FORMAT_ATTR(2, 3) re_parse_error(REParseState *s, const cha
 static int re_parse_out_of_memory(REParseState *s)
 {
     return re_parse_error(s, "out of memory");
+}
+
+static int lre_check_size(REParseState *s)
+{
+    if (s->byte_code.size < 64*1024*1024)
+        return 0;
+    return re_parse_out_of_memory(s);
 }
 
 /* If allow_overflow is false, return -1 in case of
@@ -71717,7 +75231,9 @@ static int re_parse_char_class(REParseState *s, const uint8_t **pp)
         const char *s = verboten;
         int n = 1;
         do {
-            if (!memcmp(s, p, n))
+            // not memcmp because some implementations compare word instead
+            // of byte at a time and will happily read past end of input
+            if (!strncmp(s, (const char *)p, n))
                 if (p[n] == ']')
                     goto invalid_class_range;
             s += n;
@@ -72063,6 +75579,8 @@ static int re_parse_term(REParseState *s, bool is_backward_dir)
     bool greedy, add_zero_advance_check, is_neg, is_backward_lookahead;
     CharRange cr_s, *cr = &cr_s;
 
+    if (lre_check_size(s))
+        return -1;
     last_atom_start = -1;
     last_capture_count = 0;
     p = s->buf_ptr;
@@ -72554,6 +76072,8 @@ static int re_parse_alternative(REParseState *s, bool is_backward_dir)
     int ret;
     size_t start, term_start, end, term_size;
 
+    if (lre_check_size(s))
+        return -1;
     start = s->byte_code.size;
     for(;;) {
         p = s->buf_ptr;
@@ -72570,7 +76090,7 @@ static int re_parse_alternative(REParseState *s, bool is_backward_dir)
                speed is not really critical here) */
             end = s->byte_code.size;
             term_size = end - term_start;
-            if (dbuf_realloc(&s->byte_code, end + term_size))
+            if (dbuf_claim(&s->byte_code, term_size))
                 return -1;
             memmove(s->byte_code.buf + start + term_size,
                     s->byte_code.buf + start,
@@ -72588,7 +76108,8 @@ static int re_parse_disjunction(REParseState *s, bool is_backward_dir)
 
     if (lre_check_stack_overflow(s->opaque, 0))
         return re_parse_error(s, "stack overflow");
-
+    if (lre_check_size(s))
+        return -1;
     start = s->byte_code.size;
     if (re_parse_alternative(s, is_backward_dir))
         return -1;
@@ -73119,7 +76640,8 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
         case REOP_save_start:
         case REOP_save_end:
             val = *pc++;
-            assert(val < s->capture_count);
+            if (val >= s->capture_count)
+                return LRE_RET_BYTECODE_ERROR;
             capture[2 * val + opcode - REOP_save_start] = (uint8_t *)cptr;
             break;
         case REOP_save_reset:
@@ -73128,7 +76650,8 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                 val = pc[0];
                 val2 = pc[1];
                 pc += 2;
-                assert(val2 < s->capture_count);
+                if (val2 >= s->capture_count)
+                    return LRE_RET_BYTECODE_ERROR;
                 while (val <= val2) {
                     capture[2 * val] = NULL;
                     capture[2 * val + 1] = NULL;
@@ -73419,80 +76942,6 @@ const char *lre_get_groupnames(const uint8_t *bc_buf)
         return NULL;
     re_bytecode_len = get_u32(bc_buf + RE_HEADER_BYTECODE_LEN);
     return (const char *)(bc_buf + RE_HEADER_LEN + re_bytecode_len);
-}
-
-void lre_byte_swap(uint8_t *buf, size_t len, bool is_byte_swapped)
-{
-    uint8_t *p, *pe;
-    uint32_t n, r, nw;
-
-    p = buf;
-    if (len < RE_HEADER_LEN)
-        abort();
-
-    // format is:
-    //  <header>
-    //  <bytecode>
-    //  <capture group name 1>
-    //  <capture group name 2>
-    //  etc.
-    inplace_bswap16(&p[RE_HEADER_FLAGS]);
-
-    n = get_u32(&p[RE_HEADER_BYTECODE_LEN]);
-    inplace_bswap32(&p[RE_HEADER_BYTECODE_LEN]);
-    if (is_byte_swapped)
-        n = bswap32(n);
-    if (n > len - RE_HEADER_LEN)
-        abort();
-
-    p = &buf[RE_HEADER_LEN];
-    pe = &p[n];
-
-    while (p < pe) {
-        n = reopcode_info[*p].size;
-        switch (n) {
-        case 1:
-        case 2:
-            break;
-        case 3:
-            switch (*p) {
-            case REOP_save_reset: // has two 8 bit arguments
-                break;
-            case REOP_range32: // variable length
-                nw = get_u16(&p[1]);  // number of pairs of uint32_t
-                if (is_byte_swapped)
-                    n = bswap16(n);
-                for (r = 3 + 8 * nw; n < r; n += 4)
-                    inplace_bswap32(&p[n]);
-                goto doswap16;
-            case REOP_range: // variable length
-                nw = get_u16(&p[1]);  // number of pairs of uint16_t
-                if (is_byte_swapped)
-                    n = bswap16(n);
-                for (r = 3 + 4 * nw; n < r; n += 2)
-                    inplace_bswap16(&p[n]);
-                goto doswap16;
-            default:
-            doswap16:
-                inplace_bswap16(&p[1]);
-                break;
-            }
-            break;
-        case 5:
-            inplace_bswap32(&p[1]);
-            break;
-        case 17:
-            assert(*p == REOP_simple_greedy_quant);
-            inplace_bswap32(&p[1]);
-            inplace_bswap32(&p[5]);
-            inplace_bswap32(&p[9]);
-            inplace_bswap32(&p[13]);
-            break;
-        default:
-            abort();
-        }
-        p = &p[n];
-    }
 }
 
 #ifdef TEST
@@ -74510,7 +77959,7 @@ int unicode_normalize(uint32_t **pdst, const uint32_t *src, int src_len,
     is_compat = n_type >> 1;
 
     dbuf_init2(dbuf, opaque, realloc_func);
-    if (dbuf_realloc(dbuf, sizeof(int) * src_len))
+    if (dbuf_claim(dbuf, sizeof(int) * src_len))
         goto fail;
 
     /* common case: latin1 is unaffected by NFC */
@@ -75323,6 +78772,7 @@ int unicode_prop(CharRange *cr, const char *prop_name)
 #define QUICKJS_LIBC_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -75332,40 +78782,50 @@ int unicode_prop(CharRange *cr, const char *prop_name)
 extern "C" {
 #endif
 
-#if defined(__GNUC__) || defined(__clang__)
-#define JS_EXTERN __attribute__((visibility("default")))
-#else
-#define JS_EXTERN /* nothing */
-#endif
-
-JS_EXTERN JSModuleDef *js_init_module_std(JSContext *ctx,
-                                          const char *module_name);
-JS_EXTERN JSModuleDef *js_init_module_os(JSContext *ctx,
-                                         const char *module_name);
-JS_EXTERN JSModuleDef *js_init_module_bjson(JSContext *ctx,
-                                            const char *module_name);
-JS_EXTERN void js_std_add_helpers(JSContext *ctx, int argc, char **argv);
-JS_EXTERN int js_std_loop(JSContext *ctx);
-JS_EXTERN JSValue js_std_await(JSContext *ctx, JSValue obj);
-JS_EXTERN void js_std_init_handlers(JSRuntime *rt);
-JS_EXTERN void js_std_free_handlers(JSRuntime *rt);
-JS_EXTERN void js_std_dump_error(JSContext *ctx);
-JS_EXTERN uint8_t *js_load_file(JSContext *ctx, size_t *pbuf_len,
+typedef uint8_t *JSLoadFileFunc(JSContext *ctx, size_t *pbuf_len,
                                 const char *filename);
-JS_EXTERN int js_module_set_import_meta(JSContext *ctx, JSValueConst func_val,
-                                        bool use_realpath, bool is_main);
-JS_EXTERN JSModuleDef *js_module_loader(JSContext *ctx,
-                                        const char *module_name, void *opaque);
-JS_EXTERN void js_std_eval_binary(JSContext *ctx, const uint8_t *buf,
-                                  size_t buf_len, int flags);
-JS_EXTERN void js_std_promise_rejection_tracker(JSContext *ctx,
-                                                JSValueConst promise,
-                                                JSValueConst reason,
-                                                bool is_handled,
-                                                void *opaque);
-JS_EXTERN void js_std_set_worker_new_context_func(JSContext *(*func)(JSRuntime *rt));
 
-#undef JS_EXTERN
+JS_LIBC_EXTERN JSModuleDef *js_init_module_std(JSContext *ctx,
+                                               const char *module_name);
+JS_LIBC_EXTERN JSModuleDef *js_init_module_os(JSContext *ctx,
+                                              const char *module_name);
+JS_LIBC_EXTERN JSModuleDef *js_init_module_bjson(JSContext *ctx,
+                                                 const char *module_name);
+JS_LIBC_EXTERN void js_std_add_helpers(JSContext *ctx, int argc, char **argv);
+JS_LIBC_EXTERN int js_std_loop(JSContext *ctx);
+JS_LIBC_EXTERN int js_std_loop_once(JSContext *ctx);
+JS_LIBC_EXTERN int js_std_poll_io(JSContext *ctx, int timeout_ms);
+JS_LIBC_EXTERN JSValue js_std_await(JSContext *ctx, JSValue obj);
+JS_LIBC_EXTERN void js_std_init_handlers(JSRuntime *rt);
+JS_LIBC_EXTERN void js_std_free_handlers(JSRuntime *rt);
+JS_LIBC_EXTERN void js_std_dump_error(JSContext *ctx);
+JS_LIBC_EXTERN uint8_t *js_load_file(JSContext *ctx, size_t *pbuf_len,
+                                     const char *filename);
+JS_LIBC_EXTERN int js_module_set_import_meta(JSContext *ctx, JSValueConst func_val,
+                                             bool use_realpath, bool is_main);
+JS_LIBC_EXTERN JSModuleDef *js_module_loader(JSContext *ctx,
+                                             const char *module_name, void *opaque,
+                                             JSValueConst attributes);
+// like js_module_loader but does not load .so objects and the file reader
+// is pluggable; js_module_loader is implemented in terms of js_module_load
+JS_LIBC_EXTERN JSModuleDef *js_module_load(JSContext *ctx, const char *module_name,
+                                           void *opaque, JSValueConst attributes,
+                                           JSLoadFileFunc *load_file);
+JS_LIBC_EXTERN int js_module_check_attributes(JSContext *ctx, void *opaque,
+                                              JSValueConst attributes);
+JS_LIBC_EXTERN void js_std_eval_binary(JSContext *ctx, const uint8_t *buf,
+                                       size_t buf_len, int flags);
+JS_LIBC_EXTERN void js_std_promise_rejection_tracker(JSContext *ctx,
+                                                     JSValueConst promise,
+                                                     JSValueConst reason,
+                                                     bool is_handled,
+                                                     void *opaque);
+// Defaults to JS_NewRuntime, no-op if compiled without worker support.
+// Call before creating the first worker thread.
+JS_LIBC_EXTERN void js_std_set_worker_new_runtime_func(JSRuntime *(*func)(void));
+// Defaults to JS_NewContext, no-op if compiled without worker support.
+// Call before creating the first worker thread.
+JS_LIBC_EXTERN void js_std_set_worker_new_context_func(JSContext *(*func)(JSRuntime *rt));
 
 #ifdef __cplusplus
 } /* extern "C" { */
@@ -75443,7 +78903,13 @@ JS_EXTERN void js_std_set_worker_new_context_func(JSContext *(*func)(JSRuntime *
 #if defined(__APPLE__)
 typedef sig_t sighandler_t;
 #include <crt_externs.h>
+#include <TargetConditionals.h>
 #define environ (*_NSGetEnviron())
+#endif
+
+#ifdef __sun
+typedef void (*sighandler_t)(int);
+extern char **environ;
 #endif
 
 #if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__NetBSD__)
@@ -75595,10 +79061,11 @@ static void js_set_thread_state(JSRuntime *rt, JSThreadState *ts)
     js_std_cmd(/*SetOpaque*/1, rt, ts);
 }
 
-#ifdef __GNUC__
+// Non-CL Clang on Windows does not define __GNUC__
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif // __GNUC__
+#endif // __GNUC__ || __clang__
 static JSValue js_printf_internal(JSContext *ctx,
                                   int argc, JSValueConst *argv, FILE *fp)
 {
@@ -75814,9 +79281,9 @@ fail:
     dbuf_free(&dbuf);
     return JS_EXCEPTION;
 }
-#ifdef __GNUC__
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop // ignored "-Wformat-nonliteral"
-#endif // __GNUC__
+#endif // __GNUC__ || __clang__
 
 uint8_t *js_load_file(JSContext *ctx, size_t *pbuf_len, const char *filename)
 {
@@ -76156,40 +79623,174 @@ int js_module_set_import_meta(JSContext *ctx, JSValueConst func_val,
     return 0;
 }
 
-JSModuleDef *js_module_loader(JSContext *ctx,
-                              const char *module_name, void *opaque)
+static int default_module_init(JSContext *ctx, JSModuleDef *m)
+{
+    JSValue val;
+    val = JS_GetModulePrivateValue(ctx, m);
+    JS_SetModuleExport(ctx, m, "default", val);
+    return 0;
+}
+
+/* in order to conform with the specification, only the keys should be
+   tested and not the associated values. */
+int js_module_check_attributes(JSContext *ctx, void *opaque,
+                               JSValueConst attributes)
+{
+    JSPropertyEnum *tab;
+    uint32_t i, len;
+    int ret;
+    const char *cstr;
+    size_t cstr_len;
+
+    if (JS_GetOwnPropertyNames(ctx, &tab, &len, attributes, JS_GPN_ENUM_ONLY | JS_GPN_STRING_MASK))
+        return -1;
+    ret = 0;
+    for(i = 0; i < len; i++) {
+        cstr = JS_AtomToCStringLen(ctx, &cstr_len, tab[i].atom);
+        if (!cstr) {
+            ret = -1;
+            break;
+        }
+        if (!(cstr_len == 4 && !memcmp(cstr, "type", cstr_len))) {
+            JS_ThrowTypeError(ctx, "import attribute '%s' is not supported", cstr);
+            ret = -1;
+        }
+        JS_FreeCString(ctx, cstr);
+        if (ret)
+            break;
+    }
+    JS_FreePropertyEnum(ctx, tab, len);
+    return ret;
+}
+
+// js_free_array_buffer to avoid a name conflict with js_array_buffer_free
+// from quickjs.c in the amalgamation build
+static void js_free_array_buffer(JSRuntime *rt, void *opaque, void *ptr)
+{
+    js_free_rt(rt, ptr);
+}
+
+enum {
+    JS_IMPORT_TYPE_JS,
+    JS_IMPORT_TYPE_JSON,
+    JS_IMPORT_TYPE_TEXT,
+    JS_IMPORT_TYPE_BYTES,
+};
+
+/* return > 0 if the attributes indicate a JSON module, 0 otherwise, -1 on error */
+static int js_module_import_type(JSContext *ctx, JSValueConst attributes)
+{
+    JSValue str;
+    const char *cstr;
+    size_t len;
+    int res;
+
+    if (JS_IsUndefined(attributes))
+        return JS_IMPORT_TYPE_JS;
+    str = JS_GetPropertyStr(ctx, attributes, "type");
+    if (JS_IsException(str))
+        return -1;
+    if (!JS_IsString(str)) {
+        JS_FreeValue(ctx, str);
+        return JS_IMPORT_TYPE_JS;
+    }
+    cstr = JS_ToCStringLen(ctx, &len, str);
+    JS_FreeValue(ctx, str);
+    if (!cstr)
+        return -1;
+    if (len == 4 && !memcmp(cstr, "json", len)) {
+        res = JS_IMPORT_TYPE_JSON;
+    } else if (len == 4 && !memcmp(cstr, "text", len)) {
+        res = JS_IMPORT_TYPE_TEXT;
+    } else if (len == 5 && !memcmp(cstr, "bytes", len)) {
+        res = JS_IMPORT_TYPE_BYTES;
+    } else {
+        /* unknown type - throw error */
+        JS_ThrowTypeError(ctx, "unsupported module type: '%s'", cstr);
+        res = -1;
+    }
+    JS_FreeCString(ctx, cstr);
+    return res;
+}
+
+JSModuleDef *js_module_load(JSContext *ctx, const char *module_name,
+                            void *opaque, JSValueConst attributes,
+                            JSLoadFileFunc *load_file)
 {
     JSModuleDef *m;
+    JSValue val;
+    size_t buf_len;
+    char *buf;
+    int type;
 
-    if (js__has_suffix(module_name, QJS_NATIVE_MODULE_SUFFIX)) {
-        m = js_module_loader_so(ctx, module_name);
+    type = js_module_import_type(ctx, attributes);
+    if (type < 0)
+        return NULL;
+    if (type != JS_IMPORT_TYPE_BYTES)
+        if (js__has_suffix(module_name, ".json"))
+            type = JS_IMPORT_TYPE_JSON;
+    buf = (char *)load_file(ctx, &buf_len, module_name);
+    if (!buf) {
+        JS_ThrowReferenceError(ctx, "could not load module filename '%s'",
+                               module_name);
+        return NULL;
+    }
+    switch (type) {
+    case JS_IMPORT_TYPE_JS:
+        val = JS_Eval(ctx, buf, buf_len, module_name,
+                      JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        break;
+    case JS_IMPORT_TYPE_JSON:
+        val = JS_ParseJSON(ctx, buf, buf_len, module_name);
+        break;
+    case JS_IMPORT_TYPE_TEXT:
+        val = JS_NewStringLen(ctx, buf, buf_len);
+        break;
+    case JS_IMPORT_TYPE_BYTES:
+        val = JS_NewUint8Array(ctx, (uint8_t *)buf, buf_len,
+                               js_free_array_buffer, NULL, /*is_shared*/false);
+        if (!JS_IsException(val)) {
+            JSValue abuf = JS_GetTypedArrayBuffer(ctx, val, NULL, NULL, NULL);
+            JS_SetImmutableArrayBuffer(abuf, /*immutable*/true);
+            JS_FreeValue(ctx, abuf);
+            buf = NULL;
+        }
+        break;
+    default:
+        val = JS_ThrowInternalError(ctx, "unhandled import type");
+        break;
+    }
+    js_free(ctx, buf);
+    if (JS_IsException(val))
+        return NULL;
+    if (type == JS_IMPORT_TYPE_JS) {
+        if (js_module_set_import_meta(ctx, val, true, false) < 0) {
+            JS_FreeValue(ctx, val);
+            return NULL;
+        }
+        // the module is already referenced, so we must free it
+        m = JS_VALUE_GET_PTR(val);
+        JS_FreeValue(ctx, val);
     } else {
-        size_t buf_len;
-        uint8_t *buf;
-        JSValue func_val;
-
-        buf = js_load_file(ctx, &buf_len, module_name);
-        if (!buf) {
-            JS_ThrowReferenceError(ctx, "could not load module filename '%s'",
-                                   module_name);
+        m = JS_NewCModule(ctx, module_name, default_module_init);
+        if (!m) {
+            JS_FreeValue(ctx, val);
             return NULL;
         }
-
-        /* compile the module */
-        func_val = JS_Eval(ctx, (char *)buf, buf_len, module_name,
-                           JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
-        js_free(ctx, buf);
-        if (JS_IsException(func_val))
-            return NULL;
-        if (js_module_set_import_meta(ctx, func_val, true, false) < 0) {
-            JS_FreeValue(ctx, func_val);
-            return NULL;
-        }
-        /* the module is already referenced, so we must free it */
-        m = JS_VALUE_GET_PTR(func_val);
-        JS_FreeValue(ctx, func_val);
+        // only export the "default" symbol which will contain the string
+        // or JSON object
+        JS_AddModuleExport(ctx, m, "default");
+        JS_SetModulePrivateValue(ctx, m, val);
     }
     return m;
+}
+
+JSModuleDef *js_module_loader(JSContext *ctx, const char *module_name,
+                              void *opaque, JSValueConst attributes)
+{
+    if (js__has_suffix(module_name, QJS_NATIVE_MODULE_SUFFIX))
+        return js_module_loader_so(ctx, module_name);
+    return js_module_load(ctx, module_name, opaque, attributes, js_load_file);
 }
 
 static JSValue js_std_exit(JSContext *ctx, JSValueConst this_val,
@@ -76418,19 +80019,27 @@ static bool is_stdio(FILE *f)
     return f == stdin || f == stdout || f == stderr;
 }
 
+static void safe_close(FILE *f, bool is_popen)
+{
+    if (!f)
+        return;
+    if (is_stdio(f))
+        return;
+    if (is_popen) {
+#if !defined(__wasi__)
+        pclose(f);
+#endif
+    } else {
+        fclose(f);
+    }
+}
+
 static void js_std_file_finalizer(JSRuntime *rt, JSValueConst val)
 {
     JSThreadState *ts = js_get_thread_state(rt);
     JSSTDFile *s = JS_GetOpaque(val, ts->std_file_class_id);
     if (s) {
-        if (s->f && !is_stdio(s->f)) {
-#if !defined(__wasi__)
-            if (s->is_popen)
-                pclose(s->f);
-            else
-#endif
-                fclose(s->f);
-        }
+        safe_close(s->f, s->is_popen);
         js_free_rt(rt, s);
     }
 }
@@ -76459,16 +80068,18 @@ static JSValue js_new_std_file(JSContext *ctx, FILE *f, bool is_popen)
     JSValue obj;
     obj = JS_NewObjectClass(ctx, ts->std_file_class_id);
     if (JS_IsException(obj))
-        return obj;
+        goto exception;
     s = js_mallocz(ctx, sizeof(*s));
-    if (!s) {
-        JS_FreeValue(ctx, obj);
-        return JS_EXCEPTION;
-    }
+    if (!s)
+        goto exception;
     s->is_popen = is_popen;
     s->f = f;
     JS_SetOpaque(obj, s);
     return obj;
+exception:
+    safe_close(f, is_popen);
+    JS_FreeValue(ctx, obj);
+    return JS_EXCEPTION;
 }
 
 static void js_set_error_object(JSContext *ctx, JSValueConst obj, int err)
@@ -76774,25 +80385,41 @@ static JSValue js_std_file_read_write(JSContext *ctx, JSValueConst this_val,
                                       int argc, JSValueConst *argv, int magic)
 {
     FILE *f = js_std_file_get(ctx, this_val);
+    bool is_write = (magic != 0);
     uint64_t pos, len;
     size_t size, ret;
+    const char *str;
     uint8_t *buf;
 
     if (!f)
         return JS_EXCEPTION;
-    if (JS_ToIndex(ctx, &pos, argv[1]))
+    pos = 0;
+    if (argc > 1 && JS_ToIndex(ctx, &pos, argv[1]))
         return JS_EXCEPTION;
-    if (JS_ToIndex(ctx, &len, argv[2]))
+    len = 0;
+    if (argc > 2 && JS_ToIndex(ctx, &len, argv[2]))
         return JS_EXCEPTION;
-    buf = JS_GetArrayBuffer(ctx, &size, argv[0]);
+    if (is_write && JS_IsString(argv[0])) {
+        str = JS_ToCStringLen(ctx, &size, argv[0]);
+        buf = (void *)str;
+    } else {
+        str = NULL;
+        buf = JS_GetArrayBuffer(ctx, &size, argv[0]);
+    }
     if (!buf)
         return JS_EXCEPTION;
+    if (pos > size)
+        pos = size;
+    if (argc < 3)
+        len = size - pos;
     if (pos + len > size)
-        return JS_ThrowRangeError(ctx, "read/write array buffer overflow");
-    if (magic)
+        len = size - pos;
+    if (is_write) {
         ret = fwrite(buf + pos, 1, len, f);
-    else
+    } else {
         ret = fread(buf + pos, 1, len, f);
+    }
+    JS_FreeCString(ctx, str);
     return JS_NewInt64(ctx, ret);
 }
 
@@ -77164,8 +80791,8 @@ static const JSCFunctionListEntry js_std_file_proto_funcs[] = {
     JS_CFUNC_DEF("fileno", 0, js_std_file_fileno ),
     JS_CFUNC_DEF("error", 0, js_std_file_error ),
     JS_CFUNC_DEF("clearerr", 0, js_std_file_clearerr ),
-    JS_CFUNC_MAGIC_DEF("read", 3, js_std_file_read_write, 0 ),
-    JS_CFUNC_MAGIC_DEF("write", 3, js_std_file_read_write, 1 ),
+    JS_CFUNC_MAGIC_DEF("read", 1, js_std_file_read_write, 0 ),
+    JS_CFUNC_MAGIC_DEF("write", 1, js_std_file_read_write, 1 ),
     JS_CFUNC_DEF("getline", 0, js_std_file_getline ),
     JS_CFUNC_MAGIC_DEF("readAsArrayBuffer", 0, js_std_file_readAs, 0 ),
     JS_CFUNC_MAGIC_DEF("readAsString", 0, js_std_file_readAs, 1 ),
@@ -77938,8 +81565,13 @@ static int handle_posted_message(JSRuntime *rt, JSContext *ctx,
 
 #endif // USE_WORKER
 
+/* flags for js_os_poll_internal */
+#define JS_OS_POLL_RUN_TIMERS  (1 << 0)
+#define JS_OS_POLL_WORKERS     (1 << 1)
+#define JS_OS_POLL_SIGNALS     (1 << 2)
+
 #if defined(_WIN32)
-static int js_os_poll(JSContext *ctx)
+static int js_os_poll_internal(JSContext *ctx, int timeout_ms, int flags)
 {
     JSRuntime *rt = JS_GetRuntime(ctx);
     JSThreadState *ts = js_get_thread_state(rt);
@@ -77950,13 +81582,17 @@ static int js_os_poll(JSContext *ctx)
 
     /* XXX: handle signals if useful */
 
-    if (js_os_run_timers(rt, ctx, ts, &min_delay))
-        return -1;
-    if (min_delay == 0)
-        return 0; // expired timer
-    if (min_delay < 0)
-        if (list_empty(&ts->os_rw_handlers) && list_empty(&ts->port_list))
-            return -1; /* no more events */
+    min_delay = timeout_ms;
+
+    if (flags & JS_OS_POLL_RUN_TIMERS) {
+        if (js_os_run_timers(rt, ctx, ts, &min_delay))
+            return -1;
+        if (min_delay == 0)
+            return 0; // expired timer
+        if (min_delay < 0)
+            if (list_empty(&ts->os_rw_handlers) && list_empty(&ts->port_list))
+                return -1; /* no more events */
+    }
 
     count = 0;
     list_for_each(el, &ts->os_rw_handlers) {
@@ -77967,13 +81603,15 @@ static int js_os_poll(JSContext *ctx)
             break;
     }
 
-    list_for_each(el, &ts->port_list) {
-        JSWorkerMessageHandler *port = list_entry(el, JSWorkerMessageHandler, link);
-        if (JS_IsNull(port->on_message_func))
-            continue;
-        handles[count++] = port->recv_pipe->waker.handle;
-        if (count == (int)countof(handles))
-            break;
+    if (flags & JS_OS_POLL_WORKERS) {
+        list_for_each(el, &ts->port_list) {
+            JSWorkerMessageHandler *port = list_entry(el, JSWorkerMessageHandler, link);
+            if (JS_IsNull(port->on_message_func))
+                continue;
+            handles[count++] = port->recv_pipe->waker.handle;
+            if (count == (int)countof(handles))
+                break;
+        }
     }
 
     if (count > 0) {
@@ -77981,7 +81619,7 @@ static int js_os_poll(JSContext *ctx)
         if (min_delay != -1)
             timeout = min_delay;
         ret = WaitForMultipleObjects(count, handles, FALSE, timeout);
-        if (ret < count) {
+        if (ret < (DWORD)count) {
             list_for_each(el, &ts->os_rw_handlers) {
                 rh = list_entry(el, JSOSRWHandler, link);
                 if (rh->fd == 0 && !JS_IsNull(rh->rw_func[0])) {
@@ -77990,25 +81628,42 @@ static int js_os_poll(JSContext *ctx)
                 }
             }
 
-            list_for_each(el, &ts->port_list) {
-                JSWorkerMessageHandler *port = list_entry(el, JSWorkerMessageHandler, link);
-                if (!JS_IsNull(port->on_message_func)) {
-                    JSWorkerMessagePipe *ps = port->recv_pipe;
-                    if (ps->waker.handle == handles[ret]) {
-                        if (handle_posted_message(rt, ctx, port))
-                            goto done;
+            if (flags & JS_OS_POLL_WORKERS) {
+                list_for_each(el, &ts->port_list) {
+                    JSWorkerMessageHandler *port = list_entry(el, JSWorkerMessageHandler, link);
+                    if (!JS_IsNull(port->on_message_func)) {
+                        JSWorkerMessagePipe *ps = port->recv_pipe;
+                        if (ps->waker.handle == handles[ret]) {
+                            if (handle_posted_message(rt, ctx, port))
+                                goto done;
+                        }
                     }
                 }
             }
         }
-    } else {
+    } else if (min_delay > 0) {
         Sleep(min_delay);
     }
 done:
     return 0;
 }
-#else // !defined(_WIN32)
+
 static int js_os_poll(JSContext *ctx)
+{
+    return js_os_poll_internal(ctx, -1,
+        JS_OS_POLL_RUN_TIMERS | JS_OS_POLL_WORKERS | JS_OS_POLL_SIGNALS);
+}
+
+int js_std_poll_io(JSContext *ctx, int timeout_ms)
+{
+    int ret = js_os_poll_internal(ctx, timeout_ms, 0);
+    /* map return codes: -1 on error stays -1, negative from handler becomes -2 */
+    if (ret < -1)
+        return -2;
+    return ret;
+}
+#else // !defined(_WIN32)
+static int js_os_poll_internal(JSContext *ctx, int timeout_ms, int flags)
 {
     JSRuntime *rt = JS_GetRuntime(ctx);
     JSThreadState *ts = js_get_thread_state(rt);
@@ -78017,8 +81672,11 @@ static int js_os_poll(JSContext *ctx)
     struct list_head *el;
     struct pollfd *pfd, *pfds, pfds_local[64];
 
+    min_delay = timeout_ms;
+
     /* only check signals in the main thread */
-    if (!ts->recv_pipe &&
+    if ((flags & JS_OS_POLL_SIGNALS) &&
+        !ts->recv_pipe &&
         unlikely(os_pending_signals != 0)) {
         JSOSSignalHandler *sh;
         uint64_t mask;
@@ -78033,13 +81691,15 @@ static int js_os_poll(JSContext *ctx)
         }
     }
 
-    if (js_os_run_timers(rt, ctx, ts, &min_delay))
-        return -1;
-    if (min_delay == 0)
-        return 0; // expired timer
-    if (min_delay < 0)
-        if (list_empty(&ts->os_rw_handlers) && list_empty(&ts->port_list))
-            return -1; /* no more events */
+    if (flags & JS_OS_POLL_RUN_TIMERS) {
+        if (js_os_run_timers(rt, ctx, ts, &min_delay))
+            return -1;
+        if (min_delay == 0)
+            return 0; // expired timer
+        if (min_delay < 0)
+            if (list_empty(&ts->os_rw_handlers) && list_empty(&ts->port_list))
+                return -1; /* no more events */
+    }
 
     nfds = 0;
     list_for_each(el, &ts->os_rw_handlers) {
@@ -78048,11 +81708,27 @@ static int js_os_poll(JSContext *ctx)
     }
 
 #ifdef USE_WORKER
-    list_for_each(el, &ts->port_list) {
-        JSWorkerMessageHandler *port = list_entry(el, JSWorkerMessageHandler, link);
-        nfds += !JS_IsNull(port->on_message_func);
+    if (flags & JS_OS_POLL_WORKERS) {
+        list_for_each(el, &ts->port_list) {
+            JSWorkerMessageHandler *port = list_entry(el, JSWorkerMessageHandler, link);
+            nfds += !JS_IsNull(port->on_message_func);
+        }
     }
 #endif // USE_WORKER
+
+    if (nfds == 0) {
+        if (min_delay > 0) {
+            struct timespec ts_sleep = {
+                .tv_sec = min_delay / 1000,
+                .tv_nsec = (min_delay % 1000) * 1000000L
+            };
+            uint64_t mask = os_pending_signals;
+            while (nanosleep(&ts_sleep, &ts_sleep)
+                && errno == EINTR
+                && mask == os_pending_signals);
+        }
+        return 0;
+    }
 
     pfd = pfds = pfds_local;
     if (nfds > (int)countof(pfds_local)) {
@@ -78070,11 +81746,13 @@ static int js_os_poll(JSContext *ctx)
     }
 
 #ifdef USE_WORKER
-    list_for_each(el, &ts->port_list) {
-        JSWorkerMessageHandler *port = list_entry(el, JSWorkerMessageHandler, link);
-        if (!JS_IsNull(port->on_message_func)) {
-            JSWorkerMessagePipe *ps = port->recv_pipe;
-            *pfd++ = (struct pollfd){ps->waker.read_fd, POLLIN, 0};
+    if (flags & JS_OS_POLL_WORKERS) {
+        list_for_each(el, &ts->port_list) {
+            JSWorkerMessageHandler *port = list_entry(el, JSWorkerMessageHandler, link);
+            if (!JS_IsNull(port->on_message_func)) {
+                JSWorkerMessagePipe *ps = port->recv_pipe;
+                *pfd++ = (struct pollfd){ps->waker.read_fd, POLLIN, 0};
+            }
         }
     }
 #endif // USE_WORKER
@@ -78084,6 +81762,10 @@ static int js_os_poll(JSContext *ctx)
     // i.e., it's probably good enough for now
     ret = 0;
     nfds = poll(pfds, nfds, min_delay);
+    if (nfds < 0) {
+        ret = -1;
+        goto done;
+    }
     for (pfd = pfds; nfds-- > 0; pfd++) {
         rh = find_rh(ts, pfd->fd);
         if (rh) {
@@ -78099,8 +81781,9 @@ static int js_os_poll(JSContext *ctx)
                 goto done;
                 /* must stop because the list may have been modified */
             }
-        } else {
+        }
 #ifdef USE_WORKER
+        else if (flags & JS_OS_POLL_WORKERS) {
             list_for_each(el, &ts->port_list) {
                 JSWorkerMessageHandler *port = list_entry(el, JSWorkerMessageHandler, link);
                 if (!JS_IsNull(port->on_message_func)) {
@@ -78111,32 +81794,42 @@ static int js_os_poll(JSContext *ctx)
                     }
                 }
             }
-#endif // USE_WORKER
         }
+#endif // USE_WORKER
     }
 done:
     if (pfds != pfds_local)
         js_free(ctx, pfds);
     return ret;
 }
-#endif // defined(_WIN32)
 
+static int js_os_poll(JSContext *ctx)
+{
+    return js_os_poll_internal(ctx, -1,
+        JS_OS_POLL_RUN_TIMERS | JS_OS_POLL_WORKERS | JS_OS_POLL_SIGNALS);
+}
+
+int js_std_poll_io(JSContext *ctx, int timeout_ms)
+{
+    int ret = js_os_poll_internal(ctx, timeout_ms, 0);
+    /* map return codes: -1 on error stays -1, negative from handler becomes -2 */
+    if (ret < -1)
+        return -2;
+    return ret;
+}
+#endif // defined(_WIN32)
 
 static JSValue make_obj_error(JSContext *ctx,
                               JSValue obj,
                               int err)
 {
-    JSValue arr;
+    JSValue vals[2];
+
     if (JS_IsException(obj))
         return obj;
-    arr = JS_NewArray(ctx);
-    if (JS_IsException(arr))
-        return JS_EXCEPTION;
-    JS_DefinePropertyValueUint32(ctx, arr, 0, obj,
-                                 JS_PROP_C_W_E);
-    JS_DefinePropertyValueUint32(ctx, arr, 1, JS_NewInt32(ctx, err),
-                                 JS_PROP_C_W_E);
-    return arr;
+    vals[0] = obj;
+    vals[1] = JS_NewInt32(ctx, err);
+    return JS_NewArrayFrom(ctx, countof(vals), vals);
 }
 
 static JSValue make_string_error(JSContext *ctx,
@@ -78281,6 +81974,53 @@ done:
     return make_obj_error(ctx, obj, err);
 #endif
 }
+
+#if !defined(_WIN32) && !defined(__wasi__)
+#define PAT "XXXXXX"
+#define PSZ (sizeof(PAT)-1)
+static JSValue js_os_mkdstemp(JSContext *ctx, JSValueConst this_val,
+                              int argc, JSValueConst *argv, int magic)
+{
+    char pat_s[32] = "tmp"PAT, *pat = pat_s;
+    const char *s;
+    size_t k, n;
+    JSValue val;
+    int err;
+
+    if (argc > 0) {
+        s = JS_ToCStringLen(ctx, &n, argv[0]);
+        if (!s)
+            return JS_EXCEPTION;
+        k = n;
+        if (n < PSZ || memcmp(&s[n-PSZ], PAT, PSZ))
+            k += PSZ;
+        if (k >= sizeof(pat_s))
+            pat = js_malloc(ctx, k+1);
+        if (pat) {
+            memcpy(pat, s, n);
+            if (n < k)
+                memcpy(&pat[n], PAT, PSZ);
+            pat[k] = '\0';
+        }
+        JS_FreeCString(ctx, s);
+        if (!pat)
+            return JS_EXCEPTION;
+    }
+    if (magic == 'd') {
+        err = 0;
+        if (!mkdtemp(pat))
+            err = -errno;
+    } else {
+        err = js_get_errno(mkstemp(pat));
+    }
+    val = JS_NewString(ctx, pat);
+    if (pat != pat_s)
+        js_free(ctx, pat);
+    return make_obj_error(ctx, val, err);
+}
+#undef PSZ
+#undef PAT
+#endif // !defined(_WIN32) && !defined(__wasi__)
 
 #if !defined(_WIN32)
 static int64_t timespec_to_ms(const struct timespec *tv)
@@ -78488,7 +82228,7 @@ static JSValue js_os_realpath(JSContext *ctx, JSValueConst this_val,
 }
 #endif
 
-#if !defined(_WIN32) && !defined(__wasi__)
+#if !defined(_WIN32) && !defined(__wasi__) && !(defined(__APPLE__) && (TARGET_OS_TV || TARGET_OS_WATCH))
 static JSValue js_os_symlink(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv)
 {
@@ -79027,6 +82767,7 @@ typedef struct {
     uint64_t buf[];
 } JSSABHeader;
 
+static JSRuntime *(*js_worker_new_runtime_func)(void);
 static JSContext *(*js_worker_new_context_func)(JSRuntime *rt);
 
 static int atomic_add_int(int *ptr, int v)
@@ -79150,20 +82891,25 @@ static JSClassDef js_worker_class = {
 
 static void worker_func(void *opaque)
 {
+    JSRuntime *(*new_runtime_func)(void);
+    JSContext *(*new_context_func)(JSRuntime *);
     WorkerFuncArgs *args = opaque;
     JSRuntime *rt;
     JSThreadState *ts;
     JSContext *ctx;
     JSValue val;
 
-    rt = JS_NewRuntime();
+    new_runtime_func = js_worker_new_runtime_func;
+    if (!new_runtime_func)
+        new_runtime_func = JS_NewRuntime;
+    rt = new_runtime_func();
     if (rt == NULL) {
         fprintf(stderr, "JS_NewRuntime failure");
         exit(1);
     }
     js_std_init_handlers(rt);
 
-    JS_SetModuleLoaderFunc(rt, NULL, js_module_loader, NULL);
+    JS_SetModuleLoaderFunc2(rt, NULL, js_module_loader, js_module_check_attributes, NULL);
 
     /* set the pipe to communicate with the parent */
     ts = js_get_thread_state(rt);
@@ -79172,9 +82918,13 @@ static void worker_func(void *opaque)
 
     /* function pointer to avoid linking the whole JS_NewContext() if
        not needed */
-    ctx = js_worker_new_context_func(rt);
+    new_context_func = js_worker_new_context_func;
+    if (!new_context_func)
+        new_context_func = JS_NewContext;
+    ctx = new_context_func(rt);
     if (ctx == NULL) {
         fprintf(stderr, "JS_NewContext failure");
+        exit(1);
     }
 
     JS_SetCanBlock(rt, true);
@@ -79435,6 +83185,13 @@ static const JSCFunctionListEntry js_worker_proto_funcs[] = {
 
 #endif /* USE_WORKER */
 
+void js_std_set_worker_new_runtime_func(JSRuntime *(*func)(void))
+{
+#ifdef USE_WORKER
+    js_worker_new_runtime_func = func;
+#endif
+}
+
 void js_std_set_worker_new_context_func(JSContext *(*func)(JSRuntime *rt))
 {
 #ifdef USE_WORKER
@@ -79528,6 +83285,10 @@ static const JSCFunctionListEntry js_os_funcs[] = {
     JS_CFUNC_DEF("chdir", 0, js_os_chdir ),
     JS_CFUNC_DEF("mkdir", 1, js_os_mkdir ),
     JS_CFUNC_DEF("readdir", 1, js_os_readdir ),
+#if !defined(_WIN32) && !defined(__wasi__)
+    JS_CFUNC_MAGIC_DEF("mkdtemp", 0, js_os_mkdstemp, 'd' ),
+    JS_CFUNC_MAGIC_DEF("mkstemp", 0, js_os_mkdstemp, 's' ),
+#endif
     /* st_mode constants */
     OS_FLAG(S_IFMT),
     OS_FLAG(S_IFIFO),
@@ -79547,7 +83308,7 @@ static const JSCFunctionListEntry js_os_funcs[] = {
 #if !defined(__wasi__)
     JS_CFUNC_DEF("realpath", 1, js_os_realpath ),
 #endif
-#if !defined(_WIN32) && !defined(__wasi__)
+#if !defined(_WIN32) && !defined(__wasi__) && !(defined(__APPLE__) && (TARGET_OS_TV || TARGET_OS_WATCH))
     JS_CFUNC_MAGIC_DEF("lstat", 1, js_os_stat, 1 ),
     JS_CFUNC_DEF("symlink", 2, js_os_symlink ),
     JS_CFUNC_DEF("readlink", 1, js_os_readlink ),
@@ -79908,6 +83669,39 @@ done:
     return JS_HasException(ctx);
 }
 
+int js_std_loop_once(JSContext *ctx)
+{
+    JSRuntime *rt = JS_GetRuntime(ctx);
+    JSThreadState *ts = js_get_thread_state(rt);
+    JSContext *ctx1;
+    int err, min_delay;
+
+    /* execute all pending jobs */
+    for(;;) {
+        err = JS_ExecutePendingJob(rt, &ctx1);
+        if (err < 0)
+            return -2; /* error */
+        if (err == 0)
+            break;
+    }
+
+    /* run at most one expired timer */
+    if (js_os_run_timers(rt, ctx, ts, &min_delay) < 0)
+        return -2; /* error in timer callback */
+
+    /* check if more work is pending */
+    if (JS_IsJobPending(rt))
+        return 0; /* more microtasks pending */
+
+    if (min_delay == 0)
+        return 0; /* timer ready to fire immediately */
+
+    if (min_delay > 0)
+        return min_delay; /* next timer delay in ms */
+
+    return -1; /* idle, no pending work */
+}
+
 /* Wait for a promise and execute pending jobs while waiting for
    it. Return the promise result or JS_EXCEPTION in case of promise
    rejection. */
@@ -79998,6 +83792,7 @@ static JSValue js_bjson_read(JSContext *ctx, JSValueConst this_val,
         return JS_EXCEPTION;
     if (JS_ToInt32(ctx, &flags, argv[3]))
         return JS_EXCEPTION;
+    flags &= ~JS_READ_OBJ_SAB;
     buf = JS_GetArrayBuffer(ctx, &size, argv[0]);
     if (!buf)
         return JS_EXCEPTION;
@@ -80017,6 +83812,7 @@ static JSValue js_bjson_write(JSContext *ctx, JSValueConst this_val,
 
     if (JS_ToInt32(ctx, &flags, argv[1]))
         return JS_EXCEPTION;
+    flags &= ~JS_WRITE_OBJ_SAB;
     buf = JS_WriteObject(ctx, &len, argv[0], flags);
     if (!buf)
         return JS_EXCEPTION;
@@ -80032,10 +83828,8 @@ static const JSCFunctionListEntry js_bjson_funcs[] = {
 #define DEF(x) JS_PROP_INT32_DEF(#x, JS_##x, JS_PROP_CONFIGURABLE)
     DEF(READ_OBJ_BYTECODE),
     DEF(READ_OBJ_REFERENCE),
-    DEF(READ_OBJ_SAB),
     DEF(WRITE_OBJ_BYTECODE),
     DEF(WRITE_OBJ_REFERENCE),
-    DEF(WRITE_OBJ_SAB),
     DEF(WRITE_OBJ_STRIP_DEBUG),
     DEF(WRITE_OBJ_STRIP_SOURCE),
 #undef DEF
