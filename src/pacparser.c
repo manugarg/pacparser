@@ -217,6 +217,38 @@ dns_resolve_ex(JSContext *ctx, JSValueConst UNUSED(this_val), int UNUSED(argc), 
   return JS_NewString(ctx, ipaddr);
 }
 
+// Shared helper for alert() and console.log(): concatenates all arguments with
+// spaces and prints them via the error printer (stderr by default). Intended
+// purely for debugging PAC scripts; production PAC files are not expected to
+// call these.
+static JSValue
+js_log_print(JSContext *ctx, int argc, JSValueConst *argv, const char *prefix)
+{
+  print_error("%s:", prefix);
+  for (int i = 0; i < argc; i++) {
+    const char *s = JS_ToCString(ctx, argv[i]);
+    if (!s) return JS_EXCEPTION;
+    print_error(" %s", s);
+    JS_FreeCString(ctx, s);
+  }
+  print_error("\n");
+  return JS_UNDEFINED;
+}
+
+// alert(msg) in JS context; routes message to the error printer.
+static JSValue
+pac_alert(JSContext *ctx, JSValueConst UNUSED(this_val), int argc, JSValueConst *argv)
+{
+  return js_log_print(ctx, argc, argv, "ALERT");
+}
+
+// console.log(...args) in JS context; routes message to the error printer.
+static JSValue
+pac_console_log(JSContext *ctx, JSValueConst UNUSED(this_val), int argc, JSValueConst *argv)
+{
+  return js_log_print(ctx, argc, argv, "LOG");
+}
+
 // myIpAddress in JS context; not available in core JavaScript.
 // returns 127.0.0.1 if not able to determine local ip.
 static JSValue
@@ -317,6 +349,15 @@ pacparser_init()
     JS_NewCFunction(ctx, dns_resolve_ex, "dnsResolveEx", 1));
   JS_SetPropertyStr(ctx, global, "myIpAddressEx",
     JS_NewCFunction(ctx, my_ip_ex, "myIpAddressEx", 0));
+
+  // Debug logging helpers for PAC scripts. Output goes through the error
+  // printer (stderr by default).
+  JS_SetPropertyStr(ctx, global, "alert",
+    JS_NewCFunction(ctx, pac_alert, "alert", 1));
+  JSValue console = JS_NewObject(ctx);
+  JS_SetPropertyStr(ctx, console, "log",
+    JS_NewCFunction(ctx, pac_console_log, "log", 1));
+  JS_SetPropertyStr(ctx, global, "console", console);
 
   // Evaluate pacUtils. Utility functions required to parse pac files.
   JSValue result = JS_Eval(ctx, pacUtils, strlen(pacUtils), "pac_utils",
