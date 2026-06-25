@@ -1,3 +1,14 @@
+# SonarCloud analysis. Auth uses the SONAR_TOKEN repo secret, which expires
+# (SonarCloud caps token lifetime at ~1 year). Because this repo changes
+# infrequently, the token often expires unnoticed and the next push/PR fails
+# here. C/C++ requires this token-based CI analysis, so the token can't be
+# dropped. To rotate it:
+#   1. Generate a new token at https://sonarcloud.io/account/security
+#      (type: Project Analysis Token, project: manugarg_pacparser, max expiry).
+#   2. Update the repo secret:
+#        gh secret set SONAR_TOKEN --repo manugarg/pacparser
+#      (or GitHub UI: Settings > Secrets and variables > Actions > SONAR_TOKEN)
+#   3. Re-run this workflow (or push) to confirm the analysis passes.
 name: SonarCloud
 on:
   push:
