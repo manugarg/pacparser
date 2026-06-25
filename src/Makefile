@@ -142,6 +142,27 @@ dist: all
 	PREFIX= $(MAKE) install DESTDIR=$${bindir}; \
 	zip -r $${bindir}.zip $${bindir}/.
 
+# Build .deb and .rpm packages from a staged install tree under /usr.
+# Requires fpm (https://github.com/jordansissel/fpm); the rpm output also
+# needs rpmbuild to be available.
+PKG_NAME = pacparser
+
+pkg: all
+	rm -rf pkgroot
+	PREFIX=/usr $(MAKE) install DESTDIR=pkgroot
+	pkgver=$$(echo "$(VERSION)" | sed -e 's/^v//' -e 's/-/./g'); \
+	for type in deb rpm; do \
+	  fpm -s dir -t $$type --force \
+	    -n $(PKG_NAME) -v $$pkgver \
+	    --license "LGPL-3.0" \
+	    --description "C library and CLI (pactester) to parse proxy auto-config (PAC) files" \
+	    --url "https://github.com/manugarg/pacparser" \
+	    --maintainer "Manu Garg <manugarg@gmail.com>" \
+	    --after-install pkg/ldconfig.sh \
+	    --after-remove pkg/ldconfig.sh \
+	    -C pkgroot usr; \
+	done
+
 # Targets to build python module
 pymod: pacparser.o pacparser.h quickjs/libquickjs.a
 	cd pymod && ARCHFLAGS="" $(PYTHON) setup.py build

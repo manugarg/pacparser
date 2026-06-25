@@ -21,6 +21,9 @@
 tools/packages
 *.dmg
 *.pkg
+*.deb
+*.rpm
+src/pkgroot
 
 # Other build files
 *buildstamp
