@@ -4,9 +4,15 @@ For Python module, it's recommended to use "pip" for the installation:
 
 For other pre-built binaries, download them from:
   https://github.com/manugarg/pacparser/releases
-  
+
 You can also download the latest binaries from the Github actions artifacts:
   https://github.com/manugarg/pacparser/actions
+
+On Debian/Ubuntu (.deb) and RHEL/Fedora (.rpm), download the package for your
+distro from the releases page above and install it with your package manager
+(this installs libpacparser, pactester, headers, and man pages):
+  sudo apt install ./pacparser_<version>_amd64.deb     # Debian/Ubuntu
+  sudo dnf install ./pacparser-<version>.x86_64.rpm     # RHEL/Fedora
 
 
 Compile From Source:

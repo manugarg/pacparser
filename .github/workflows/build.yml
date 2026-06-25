@@ -119,6 +119,24 @@ jobs:
           name: pacparser-dist-${{ matrix.os }}
           path: src/dist
 
+      - name: Build deb and rpm packages (ubuntu)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+          sudo gem install --no-document fpm
+          make -C src pkg
+          ls src/*.deb src/*.rpm
+
+      - name: Upload packages (ubuntu)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: pacparser-dist-packages
+          path: |
+            src/*.deb
+            src/*.rpm
+
   build-release-binaries:
     needs: build
     runs-on: ubuntu-latest
@@ -132,6 +150,7 @@ jobs:
         run: |
           ls -R .
           mv pacparser-dist-*/*.zip .
+          mv pacparser-dist-packages/*.deb pacparser-dist-packages/*.rpm .
           file=$(ls pacparser-*-ubuntu*.zip)
           name=${file/ubuntu/windows}
           name=${name/.zip/}
@@ -142,7 +161,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: pacparser-release-binaries
-          path: pacparser-*.zip
+          path: |
+            pacparser-*.zip
+            *.deb
+            *.rpm
 
   python-module-build:
     strategy:
