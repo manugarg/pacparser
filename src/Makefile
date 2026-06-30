@@ -64,7 +64,8 @@ ifeq ($(OS_ARCH),Darwin)
 endif
 
 PREFIX ?= /usr
-MAINT_CFLAGS := -g -Wall -DVERSION=$(VERSION)
+# -pthread: pacparser serializes its global engine state with a pthread mutex.
+MAINT_CFLAGS := -g -Wall -pthread -DVERSION=$(VERSION)
 
 ifndef PYTHON
   PYTHON = python

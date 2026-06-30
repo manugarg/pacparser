@@ -148,6 +148,9 @@ def main(patched_func):
         extra_objects = ["../pacparser.o", "../quickjs/libquickjs.a"]
         libraries = ["ws2_32"]
         extra_link_args = ["-static-libgcc", "-L" + python_home]
+    else:
+        # pacparser.o uses a pthread mutex to serialize its global engine state.
+        extra_link_args = ["-pthread"]
 
     pacparser_module = setuptools.Extension(
         "_pacparser",

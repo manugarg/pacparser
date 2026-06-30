@@ -51,6 +51,51 @@
 #  define UNUSED(x) UNUSED_ ## x
 #endif
 
+// ---------------------------------------------------------------------------
+// Thread-safety guard.
+//
+// pacparser keeps all of its JavaScript engine state in process-global
+// variables (rt/ctx/global/proxy_result below) and creates no threads of its
+// own. To keep multi-threaded embedders from racing -- most importantly, to
+// stop one thread from freeing the engine in pacparser_cleanup() while another
+// is still using it in pacparser_find_proxy() -- every public API entry point
+// runs under this single global lock.
+//
+// The lock is recursive so that the composite entry points
+// (pacparser_just_find_proxy, pacparser_parse_pac_file, ...) can call other
+// public APIs without deadlocking. Note this only serializes calls; pacparser
+// remains a single global interpreter and never runs PAC scripts concurrently.
+#ifdef _WIN32
+static CRITICAL_SECTION pacparser_lock;          // recursive by default
+static INIT_ONCE pacparser_lock_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK init_lock(PINIT_ONCE o, PVOID p, PVOID *c) {
+  (void)o; (void)p; (void)c;
+  InitializeCriticalSection(&pacparser_lock);
+  return TRUE;
+}
+static void lock_acquire(void) {
+  InitOnceExecuteOnce(&pacparser_lock_once, init_lock, NULL, NULL);
+  EnterCriticalSection(&pacparser_lock);
+}
+static void lock_release(void) { LeaveCriticalSection(&pacparser_lock); }
+#else
+#include <pthread.h>
+static pthread_mutex_t pacparser_lock;
+static pthread_once_t pacparser_lock_once = PTHREAD_ONCE_INIT;
+static void init_lock(void) {
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+  pthread_mutex_init(&pacparser_lock, &attr);
+  pthread_mutexattr_destroy(&attr);
+}
+static void lock_acquire(void) {
+  pthread_once(&pacparser_lock_once, init_lock);
+  pthread_mutex_lock(&pacparser_lock);
+}
+static void lock_release(void) { pthread_mutex_unlock(&pacparser_lock); }
+#endif
+
 static char my_ip_buf[INET6_ADDRSTRLEN+1];
 static int my_ip_set = 0;
 
@@ -68,7 +113,9 @@ static pacparser_error_printer error_printer_func = &_default_error_printer;
 void
 pacparser_set_error_printer(pacparser_error_printer func)
 {
+  lock_acquire();
   error_printer_func = func;
+  lock_release();
 }
 
 static int print_error(const char *fmt, ...)
@@ -294,8 +341,8 @@ static JSValue global;
 static const char *proxy_result = NULL;
 
 // Set my (client's) IP address to a custom value.
-int
-pacparser_setmyip(const char *ip)
+static int
+setmyip_impl(const char *ip)
 {
   if (strlen(ip) > INET6_ADDRSTRLEN) {
     fprintf(stderr, "pacparser_setmyip: IP too long: %s\n", ip);
@@ -305,6 +352,15 @@ pacparser_setmyip(const char *ip)
   strcpy(my_ip_buf, ip);
   my_ip_set = 1;
   return 1;
+}
+
+int
+pacparser_setmyip(const char *ip)
+{
+  lock_acquire();
+  int ret = setmyip_impl(ip);
+  lock_release();
+  return ret;
 }
 
 // Deprecated: This function doesn't do anything.
@@ -322,8 +378,8 @@ pacparser_enable_microsoft_extensions()
 // - Initializes JavaScript engine,
 // - Exports dns_functions (defined above) to JavaScript context.
 // - Evaluates JavaScript code in pacUtils variable defined in pac_utils.h.
-int                                     // 0 (=Failure) or 1 (=Success)
-pacparser_init()
+static int                              // 0 (=Failure) or 1 (=Success)
+init_impl(void)
 {
   char *error_prefix = "pacparser.c: pacparser_init:";
   // Initialize JS engine
@@ -371,12 +427,21 @@ pacparser_init()
   return 1;
 }
 
+int
+pacparser_init(void)
+{
+  lock_acquire();
+  int ret = init_impl();
+  lock_release();
+  return ret;
+}
+
 // Parses the given PAC script string.
 //
 // Evaluates the given PAC script string in the JavaScript context created
 // by pacparser_init.
-int                                     // 0 (=Failure) or 1 (=Success)
-pacparser_parse_pac_string(const char *script)
+static int                              // 0 (=Failure) or 1 (=Success)
+parse_pac_string_impl(const char *script)
 {
   char *error_prefix = "pacparser.c: pacparser_parse_pac_string:";
   if (ctx == NULL) {
@@ -402,12 +467,21 @@ pacparser_parse_pac_string(const char *script)
   return 1;
 }
 
+int
+pacparser_parse_pac_string(const char *script)
+{
+  lock_acquire();
+  int ret = parse_pac_string_impl(script);
+  lock_release();
+  return ret;
+}
+
 // Parses the given PAC file.
 //
 // reads the given PAC file and evaluates it in the JavaScript context created
 // by pacparser_init.
-int                                     // 0 (=Failure) or 1 (=Success)
-pacparser_parse_pac_file(const char *pacfile)
+static int                              // 0 (=Failure) or 1 (=Success)
+parse_pac_file_impl(const char *pacfile)
 {
   char *script = NULL;
 
@@ -417,7 +491,7 @@ pacparser_parse_pac_file(const char *pacfile)
     return 0;
   }
 
-  int result = pacparser_parse_pac_string(script);
+  int result = parse_pac_string_impl(script);
   if (script != NULL) free(script);
 
   if (_debug()) {
@@ -426,6 +500,15 @@ pacparser_parse_pac_file(const char *pacfile)
   }
 
   return result;
+}
+
+int
+pacparser_parse_pac_file(const char *pacfile)
+{
+  lock_acquire();
+  int ret = parse_pac_file_impl(pacfile);
+  lock_release();
+  return ret;
 }
 
 // Parses PAC file (same as pacparser_parse_pac_file)
@@ -442,8 +525,8 @@ pacparser_parse_pac(const char *pacfile)
 // If JavaScript engine is intialized and findProxyForURL function is defined,
 // it evaluates code findProxyForURL(url,host) in JavaScript context and
 // returns the result.
-char *                                  // Proxy string or NULL if failed.
-pacparser_find_proxy(const char *url, const char *host)
+static char *                           // Proxy string or NULL if failed.
+find_proxy_impl(const char *url, const char *host)
 {
   char *error_prefix = "pacparser.c: pacparser_find_proxy:";
   if (_debug()) print_error("DEBUG: Finding proxy for URL: %s and Host:"
@@ -502,9 +585,18 @@ pacparser_find_proxy(const char *url, const char *host)
   return (char *)proxy_result;  // valid until next call or cleanup
 }
 
+char *
+pacparser_find_proxy(const char *url, const char *host)
+{
+  lock_acquire();
+  char *ret = find_proxy_impl(url, host);
+  lock_release();
+  return ret;
+}
+
 // Destroys JavaScript Engine.
-void
-pacparser_cleanup()
+static void
+cleanup_impl(void)
 {
   // Re-initialize config variables.
   my_ip_set = 0;
@@ -526,44 +618,63 @@ pacparser_cleanup()
   if (_debug()) print_error("DEBUG: Pacparser destroyed.\n");
 }
 
+void
+pacparser_cleanup(void)
+{
+  lock_acquire();
+  cleanup_impl();
+  lock_release();
+}
+
 // Finds proxy for the given PAC file, url and host.
 //
 // This function is a wrapper around functions pacparser_init,
 // pacparser_parse_pac, pacparser_find_proxy and pacparser_cleanup. If you just
 // want to find out proxy a given set of pac file, url and host, this is the
 // function to call.
-char *                                  // Proxy string or NULL if failed.
-pacparser_just_find_proxy(const char *pacfile,
-                         const char *url,
-                         const char *host)
+static char *                           // Proxy string or NULL if failed.
+just_find_proxy_impl(const char *pacfile,
+                     const char *url,
+                     const char *host)
 {
   char *proxy;
   char *out;
   int initialized_here = 0;
   char *error_prefix = "pacparser.c: pacparser_just_find_proxy:";
   if (!ctx) {
-    if (!pacparser_init()) {
+    if (!init_impl()) {
       print_error("%s %s\n", error_prefix, "Could not initialize pacparser");
       return NULL;
     }
     initialized_here = 1;
   }
-  if (!pacparser_parse_pac(pacfile)) {
+  if (!parse_pac_file_impl(pacfile)) {
     print_error("%s %s %s\n", error_prefix, "Could not parse pacfile",
 		  pacfile);
-    if (initialized_here) pacparser_cleanup();
+    if (initialized_here) cleanup_impl();
     return NULL;
   }
-  if (!(out = pacparser_find_proxy(url, host))) {
+  if (!(out = find_proxy_impl(url, host))) {
     print_error("%s %s %s\n", error_prefix,
 		  "Could not determine proxy for url", url);
-    if (initialized_here) pacparser_cleanup();
+    if (initialized_here) cleanup_impl();
     return NULL;
   }
   proxy = (char*) malloc(strlen(out) + 1);
   strcpy(proxy, out);
-  if (initialized_here) pacparser_cleanup();
+  if (initialized_here) cleanup_impl();
   return proxy;
+}
+
+char *
+pacparser_just_find_proxy(const char *pacfile,
+                         const char *url,
+                         const char *host)
+{
+  lock_acquire();
+  char *ret = just_find_proxy_impl(pacfile, url, host);
+  lock_release();
+  return ret;
 }
 
 #define QUOTEME_(x) #x
