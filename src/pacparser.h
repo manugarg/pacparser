@@ -33,6 +33,15 @@ extern "C" {
 ///       files. See project homepage: http://github.com/pacparser/pacparser
 ///       for more information.
 /// @author Manu Garg <manugarg@gmail.com>
+///
+/// @note **Thread safety:** pacparser keeps all engine state in process-global
+///       variables and creates no threads of its own. The API is not
+///       thread-safe; there is a single, shared parser instance per process.
+///       Callers in multi-threaded programs must serialize all pacparser_*
+///       calls with their own lock. In particular, do not call
+///       pacparser_cleanup() while another thread is executing
+///       pacparser_find_proxy() or pacparser_parse_pac*(): doing so frees
+///       state that is still in use and crashes the process.
 
 /// @brief Initializes pac parser.
 /// @returns 0 on failure and 1 on success.

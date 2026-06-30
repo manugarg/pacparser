@@ -95,6 +95,20 @@ manugarg@hobbiton:~$ ./pactest wpad.dat http://www.google.com www.google.com
 PROXY proxy1.manugarg.com:3128; PROXY proxy2.manugarg.com:3128; DIRECT
 ```
 
+#### Thread safety
+pacparser keeps all of its JavaScript engine state (the QuickJS runtime and
+context, the parsed PAC script, and the last result) in process-global
+variables, and the library creates no threads of its own. The API is therefore
+**not thread-safe**: there is a single, shared parser instance per process.
+
+If you use pacparser from a multi-threaded program, you must serialize **all**
+calls into the library (`pacparser_init`, `pacparser_parse_pac*`,
+`pacparser_find_proxy`, `pacparser_setmyip`, `pacparser_cleanup`, ...) with your
+own lock. In particular, never call `pacparser_cleanup()` while another thread
+is inside `pacparser_find_proxy()` or `pacparser_parse_pac*()`: cleanup frees
+the QuickJS runtime/context that the other thread is still using, which crashes
+the process (and is a use-after-free in builds compiled with `-DNDEBUG`).
+
 #### Platforms
 pacparser has been tested to work on Linux (all architectures supported by
 Debian), FreeBSD, Mac OS X and Win32 systems.
