@@ -37,6 +37,15 @@ src/pac_utils_dump
 # build
 **build
 
+__pycache__
+
+# C sources copied into pymod by sdist and wheel builds
+src/pymod/pacparser.c
+src/pymod/pacparser.h
+src/pymod/pac_utils.h
+src/pymod/quickjs
+src/pymod/version.mk
+
 # Sonar scanner
 .scannerwork
 
