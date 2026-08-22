@@ -1,5 +1,6 @@
 include pacparser_py.c
 include pacparser/__init__.py
+include pacparser/pactester.py
 include pacparser.h
 include pacparser.c
 include pac_utils.h

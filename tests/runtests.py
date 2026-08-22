@@ -23,6 +23,7 @@
 import getopt
 import glob
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -35,6 +36,38 @@ def module_path(tests_dir):
   
   return glob.glob(os.path.join(builddir, 'lib*%s' % py_ver))[0]
   
+def run_cli_tests(pacfile, testdata, pacparser_module_path):
+  # Run the same testdata lines through the python command line tool
+  # (python -m pacparser.pactester), the way runtests.sh does for the C
+  # pactester.
+  env = dict(os.environ)
+  env['PYTHONPATH'] = (pacparser_module_path + os.pathsep +
+                       env.get('PYTHONPATH', ''))
+  f = open(testdata)
+  for line in f:
+    comment = ''
+    if '#' in line:
+      comment = line.split('#', 1)[1]
+      line = line.split('#', 1)[0].strip()
+    if not line:
+      continue
+    if ('NO_INTERNET' in os.environ and os.environ['NO_INTERNET'] and
+        'INTERNET_REQUIRED' in comment):
+      continue
+    (params, expected_result) = line.strip().split('|')
+    cmd = [sys.executable, '-m', 'pacparser.pactester', '-p', pacfile]
+    cmd += params.split()
+    p = subprocess.run(cmd, env=env, stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE, text=True)
+    if p.returncode != 0:
+      raise Exception('CLI test failed: %s returned %d\nstdout: %s\n'
+                      'stderr: %s'
+                      % (' '.join(cmd), p.returncode, p.stdout, p.stderr))
+    if p.stdout.strip() != expected_result:
+      raise Exception('CLI test failed. Got "%s", expected "%s"'
+                      % (p.stdout.strip(), expected_result))
+  f.close()
+
 def runtests(pacfile, testdata, tests_dir):
   try:
     pacparser_module_path = module_path(tests_dir)
@@ -103,6 +136,8 @@ def runtests(pacfile, testdata, tests_dir):
   if actual_stderr != expected_stderr:
     raise Exception('Logging test failed: stderr mismatch\nExpected:\n%s\nGot:\n%s' %
                     (expected_stderr, actual_stderr))
+
+  run_cli_tests(pacfile, testdata, pacparser_module_path)
 
   print('All tests were successful.')
 

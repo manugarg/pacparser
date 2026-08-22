@@ -274,7 +274,12 @@ def main(patched_func):
         license="LGPL",
         ext_package="pacparser",
         ext_modules=[pacparser_module],
-        py_modules=["pacparser.__init__"],
+        py_modules=["pacparser.__init__", "pacparser.pactester"],
+        entry_points={
+            "console_scripts": [
+                "pactester = pacparser.pactester:main",
+            ],
+        },
     )
 
 
