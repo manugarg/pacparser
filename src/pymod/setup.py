@@ -29,11 +29,15 @@ import glob
 import os
 import platform
 import re
+import shlex
 import setuptools
+import setuptools.command.sdist
 import shutil
 import subprocess
 import sys
+import sysconfig
 
+from distutils.command.clean import clean as _clean_cmd
 from unittest.mock import patch
 
 
@@ -76,11 +80,15 @@ def pacparser_version():
     ):
         return git_version()
 
-    # Check if we have version.mk. It's added in the manual release tarball.
-    version_file = os.path.join(setup_dir(), "..", "version.mk")
-    if os.path.exists(version_file):
-        with open(version_file) as f:
-            return sanitize_version(f.read().replace("VERSION=", ""))
+    # Check if we have version.mk. It's added in the manual release tarball
+    # (next to src/) and in the python sdist (at its root).
+    for version_file in (
+        os.path.join(setup_dir(), "..", "version.mk"),
+        os.path.join(setup_dir(), "version.mk"),
+    ):
+        if os.path.exists(version_file):
+            with open(version_file) as f:
+                return sanitize_version(f.read().replace("VERSION=", ""))
 
     return sanitize_version(os.environ.get("PACPARSER_VERSION", "1.0.0"))
 
@@ -123,20 +131,93 @@ class DistCmd(setuptools.Command):
         )
 
 
+class SDistCmd(setuptools.command.sdist.sdist):
+    """Build pacparser python source distribution."""
+
+    description = "Build pacparser python source distribution."
+
+    def run(self):
+        # The sdist must be buildable on its own, so pull in the C sources
+        # that pacparser_py.c needs to compile and link, along with a
+        # version.mk pinning the version (there is no git metadata in the
+        # sdist).
+        for name in ("pacparser.h", "pacparser.c", "pac_utils.h"):
+            shutil.copy(os.path.join("..", name), name)
+        if not os.path.isdir("quickjs"):
+            os.mkdir("quickjs")
+            for name in ("quickjs.c", "quickjs.h"):
+                shutil.copy(
+                    os.path.join("..", "quickjs", name), os.path.join("quickjs", name)
+                )
+        with open("version.mk", "w") as f:
+            f.write("VERSION=%s\n" % pacparser_version())
+        setuptools.command.sdist.sdist.run(self)
+
+
+class CleanCmd(_clean_cmd):
+    """Clean pacparser python build artifacts."""
+
+    def run(self):
+        _clean_cmd.run(self)
+        # Remove the C sources copied in by the sdist and wheel builds.
+        for name in ("pacparser.h", "pacparser.c", "pac_utils.h", "version.mk"):
+            if os.path.exists(name):
+                os.remove(name)
+        if os.path.isdir("quickjs"):
+            shutil.rmtree("quickjs")
+
+
+def build_c_objects():
+    """Compile pacparser.o and quickjs/libquickjs.a from the C sources.
+
+    The sdist ships the C sources but no prebuilt objects, so they have to
+    be built before the _pacparser extension can be linked.
+    """
+    cc = shlex.split(sysconfig.get_config_var("CC") or "cc")
+    ar = shlex.split(sysconfig.get_config_var("AR") or "ar")
+    if not os.path.exists(os.path.join("quickjs", "libquickjs.a")):
+        quickjs_obj = os.path.join("quickjs", "quickjs.o")
+        if not os.path.exists(quickjs_obj):
+            subprocess.check_call(
+                cc + ["-fPIC", "-c", os.path.join("quickjs", "quickjs.c"),
+                      "-o", quickjs_obj]
+            )
+        subprocess.check_call(
+            ar + ["rcs", os.path.join("quickjs", "libquickjs.a"), quickjs_obj]
+        )
+    if not os.path.exists("pacparser.o"):
+        subprocess.check_call(
+            cc + ["-g", "-Wall", "-DVERSION=%s" % pacparser_version(),
+                  "-Iquickjs", "-fPIC", "-c", "pacparser.c",
+                  "-o", "pacparser.o"]
+        )
+
+
 @patch("setuptools._distutils.cygwinccompiler.get_msvcr")
 def main(patched_func):
     python_home = os.path.dirname(sys.executable)
 
-    extra_objects = []
     obj_search_path = {
         "pacparser.o": ["..", "."],
-        "libquickjs.a": ["../quickjs", "."],
+        "libquickjs.a": ["../quickjs", "quickjs", "."],
     }
+    found_objects = {}
     for obj, paths in obj_search_path.items():
         for path in paths:
             if os.path.exists(os.path.join(path, obj)):
-                extra_objects.append(os.path.join(path, obj))
+                found_objects[obj] = os.path.join(path, obj)
                 break
+
+    # When building from the sdist, the C sources are present but the
+    # prebuilt objects are not, so compile them.
+    if len(found_objects) < len(obj_search_path) and sys.platform != "win32":
+        build_c_objects()
+        found_objects["pacparser.o"] = found_objects.get(
+            "pacparser.o", "pacparser.o")
+        found_objects["libquickjs.a"] = found_objects.get(
+            "libquickjs.a", os.path.join("quickjs", "libquickjs.a"))
+
+    extra_objects = list(found_objects.values())
 
     libraries = []
     extra_link_args = []
@@ -151,7 +232,7 @@ def main(patched_func):
 
     pacparser_module = setuptools.Extension(
         "_pacparser",
-        include_dirs=[".."],
+        include_dirs=["..", "."],
         sources=["pacparser_py.c"],
         libraries=libraries,
         extra_link_args=extra_link_args,
@@ -159,7 +240,9 @@ def main(patched_func):
     )
     setuptools.setup(
         cmdclass={
+            "clean": CleanCmd,
             "dist": DistCmd,
+            "sdist": SDistCmd,
         },
         name="pacparser",
         version=pacparser_version(),

@@ -1,2 +1,8 @@
 include pacparser_py.c
-include pacparser/*
+include pacparser/__init__.py
+include pacparser.h
+include pacparser.c
+include pac_utils.h
+include version.mk
+include quickjs/quickjs.c
+include quickjs/quickjs.h
