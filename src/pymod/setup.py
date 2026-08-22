@@ -208,9 +208,16 @@ def main(patched_func):
                 found_objects[obj] = os.path.join(path, obj)
                 break
 
-    # When building from the sdist, the C sources are present but the
-    # prebuilt objects are not, so compile them.
-    if len(found_objects) < len(obj_search_path) and sys.platform != "win32":
+    # When building from the sdist, the C sources are copied to the setup
+    # directory but the prebuilt objects are not, so compile them. The
+    # copied pacparser.c is the marker for the sdist layout; in the source
+    # tree the sources live in the parent directory and are built by the
+    # Makefile.
+    if (
+        len(found_objects) < len(obj_search_path)
+        and sys.platform != "win32"
+        and os.path.exists("pacparser.c")
+    ):
         build_c_objects()
         found_objects["pacparser.o"] = found_objects.get(
             "pacparser.o", "pacparser.o")
