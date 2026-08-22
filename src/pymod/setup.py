@@ -159,8 +159,14 @@ class CleanCmd(_clean_cmd):
 
     def run(self):
         _clean_cmd.run(self)
-        # Remove the C sources copied in by the sdist and wheel builds.
-        for name in ("pacparser.h", "pacparser.c", "pac_utils.h", "version.mk"):
+        if self.dry_run:
+            return
+        # Remove the C sources and objects copied in by the sdist and
+        # wheel builds.
+        for name in (
+            "pacparser.h", "pacparser.c", "pac_utils.h", "version.mk",
+            "pacparser.o",
+        ):
             if os.path.exists(name):
                 os.remove(name)
         if os.path.isdir("quickjs"):
@@ -212,11 +218,15 @@ def main(patched_func):
     # directory but the prebuilt objects are not, so compile them. The
     # copied pacparser.c is the marker for the sdist layout; in the source
     # tree the sources live in the parent directory and are built by the
-    # Makefile.
+    # Makefile. Only do this for commands that build the extension, so
+    # that other commands (sdist, egg_info, clean, ...) do not require a
+    # C toolchain.
+    build_commands = ("build", "build_ext", "bdist", "bdist_wheel", "install")
     if (
         len(found_objects) < len(obj_search_path)
         and sys.platform != "win32"
         and os.path.exists("pacparser.c")
+        and any(cmd in build_commands for cmd in sys.argv[1:])
     ):
         build_c_objects()
         found_objects["pacparser.o"] = found_objects.get(
