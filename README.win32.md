@@ -41,7 +41,7 @@ Building pacparser on Windows:
 
 ### In C programs:
 
-Make sure that you have pacparser.dll in the sytem path somewhere
+Make sure that you have pacparser.dll in the system path somewhere
 (current directory would do just fine for testing purpose).
 ```
   Change to your program's directory:
