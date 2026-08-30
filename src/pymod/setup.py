@@ -239,7 +239,7 @@ def main(patched_func):
 
     extra_objects = list(found_objects.values())
 
-    libraries = []
+    libraries = ["pthread"]
     extra_link_args = []
 
     if sys.platform == "win32":
