@@ -217,7 +217,7 @@ jobs:
           python -m pip install wheel
           cd src/pymod && python setup.py bdist_wheel
 
-      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: src_changes
         with:
           filters: |
@@ -294,7 +294,7 @@ jobs:
             cc -g -Wall -DVERSION=$PACPARSER_VERSION -Iquickjs -fPIC -c pacparser.c -o pacparser.o &&
             cp quickjs/libquickjs.a .
 
-      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: src_changes
         with:
           filters: |
