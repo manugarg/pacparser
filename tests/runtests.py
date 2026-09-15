@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 def module_path(tests_dir):
-  py_ver = '*'.join([str(x) for x in sys.version_info[0:2]])
+  py_ver = f"{sys.version_info[0]}{sys.version_info[1]}{sys.abiflags}"
   
   builddir = os.path.join(tests_dir, '..', 'src', 'pymod', 'build')
   print('Build dir: %s', builddir)
