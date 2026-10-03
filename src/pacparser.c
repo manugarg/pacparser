@@ -99,7 +99,8 @@ read_file_into_str(const char *filename)
   if (file_size == -1) goto error2;
   if (fseek(fptr, 0L, SEEK_SET) != 0) goto error2;
 
-  char *str = (char*) malloc(file_size+1);
+  // calloc zero-fills the buffer, so the string is already NUL-terminated.
+  char *str = (char*) calloc(file_size+1, 1);
   if (str == NULL) goto error2;
 
   // Read the file into the string
@@ -109,12 +110,6 @@ read_file_into_str(const char *filename)
     goto error2;
   }
 
-  // This check should not be needed but adding this satisfies
-  // sonarlint static analysis, otherwise it complains about tainted
-  // index.
-  if (bytes_read < file_size+1) {
-    str[bytes_read] = '\0';
-  }
   fclose(fptr);
   return str;
 error2:
