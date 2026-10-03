@@ -27,7 +27,9 @@ import sys
 import tempfile
 
 def module_path(tests_dir):
-  py_ver = f"{sys.version_info[0]}{sys.version_info[1]}{sys.abiflags}"
+  # sys.abiflags (e.g. "t" for free-threaded builds) is not available on
+  # Windows for all Python versions.
+  py_ver = f"{sys.version_info[0]}{sys.version_info[1]}{getattr(sys, 'abiflags', '')}"
   
   builddir = os.path.join(tests_dir, '..', 'src', 'pymod', 'build')
   print('Build dir: %s', builddir)
