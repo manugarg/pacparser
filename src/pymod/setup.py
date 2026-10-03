@@ -76,11 +76,18 @@ def git_version():
     )
 
 
+def in_git_repo():
+    try:
+        return subprocess.call(
+            "git rev-parse --git-dir".split(" "), stderr=subprocess.DEVNULL
+        ) == 0
+    except OSError:
+        # git is not installed.
+        return False
+
+
 def pacparser_version():
-    if (
-        subprocess.call("git rev-parse --git-dir".split(" "), stderr=subprocess.DEVNULL)
-        == 0
-    ):
+    if in_git_repo():
         return git_version()
 
     # Check if we have version.mk. It's added in the manual release tarball
@@ -176,14 +183,48 @@ class CleanCmd(_clean_cmd):
             shutil.rmtree("quickjs")
 
 
+def find_build_tool(var, default):
+    """Return the command (as an argv list) for the build tool named by var.
+
+    The environment variable wins, then Python's sysconfig value, then the
+    default. Cross-compiled Pythons record the build machine's toolchain in
+    sysconfig, which usually doesn't exist where the module is being
+    installed, so a sysconfig value that isn't runnable is skipped.
+    """
+    if os.environ.get(var):
+        cmd = shlex.split(os.environ[var])
+        if not shutil.which(cmd[0]):
+            sys.exit("%s is set to '%s', but '%s' was not found." %
+                     (var, os.environ[var], cmd[0]))
+        return cmd
+
+    cmd = shlex.split(sysconfig.get_config_var(var) or "")
+    if cmd and shutil.which(cmd[0]):
+        return cmd
+
+    if not shutil.which(default):
+        tried = "'%s'" % default
+        if cmd:
+            tried = "'%s' (from Python's build configuration) or %s" % (
+                cmd[0], tried)
+        sys.exit(
+            "Building pacparser from source needs a C toolchain, but %s was "
+            "not found. Install one, or point the %s environment variable at "
+            "it." % (tried, var))
+    # Export the fallback so that setuptools compiles the extension itself
+    # with the same tool instead of the unusable sysconfig one.
+    os.environ[var] = default
+    return [default]
+
+
 def build_c_objects():
     """Compile pacparser.o and quickjs/libquickjs.a from the C sources.
 
     The sdist ships the C sources but no prebuilt objects, so they have to
     be built before the _pacparser extension can be linked.
     """
-    cc = shlex.split(sysconfig.get_config_var("CC") or "cc")
-    ar = shlex.split(sysconfig.get_config_var("AR") or "ar")
+    cc = find_build_tool("CC", "cc")
+    ar = find_build_tool("AR", "ar")
     if not os.path.exists(os.path.join("quickjs", "libquickjs.a")):
         quickjs_obj = os.path.join("quickjs", "quickjs.o")
         if not os.path.exists(quickjs_obj):
