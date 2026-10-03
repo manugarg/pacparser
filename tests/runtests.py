@@ -27,9 +27,12 @@ import sys
 import tempfile
 
 def module_path(tests_dir):
-  # sys.abiflags (e.g. "t" for free-threaded builds) is not available on
-  # Windows for all Python versions.
-  py_ver = f"{sys.version_info[0]}{sys.version_info[1]}{getattr(sys, 'abiflags', '')}"
+  # Older setuptools name the build directory with a dotted version
+  # ("lib.linux-x86_64-3.8"), newer ones without ("...-cpython-312"), hence
+  # the wildcard. sys.abiflags (e.g. "t" for free-threaded builds) is not
+  # available on Windows for all Python versions.
+  py_ver = '*'.join([str(x) for x in sys.version_info[0:2]])
+  py_ver += getattr(sys, 'abiflags', '')
   
   builddir = os.path.join(tests_dir, '..', 'src', 'pymod', 'build')
   print('Build dir: %s', builddir)
