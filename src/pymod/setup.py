@@ -191,8 +191,8 @@ def find_build_tool(var, default):
     sysconfig, which usually doesn't exist where the module is being
     installed, so a sysconfig value that isn't runnable is skipped.
     """
-    if os.environ.get(var):
-        cmd = shlex.split(os.environ[var])
+    cmd = shlex.split(os.environ.get(var, ""))
+    if cmd:
         if not shutil.which(cmd[0]):
             sys.exit("%s is set to '%s', but '%s' was not found." %
                      (var, os.environ[var], cmd[0]))
@@ -217,15 +217,14 @@ def find_build_tool(var, default):
     return [default]
 
 
-def build_c_objects():
+def build_c_objects(cc):
     """Compile pacparser.o and quickjs/libquickjs.a from the C sources.
 
     The sdist ships the C sources but no prebuilt objects, so they have to
     be built before the _pacparser extension can be linked.
     """
-    cc = find_build_tool("CC", "cc")
-    ar = find_build_tool("AR", "ar")
     if not os.path.exists(os.path.join("quickjs", "libquickjs.a")):
+        ar = find_build_tool("AR", "ar")
         quickjs_obj = os.path.join("quickjs", "quickjs.o")
         if not os.path.exists(quickjs_obj):
             subprocess.check_call(
@@ -266,13 +265,19 @@ def main(patched_func):
     # that other commands (sdist, egg_info, clean, ...) do not require a
     # C toolchain.
     build_commands = ("build", "build_ext", "bdist", "bdist_wheel", "install")
+    building = sys.platform != "win32" and any(
+        cmd in build_commands for cmd in sys.argv[1:])
+    if building:
+        # Resolve the compiler even when the objects already exist: this is
+        # also what makes setuptools use a working compiler for the
+        # extension itself.
+        cc = find_build_tool("CC", "cc")
     if (
         len(found_objects) < len(obj_search_path)
-        and sys.platform != "win32"
+        and building
         and os.path.exists("pacparser.c")
-        and any(cmd in build_commands for cmd in sys.argv[1:])
     ):
-        build_c_objects()
+        build_c_objects(cc)
         found_objects["pacparser.o"] = found_objects.get(
             "pacparser.o", "pacparser.o")
         found_objects["libquickjs.a"] = found_objects.get(
