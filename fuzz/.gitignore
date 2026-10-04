@@ -1,0 +1,7 @@
+# Build artifacts produced by build.sh
+*.o
+fuzz_pac
+*.dSYM/
+crash-*
+leak-*
+timeout-*
