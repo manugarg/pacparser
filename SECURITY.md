@@ -16,9 +16,10 @@ file, URL, or host name.
 The following are **out of scope**. Reports about them will be closed
 without a security advisory, CVE, or credit:
 
-- Build-time and install-time issues that require an attacker to already
-  have write access to the build machine's filesystem (e.g. planting files
-  in or next to the source or build tree).
+- Build-time and install-time issues that require a local attacker to plant
+  files on the build machine and a victim to then build or install
+  pacparser with elevated privileges. Where practical, we still fix these as
+  ordinary hardening.
 - Local-only issues that depend on the victim taking unusual or unsafe
   actions, such as building or running pacparser as root from a directory
   that other users can write to.
