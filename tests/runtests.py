@@ -109,6 +109,26 @@ def runtests(pacfile, testdata, tests_dir):
     raise Exception('Logging test failed: stderr mismatch\nExpected:\n%s\nGot:\n%s' %
                     (expected_stderr, actual_stderr))
 
+  # Client IP length test: the longest textual IP address (45 characters) is
+  # returned by myIpAddress(); anything longer raises ValueError.
+  longest_ip = 'ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255'
+  pacparser.setmyip(longest_ip)
+  pacparser.init()
+  pacparser.parse_pac_string(
+      'function FindProxyForURL(url, host) { return myIpAddress(); }')
+  result = pacparser.find_proxy('http://example.com/')
+  pacparser.cleanup()
+  if result != longest_ip:
+    raise Exception('Client IP test failed: got "%s", expected "%s"' %
+                    (result, longest_ip))
+  try:
+    pacparser.setmyip(longest_ip + '0')
+  except ValueError:
+    pass
+  else:
+    raise Exception('Client IP test failed: a 46-character client IP was '
+                    'accepted')
+
   print('All tests were successful.')
 
 

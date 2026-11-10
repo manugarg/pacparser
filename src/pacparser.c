@@ -51,7 +51,10 @@
 #  define UNUSED(x) UNUSED_ ## x
 #endif
 
-static char my_ip_buf[INET6_ADDRSTRLEN+1];
+// Client IP set via pacparser_setmyip(). Sized for the longest textual IP
+// address (45 characters, an IPv6 address with an embedded IPv4 address) plus
+// the terminating NUL. Not INET6_ADDRSTRLEN, which is larger on Windows.
+static char my_ip_buf[46];
 static int my_ip_set = 0;
 
 // Default error printer function.
@@ -250,15 +253,13 @@ my_ip(JSContext *ctx, JSValueConst UNUSED(this_val), int UNUSED(argc), JSValueCo
   char ipaddr[INET6_ADDRSTRLEN];
 
   if (my_ip_set)                  // If my (client's) IP address is already set.
-    strcpy(ipaddr, my_ip_buf);
-  else {
-    char name[256];
-    gethostname(name, sizeof(name));
-    if (resolve_host(name, ipaddr, 1, AF_INET)) {
-      strcpy(ipaddr, "127.0.0.1");
-    }
-  }
+    return JS_NewString(ctx, my_ip_buf);
 
+  char name[256];
+  gethostname(name, sizeof(name));
+  if (resolve_host(name, ipaddr, 1, AF_INET)) {
+    strcpy(ipaddr, "127.0.0.1");
+  }
   return JS_NewString(ctx, ipaddr);
 }
 
@@ -270,15 +271,13 @@ my_ip_ex(JSContext *ctx, JSValueConst UNUSED(this_val), int UNUSED(argc), JSValu
   char ipaddr[INET6_ADDRSTRLEN * MAX_IP_RESULTS + MAX_IP_RESULTS];
 
   if (my_ip_set)                  // If my (client's) IP address is already set.
-    strcpy(ipaddr, my_ip_buf);
-  else {
-    char name[256];
-    gethostname(name, sizeof(name));
-    if (resolve_host(name, ipaddr, MAX_IP_RESULTS, AF_UNSPEC)) {
-      strcpy(ipaddr, "");
-    }
-  }
+    return JS_NewString(ctx, my_ip_buf);
 
+  char name[256];
+  gethostname(name, sizeof(name));
+  if (resolve_host(name, ipaddr, MAX_IP_RESULTS, AF_UNSPEC)) {
+    strcpy(ipaddr, "");
+  }
   return JS_NewString(ctx, ipaddr);
 }
 
@@ -292,8 +291,8 @@ static const char *proxy_result = NULL;
 int
 pacparser_setmyip(const char *ip)
 {
-  if (strlen(ip) > INET6_ADDRSTRLEN) {
-    fprintf(stderr, "pacparser_setmyip: IP too long: %s\n", ip);
+  if (strlen(ip) >= sizeof(my_ip_buf)) {
+    print_error("pacparser_setmyip: IP too long: %s\n", ip);
     return 0;
   }
 

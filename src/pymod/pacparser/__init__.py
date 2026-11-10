@@ -114,6 +114,8 @@ def just_find_proxy(pacfile, url, host=None):
 def setmyip(ip_address):
   """
   Set my ip address. This is the IP address returned by myIpAddress()
+
+  Raises ValueError if ip_address is too long to be an IP address.
   """
   _pacparser.setmyip(ip_address)
 
