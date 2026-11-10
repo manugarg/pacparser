@@ -246,14 +246,15 @@ def build_c_objects(cc):
 def main(patched_func):
     python_home = os.path.dirname(sys.executable)
 
-    # An unpacked sdist has a generated PKG-INFO at its root; the source
-    # tree (src/pymod) does not. In the sdist, the C sources ship next to
-    # setup.py and the objects must be built from them, inside this tree:
-    # never link objects from the parent directory, which is outside the
-    # package and may be writable by other users (e.g. /tmp). In the source
-    # tree, the Makefile builds the objects in the parent directory (src/).
-    sdist_layout = os.path.exists("PKG-INFO") and os.path.exists("pacparser.c")
-    if sdist_layout:
+    # When the C sources are next to setup.py (an unpacked sdist, or the
+    # cibuildwheel build, which copies them in), the objects must be built
+    # from them inside this tree: never link objects or include headers from
+    # the parent directory, which is outside the package and may be writable
+    # by other users (pip unpacks local sdists directly under $TMPDIR). In
+    # the source tree, the Makefile builds the objects in the parent
+    # directory (src/).
+    local_sources = os.path.exists("pacparser.c")
+    if local_sources:
         include_dirs = ["."]
         extra_objects = ["pacparser.o", os.path.join("quickjs", "libquickjs.a")]
     else:
@@ -271,7 +272,7 @@ def main(patched_func):
         # also what makes setuptools use a working compiler for the
         # extension itself.
         cc = find_build_tool("CC", "cc")
-        if sdist_layout:
+        if local_sources:
             build_c_objects(cc)
 
     libraries = ["pthread"]
