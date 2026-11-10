@@ -247,7 +247,8 @@ pac_console_log(JSContext *ctx, JSValueConst UNUSED(this_val), int argc, JSValue
 static JSValue
 my_ip(JSContext *ctx, JSValueConst UNUSED(this_val), int UNUSED(argc), JSValueConst *UNUSED(argv))
 {
-  char ipaddr[INET6_ADDRSTRLEN];
+  // Same size as my_ip_buf, which is copied into it.
+  char ipaddr[sizeof(my_ip_buf)];
 
   if (my_ip_set)                  // If my (client's) IP address is already set.
     strcpy(ipaddr, my_ip_buf);
@@ -292,7 +293,9 @@ static const char *proxy_result = NULL;
 int
 pacparser_setmyip(const char *ip)
 {
-  if (strlen(ip) > INET6_ADDRSTRLEN) {
+  // INET6_ADDRSTRLEN includes the terminating NUL, so no valid IP address
+  // is INET6_ADDRSTRLEN characters or longer.
+  if (strlen(ip) >= INET6_ADDRSTRLEN) {
     fprintf(stderr, "pacparser_setmyip: IP too long: %s\n", ip);
     return 0;
   }
