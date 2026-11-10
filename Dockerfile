@@ -1,17 +1,18 @@
 # Use Ubuntu as the base image
 FROM ubuntu:latest AS build-stage
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
+# Install build dependencies. git isn't needed: only src/ is copied in, so
+# the version comes from the VERSION build arg instead of git describe.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    git \
-    g++ \
-    bash \
-    make
+    libc6-dev \
+    make \
+    && rm -rf /var/lib/apt/lists/*
 
+ARG VERSION
 WORKDIR /build
 COPY src /build
-RUN make pactester
+RUN make pactester VERSION=$VERSION
 
 # Final stage
 FROM ubuntu:latest
