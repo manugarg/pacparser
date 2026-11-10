@@ -246,24 +246,24 @@ def build_c_objects(cc):
 def main(patched_func):
     python_home = os.path.dirname(sys.executable)
 
-    obj_search_path = {
-        "pacparser.o": ["..", "."],
-        "libquickjs.a": ["../quickjs", "quickjs", "."],
-    }
-    found_objects = {}
-    for obj, paths in obj_search_path.items():
-        for path in paths:
-            if os.path.exists(os.path.join(path, obj)):
-                found_objects[obj] = os.path.join(path, obj)
-                break
+    # When the C sources are next to setup.py (an unpacked sdist, or the
+    # cibuildwheel build, which copies them in), the objects must be built
+    # from them inside this tree: never link objects or include headers from
+    # the parent directory, which is outside the package and may be writable
+    # by other users (pip unpacks local sdists directly under $TMPDIR). In
+    # the source tree, the Makefile builds the objects in the parent
+    # directory (src/).
+    local_sources = os.path.exists("pacparser.c")
+    if local_sources:
+        include_dirs = ["."]
+        extra_objects = ["pacparser.o", os.path.join("quickjs", "libquickjs.a")]
+    else:
+        include_dirs = [".."]
+        extra_objects = ["../pacparser.o", "../quickjs/libquickjs.a"]
 
-    # When building from the sdist, the C sources are copied to the setup
-    # directory but the prebuilt objects are not, so compile them. The
-    # copied pacparser.c is the marker for the sdist layout; in the source
-    # tree the sources live in the parent directory and are built by the
-    # Makefile. Only do this for commands that build the extension, so
-    # that other commands (sdist, egg_info, clean, ...) do not require a
-    # C toolchain.
+    # Only compile the sdist's objects for commands that build the
+    # extension, so that other commands (sdist, egg_info, clean, ...) do
+    # not require a C toolchain.
     build_commands = ("build", "build_ext", "bdist", "bdist_wheel", "install")
     building = sys.platform != "win32" and any(
         cmd in build_commands for cmd in sys.argv[1:])
@@ -272,18 +272,8 @@ def main(patched_func):
         # also what makes setuptools use a working compiler for the
         # extension itself.
         cc = find_build_tool("CC", "cc")
-    if (
-        len(found_objects) < len(obj_search_path)
-        and building
-        and os.path.exists("pacparser.c")
-    ):
-        build_c_objects(cc)
-        found_objects["pacparser.o"] = found_objects.get(
-            "pacparser.o", "pacparser.o")
-        found_objects["libquickjs.a"] = found_objects.get(
-            "libquickjs.a", os.path.join("quickjs", "libquickjs.a"))
-
-    extra_objects = list(found_objects.values())
+        if local_sources:
+            build_c_objects(cc)
 
     libraries = ["pthread"]
     extra_link_args = []
@@ -292,13 +282,12 @@ def main(patched_func):
         import distutils.cygwinccompiler
 
         distutils.cygwinccompiler.get_msvcr = lambda: ["vcruntime140"]
-        extra_objects = ["../pacparser.o", "../quickjs/libquickjs.a"]
         libraries = ["ws2_32"]
         extra_link_args = ["-static-libgcc", "-L" + python_home]
 
     pacparser_module = setuptools.Extension(
         "_pacparser",
-        include_dirs=["..", "."],
+        include_dirs=include_dirs,
         sources=["pacparser_py.c"],
         libraries=libraries,
         extra_link_args=extra_link_args,
