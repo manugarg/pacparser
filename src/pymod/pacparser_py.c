@@ -128,7 +128,10 @@ py_pacparser_setmyip(PyObject *self, PyObject *args)
   const char *ip;
   if (!PyArg_ParseTuple(args, "s", &ip))
     return NULL;
-  pacparser_setmyip(ip);
+  if (!pacparser_setmyip(ip)) {
+    PyErr_Format(PyExc_ValueError, "invalid IP address: %s", ip);
+    return NULL;
+  }
   Py_RETURN_NONE;
 }
 

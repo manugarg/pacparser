@@ -82,20 +82,19 @@ fi
 # Client IP length tests: the longest textual IP address (45 characters) is
 # accepted and returned by myIpAddress(); anything longer is rejected.
 myip_pac=$(mktemp)
-echo 'function FindProxyForURL(url, host) { return myIpAddress(); }' > $myip_pac
+trap 'rm -f "$myip_pac"' EXIT
+echo 'function FindProxyForURL(url, host) { return myIpAddress(); }' > "$myip_pac"
 longest_ip="ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255"
-result=$($pactester -p $myip_pac -u http://example.com/ -c $longest_ip)
+result=$($pactester -p "$myip_pac" -u http://example.com/ -c $longest_ip)
 if [ "$result" != "$longest_ip" ]; then
   echo "Client IP test failed: got \"$result\", expected \"$longest_ip\""
-  rm -f $myip_pac
   exit 1
 fi
-if $pactester -p $myip_pac -u http://example.com/ -c "${longest_ip}0" \
-    >/dev/null 2>&1; then
-  echo "Client IP test failed: a 46-character client IP was accepted"
-  rm -f $myip_pac
+result=$($pactester -p "$myip_pac" -u http://example.com/ -c "${longest_ip}0" 2>&1)
+if [ $? = 0 ] || [ "${result/IP too long/}" = "$result" ]; then
+  echo "Client IP test failed: a 46-character client IP was not rejected"
+  echo "$result"
   exit 1
 fi
-rm -f $myip_pac
 
 echo "All tests were successful."
