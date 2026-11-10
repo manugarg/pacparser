@@ -171,6 +171,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        # actions/setup-python has no 3.8/3.9 builds for ubuntu-latest
+        # (Ubuntu 26.04). Linux wheels for them are built by cibuildwheel.
+        exclude:
+          - os: ubuntu-latest
+            python-version: "3.8"
+          - os: ubuntu-latest
+            python-version: "3.9"
     runs-on: ${{ matrix.os }}
 
     steps:

@@ -84,7 +84,7 @@ MAN_PREFIX = $(PREFIX)/share/man
 .PHONY: clean pymod install-pymod
 all: testpactester
 
-quickjs/libquickjs.a:
+quickjs/libquickjs.a: quickjs/quickjs.c quickjs/quickjs.h
 	cd quickjs && $(MAKE) CFLAGS="$(SHFLAGS)"
 
 pacparser.o: pacparser.c pac_utils.h pacparser.h
