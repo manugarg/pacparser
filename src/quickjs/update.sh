@@ -1,11 +1,11 @@
 #!/bin/bash
 # Script to upgrade embedded QuickJS using quickjs-ng amalgamated release.
 # Usage: ./update.sh [version_tag]
-# Example: ./update.sh v0.11.0
+# Example: ./update.sh v0.18.0
 
 set -e
 
-VERSION=${1:-v0.14.0}
+VERSION=${1:-v0.18.0}
 URL="https://github.com/quickjs-ng/quickjs/releases/download/${VERSION}/quickjs-amalgam.zip"
 TMP_DIR=$(mktemp -d)
 DEST_DIR=$(dirname "$0")
